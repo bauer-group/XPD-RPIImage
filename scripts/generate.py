@@ -946,7 +946,9 @@ def render_variant_config(cfg: dict[str, Any]) -> None:
     variant_cfg.append(f"# Auto-generated variant config for {name}\n")
     variant_cfg.append(f"export DIST_NAME={shlex.quote(f'bgrpiimage-{name}')}\n")
     variant_cfg.append(f"export DIST_VERSION={shlex.quote(cfg['variant'].get('version', '0.0.0'))}\n")
-    variant_cfg.append(f"export MODULES={shlex.quote(' '.join(modules))}\n")
+    # CustomPiOS strips spaces from MODULES and splits on commas; a
+    # space-separated list ends up concatenated into one invalid token.
+    variant_cfg.append(f"export MODULES={shlex.quote(','.join(modules))}\n")
     variant_cfg.append(f"export BGRPIIMAGE_VARIANT={shlex.quote(name)}\n")
     variant_cfg.append(f"export BGRPIIMAGE_HOSTNAME={shlex.quote(cfg['hostname'])}\n")
     variant_cfg.append(f"export BGRPIIMAGE_TARGETS={shlex.quote(','.join(cfg['targets']))}\n")
