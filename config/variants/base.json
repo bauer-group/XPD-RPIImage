@@ -32,6 +32,13 @@
     "ssh_password_auth": true,
     "ssh_permit_root_login": false
   },
+  "ssh": {
+    "enabled": true
+  },
+  "banner": {
+    "enabled": true,
+    "pre_login_note": "Authorised users only. All access is logged."
+  },
   "packages": [
     "vim",
     "mc",

@@ -234,6 +234,158 @@ def render_base(cfg: dict[str, Any]) -> None:
     packages = cfg.get("packages", [])
     write(gen / "packages.list", "\n".join(packages) + ("\n" if packages else ""))
 
+    # /etc/bgRPIImage-release - sourced by the MOTD banner and any ops tooling.
+    variant = cfg["variant"]
+    release_lines = [
+        f'BGRPIIMAGE_DIST="bgRPIImage"\n',
+        f'BGRPIIMAGE_VARIANT={shlex.quote(variant["name"])}\n',
+        f'BGRPIIMAGE_VERSION={shlex.quote(variant.get("version", "0.0.0"))}\n',
+        f'BGRPIIMAGE_DESCRIPTION={shlex.quote(variant.get("description", ""))}\n',
+    ]
+    write(gen / "release.env", "".join(release_lines))
+
+    ssh = cfg.get("ssh") or {}
+    write(gen / "ssh.env", shell_var("BGRPIIMAGE_SSH_ENABLED", bool(ssh.get("enabled", True))))
+
+    banner = cfg.get("banner") or {}
+    if banner.get("enabled", True):
+        _render_banner(gen, cfg, banner)
+
+
+def _render_banner(gen: Path, cfg: dict[str, Any], banner: dict[str, Any]) -> None:
+    """Emit /etc/issue, /etc/issue.net, the MOTD script and the sshd banner
+    drop-in. The MOTD script is static - all dynamic info (hostname, IPs, CAN
+    state, docker, uptime, pending reboots) is resolved at login time from the
+    running system."""
+    variant = cfg["variant"]
+    note = banner.get("pre_login_note", "")
+
+    header = (
+        f"bgRPIImage {variant['name']} v{variant.get('version', '0.0.0')}\n"
+        f"  {variant.get('description', '')}\n"
+    ).rstrip() + "\n"
+
+    # /etc/issue: getty expands \n \4 \6 \s \r \m at display time.
+    issue = (
+        f"{header}"
+        "--------------------------------------------------------------------\n"
+        "  \\s \\r \\m    \\d \\t\n"
+        "  host:  \\n\n"
+        "  tty:   \\l\n"
+        "  eth0:  \\4{eth0}    \\6{eth0}\n"
+        "  wlan0: \\4{wlan0}   \\6{wlan0}\n"
+        "--------------------------------------------------------------------\n"
+    )
+    if note:
+        issue += f"{note}\n"
+    write(gen / "issue", issue)
+
+    # /etc/issue.net: sshd reads raw (no escapes), so keep it static.
+    issue_net = (
+        f"{header}"
+        "--------------------------------------------------------------------\n"
+    )
+    if note:
+        issue_net += f"{note}\n"
+    issue_net += "--------------------------------------------------------------------\n"
+    write(gen / "issue.net", issue_net)
+
+    # sshd drop-in to surface the pre-login banner.
+    write(
+        gen / "sshd_banner.conf",
+        "# bgRPIImage pre-login banner\n"
+        "Banner /etc/issue.net\n",
+    )
+
+    # Dynamic MOTD - runs on login (pam_motd) and also from console.
+    write(gen / "motd-banner.sh", _MOTD_SCRIPT, executable=True)
+
+
+_MOTD_SCRIPT = r"""#!/bin/bash
+# bgRPIImage dynamic MOTD - shown after login.
+# Keep this script minimal and tolerant: it must never block a login.
+set +e
+
+[ -r /etc/bgRPIImage-release ] && . /etc/bgRPIImage-release
+
+if [ -t 1 ]; then
+    CY=$'\033[1;36m'; GR=$'\033[1;32m'; DIM=$'\033[2m'
+    YE=$'\033[1;33m'; RD=$'\033[1;31m'; NC=$'\033[0m'
+else
+    CY=''; GR=''; DIM=''; YE=''; RD=''; NC=''
+fi
+
+cols=$(tput cols 2>/dev/null || echo 72); [ "$cols" -lt 60 ] && cols=72
+sep=$(printf '=%.0s' $(seq 1 "$cols"))
+
+active_color() { [ "$1" = "active" ] && echo "$GR" || echo "$YE"; }
+
+echo "${CY}${sep}${NC}"
+printf "  ${GR}%s${NC}  %s  ${DIM}v%s${NC}\n" \
+    "${BGRPIIMAGE_DIST:-bgRPIImage}" \
+    "${BGRPIIMAGE_VARIANT:-unknown}" \
+    "${BGRPIIMAGE_VERSION:-0.0.0}"
+[ -n "${BGRPIIMAGE_DESCRIPTION:-}" ] && \
+    printf "  ${DIM}%s${NC}\n" "$BGRPIIMAGE_DESCRIPTION"
+
+model=""
+if [ -r /sys/firmware/devicetree/base/model ]; then
+    model=$(tr -d '\0' < /sys/firmware/devicetree/base/model)
+fi
+printf "  ${DIM}host:${NC} %-20s  ${DIM}kernel:${NC} %s\n" "$(hostname)" "$(uname -r)"
+[ -n "$model" ] && printf "  ${DIM}model:${NC} %s\n" "$model"
+up=$(uptime -p 2>/dev/null)
+[ -n "$up" ] && printf "  ${DIM}uptime:${NC} %s\n" "$up"
+echo "${CY}${sep}${NC}"
+
+# Physical + virtual interfaces we care about.
+iface_count=0
+for iface in $(ip -o link show 2>/dev/null | \
+               awk -F': ' '$2 !~ /^(lo|docker|veth|br-|bond|vlan)/ {print $2}' | \
+               cut -d'@' -f1); do
+    iface_count=$((iface_count+1))
+    state=$(ip -br link show "$iface" 2>/dev/null | awk '{print $2}')
+    case "$iface" in
+        can*)
+            bitrate=$(ip -details link show "$iface" 2>/dev/null | \
+                      grep -oE 'bitrate [0-9]+' | awk '{print $2}')
+            [ -n "$bitrate" ] && rate_str="$((bitrate/1000)) kbit/s" || rate_str="(no bitrate)"
+            sc=$([ "$state" = "UP" ] && echo "$GR" || echo "$DIM")
+            printf "  ${DIM}%-7s${NC} ${sc}%-6s${NC} %s\n" "$iface" "$state" "$rate_str"
+            ;;
+        *)
+            v4=$(ip -4 -br addr show "$iface" 2>/dev/null | awk '{$1=$2=""; print $0}' | xargs)
+            v6=$(ip -6 -br addr show "$iface" 2>/dev/null | \
+                 awk '{for(i=3;i<=NF;i++) print $i}' | \
+                 grep -v '^fe80' | head -2 | tr '\n' ' ')
+            sc=$([ "$state" = "UP" ] && echo "$GR" || echo "$DIM")
+            printf "  ${DIM}%-7s${NC} ${sc}%-6s${NC} v4: %s\n" "$iface" "$state" "${v4:-(none)}"
+            [ -n "$v6" ] && printf "  %-7s %-6s v6: %s\n" "" "" "$v6"
+            ;;
+    esac
+done
+[ "$iface_count" -eq 0 ] && printf "  ${DIM}(no external network interfaces detected)${NC}\n"
+echo "${CY}${sep}${NC}"
+
+ssh_s=$(systemctl is-active ssh 2>/dev/null || echo "?")
+dk_s=$(systemctl is-active docker 2>/dev/null || echo "?")
+uu_s=$(systemctl is-active unattended-upgrades 2>/dev/null || echo "?")
+printf "  ${DIM}ssh:${NC} $(active_color "$ssh_s")%s${NC}" "$ssh_s"
+printf "   ${DIM}docker:${NC} $(active_color "$dk_s")%s${NC}" "$dk_s"
+if [ "$dk_s" = "active" ]; then
+    n=$(docker ps -q 2>/dev/null | wc -l)
+    printf " ${DIM}(%d running)${NC}" "$n"
+fi
+printf "   ${DIM}unattended-upgrades:${NC} $(active_color "$uu_s")%s${NC}\n" "$uu_s"
+
+if [ -f /var/run/reboot-required ]; then
+    pkgs=""
+    [ -s /var/run/reboot-required.pkgs ] && pkgs=$(tr '\n' ' ' < /var/run/reboot-required.pkgs)
+    printf "  ${YE}reboot pending${NC} %s\n" "${pkgs:+(triggered by: ${pkgs})}"
+fi
+echo "${CY}${sep}${NC}"
+"""
+
 
 def render_users(cfg: dict[str, Any]) -> None:
     gen = clean_generated("bgRPIImage-users")

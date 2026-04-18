@@ -212,6 +212,23 @@
         "auto_start": { "type": "boolean" }
       }
     },
+    "ssh": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "SSH service policy. Detailed auth settings stay under `root.ssh_*`.",
+      "properties": {
+        "enabled": { "type": "boolean", "description": "Enable ssh.service at boot (default true)." }
+      }
+    },
+    "banner": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Pre-login banners (/etc/issue, /etc/issue.net) + post-login MOTD showing variant, hostname, IPv4/IPv6, CAN, docker + update status.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "pre_login_note": { "type": "string", "description": "Optional line appended to /etc/issue(.net), e.g. legal notice." }
+      }
+    },
     "unattended_upgrades": {
       "type": "object",
       "additionalProperties": false,

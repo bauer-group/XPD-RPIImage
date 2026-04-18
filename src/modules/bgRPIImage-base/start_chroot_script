@@ -41,4 +41,35 @@ if [[ -n "${BGRPIIMAGE_BASE_EXTRA_PACKAGES:-}" ]]; then
     # shellcheck disable=SC2086
     apt-get install -y --no-install-recommends $BGRPIIMAGE_BASE_EXTRA_PACKAGES
 fi
+
+# --- release metadata (sourced by MOTD and ops tooling) ---
+if [[ -f "$GEN/release.env" ]]; then
+    install -D -m 644 "$GEN/release.env" /etc/bgRPIImage-release
+fi
+
+# --- SSH service (raspios ships ssh.service disabled by default) ---
+if [[ -f "$GEN/ssh.env" ]]; then
+    # shellcheck disable=SC1090
+    source "$GEN/ssh.env"
+    apt-get install -y --no-install-recommends openssh-server
+    if [[ "${BGRPIIMAGE_SSH_ENABLED:-yes}" == "yes" ]]; then
+        systemctl enable ssh
+        # Legacy raspios trigger: presence of /boot/firmware/ssh also enables.
+        if [[ -d /boot/firmware ]]; then touch /boot/firmware/ssh; fi
+    else
+        systemctl disable ssh 2>/dev/null || true
+    fi
+fi
+
+# --- pre-login + post-login banner ---
+if [[ -f "$GEN/motd-banner.sh" ]]; then
+    install -D -m 644 "$GEN/issue"            /etc/issue
+    install -D -m 644 "$GEN/issue.net"        /etc/issue.net
+    install -D -m 644 "$GEN/sshd_banner.conf" /etc/ssh/sshd_config.d/20-bgRPIImage-banner.conf
+    # Wipe raspios default motd scripts so the banner is consistent across runs.
+    rm -f /etc/update-motd.d/*
+    : > /etc/motd
+    install -D -m 755 "$GEN/motd-banner.sh"   /etc/update-motd.d/10-bgRPIImage
+fi
+
 apt-get clean
