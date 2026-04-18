@@ -39,10 +39,6 @@ python3 scripts/generate.py "${PY_ARGS[@]}"
 
 echo "[build] ensuring CustomPiOS"
 bash scripts/bootstrap.sh
-
-# Write custompios_path sidecar into our distro src/ so build_dist can find
-# the CustomPiOS scripts. This replaces the old `bash update` command.
-bash "$ROOT/CustomPiOS/src/update-custompios-paths" "$ROOT/src"
 chmod +x "$ROOT/src/build_dist"
 
 # Use guysoft/custompios container to run the build with loop device access.
@@ -50,11 +46,15 @@ DOCKER_IMAGE="${DOCKER_IMAGE:-guysoft/custompios:devel}"
 mkdir -p dist
 
 echo "[build] launching container $DOCKER_IMAGE for variant '$VARIANT'"
+# update-custompios-paths must run INSIDE the container so the
+# custompios_path sidecar records /distro/CustomPiOS/src (the bind-mount
+# path) instead of the host's absolute path.
 docker run --rm --privileged \
     --volume "$ROOT":/distro \
     --workdir /distro/src \
     "$DOCKER_IMAGE" \
-    bash -c "./build_dist ${VARIANT}"
+    bash -c "bash /distro/CustomPiOS/src/update-custompios-paths /distro/src \
+             && ./build_dist ${VARIANT}"
 
 # CustomPiOS leaves the image in workspace-<variant> for non-default variants.
 for ws in "$ROOT/src/workspace-${VARIANT}" "$ROOT/src/workspace"; do
