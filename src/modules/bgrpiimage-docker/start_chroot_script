@@ -11,7 +11,12 @@ export DEBIAN_FRONTEND=noninteractive
 source /common.sh
 install_cleanup_trap
 
-GEN=/bgrpiimage-docker/files/_generated
+# Deploy this module's files from the copied /filesystem/root tree
+# (CustomPiOS copies module/filesystem/ into the chroot root) to
+# their real destinations under /.
+unpack /filesystem/root / root
+
+GEN=/opt/bgrpiimage/bgrpiimage-docker
 
 # Remove any conflicting distro-provided docker packages.
 for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do

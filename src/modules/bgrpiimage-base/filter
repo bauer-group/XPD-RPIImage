@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-# Always run - base module is mandatory.
-exit 0

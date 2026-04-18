@@ -8,7 +8,12 @@ export DEBIAN_FRONTEND=noninteractive
 source /common.sh
 install_cleanup_trap
 
-GEN=/bgrpiimage-base/files/_generated
+# Deploy this module's files from the copied /filesystem/root tree
+# (CustomPiOS copies module/filesystem/ into the chroot root) to
+# their real destinations under /.
+unpack /filesystem/root / root
+
+GEN=/opt/bgrpiimage/bgrpiimage-base
 
 # --- hostname ---
 if [[ -f "$GEN/hostname" ]]; then
@@ -61,13 +66,6 @@ if [[ -f "$GEN/ssh.env" ]]; then
     fi
 fi
 
-# --- on-device helper script (static, not generated) ---
-# Lets operators change password / WiFi / IP after flashing without hand-
-# editing systemd-networkd or wpa_supplicant files.
-if [[ -f /bgrpiimage-base/files/static/bgrpiimage-setup ]]; then
-    install -D -m 755 /bgrpiimage-base/files/static/bgrpiimage-setup \
-        /usr/local/sbin/bgrpiimage-setup
-fi
 
 # --- pre-login + post-login banner ---
 if [[ -f "$GEN/motd-banner.sh" ]]; then

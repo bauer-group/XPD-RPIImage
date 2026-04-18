@@ -8,7 +8,7 @@ dist/
 
 # Generated files from JSON config
 src/variants/*/_generated/
-src/modules/*/files/_generated/
+src/modules/*/filesystem/root/opt/bgrpiimage/
 
 # CustomPiOS drops the custompios_path sidecar at build time
 src/custompios_path

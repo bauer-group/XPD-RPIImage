@@ -11,7 +11,12 @@ export DEBIAN_FRONTEND=noninteractive
 source /common.sh
 install_cleanup_trap
 
-GEN=/bgrpiimage-can/files/_generated
+# Deploy this module's files from the copied /filesystem/root tree
+# (CustomPiOS copies module/filesystem/ into the chroot root) to
+# their real destinations under /.
+unpack /filesystem/root / root
+
+GEN=/opt/bgrpiimage/bgrpiimage-can
 
 apt-get update
 if [[ -f "$GEN/packages.list" ]]; then

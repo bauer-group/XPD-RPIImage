@@ -8,7 +8,12 @@ export DEBIAN_FRONTEND=noninteractive
 source /common.sh
 install_cleanup_trap
 
-GEN=/bgrpiimage-users/files/_generated
+# Deploy this module's files from the copied /filesystem/root tree
+# (CustomPiOS copies module/filesystem/ into the chroot root) to
+# their real destinations under /.
+unpack /filesystem/root / root
+
+GEN=/opt/bgrpiimage/bgrpiimage-users
 
 # Stage pam_su drop-in where the create-users script expects it.
 if [[ -f "$GEN/pam_su" ]]; then

@@ -16,7 +16,12 @@ export LC_ALL=C
 source /common.sh
 install_cleanup_trap
 
-GEN=/bgrpiimage-portainer/files/_generated
+# Deploy this module's files from the copied /filesystem/root tree
+# (CustomPiOS copies module/filesystem/ into the chroot root) to
+# their real destinations under /.
+unpack /filesystem/root / root
+
+GEN=/opt/bgrpiimage/bgrpiimage-portainer
 
 install -D -m 644 "$GEN/docker-compose.yml" /etc/bgrpiimage/portainer/docker-compose.yml
 install -D -m 644 "$GEN/bgrpiimage-portainer-install.service" \

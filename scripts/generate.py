@@ -5,7 +5,7 @@ BAUER GROUP XPD-RPIImage - variant config renderer.
 
 Reads a JSON variant config, resolves ${ENV} references, validates against
 schema.json, and renders all artifacts into the CustomPiOS module tree at
-src/modules/<module>/files/_generated/ plus the variant shell config at
+src/modules/<module>/filesystem/root/opt/bgrpiimage/<module>/ plus the variant shell config at
 src/variants/<name>/config.
 
 Usage:
@@ -211,7 +211,12 @@ def shell_array(name: str, values: list[str]) -> str:
 
 
 def clean_generated(module_name: str) -> Path:
-    gen = MODULES_DIR / module_name / "files" / "_generated"
+    # Write to module/filesystem/root/opt/bgrpiimage/<module>/ so the files
+    # end up INSIDE the chroot: CustomPiOS copies `module/filesystem/` into
+    # the chroot root; our start_chroot_script calls `unpack /filesystem/
+    # root / root` which moves the contents to `/`. Result in the chroot:
+    # /opt/bgrpiimage/<module>/<generated files>.
+    gen = MODULES_DIR / module_name / "filesystem" / "root" / "opt" / "bgrpiimage" / module_name
     if gen.exists():
         shutil.rmtree(gen)
     gen.mkdir(parents=True)
@@ -689,7 +694,6 @@ def render_portainer(cfg: dict[str, Any]) -> None:
     gen = clean_generated("bgrpiimage-portainer")
     p = cfg.get("portainer") or {}
     if not p.get("enabled"):
-        write(gen / ".disabled", "")
         return
     bind = p.get("bind", "0.0.0.0")
     edition = p.get("edition", "ce")
@@ -1001,16 +1005,16 @@ def _module_enabled(module: str, cfg: dict[str, Any]) -> bool:
 # Entry point
 # -----------------------------------------------------------------------------
 def _module_status(module: str) -> tuple[str, int]:
-    """Return (status, file_count) for a module's _generated dir after render.
+    """Return (status, file_count) for a module's generated files.
 
-    status is one of: rendered / disabled / empty.
+    Files live under module/filesystem/root/opt/bgrpiimage/<module>/ as well
+    as module/filesystem/root/... for files that land at fixed chroot paths
+    (e.g. the static bgrpiimage-setup helper).
     """
-    gen = MODULES_DIR / module / "files" / "_generated"
-    if not gen.exists():
+    gen_tree = MODULES_DIR / module / "filesystem" / "root"
+    if not gen_tree.exists():
         return ("empty", 0)
-    if (gen / ".disabled").exists():
-        return ("disabled", 0)
-    count = sum(1 for p in gen.rglob("*") if p.is_file() and p.name != ".disabled")
+    count = sum(1 for p in gen_tree.rglob("*") if p.is_file())
     return ("rendered" if count else "empty", count)
 
 
@@ -1123,7 +1127,7 @@ def main() -> int:
     console.print(table)
     console.print(
         f"  [green]{total}[/] artifact{'s' if total != 1 else ''} written to "
-        f"[dim]src/modules/*/files/_generated/[/]\n"
+        f"[dim]src/modules/*/filesystem/root/[/]\n"
         f"  variant config: [dim]src/variants/{variant_name}/config[/]"
     )
     return 0

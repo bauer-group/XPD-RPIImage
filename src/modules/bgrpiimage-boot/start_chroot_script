@@ -8,7 +8,12 @@ export LC_ALL=C
 source /common.sh
 install_cleanup_trap
 
-GEN=/bgrpiimage-boot/files/_generated
+# Deploy this module's files from the copied /filesystem/root tree
+# (CustomPiOS copies module/filesystem/ into the chroot root) to
+# their real destinations under /.
+unpack /filesystem/root / root
+
+GEN=/opt/bgrpiimage/bgrpiimage-boot
 CFG="${BGRPIIMAGE_BOOT_CONFIG_PATH:-/boot/firmware/config.txt}"
 
 # Fallback for images that still use the legacy path.
