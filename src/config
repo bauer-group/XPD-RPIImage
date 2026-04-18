@@ -15,4 +15,12 @@ export BASE_ARCH="arm64"
 export BASE_IMAGE_ENLARGEROOT="${BASE_IMAGE_ENLARGEROOT:-2000}"
 export BASE_IMAGE_RESIZEROOT="${BASE_IMAGE_RESIZEROOT:-200}"
 
+# Partition layout of the downloaded raspios image. These defaults live in
+# CustomPiOS's own `base` module (src/modules/base/config) which we do NOT
+# include - we ship our own bgrpiimage-base. Without these, enlarge_ext
+# gets the wrong arg ($BASE_IMAGE_ENLARGEROOT shifts into the partition
+# slot) and fails with "operand expected" during sfdisk/jq parsing.
+export BASE_ROOT_PARTITION="${BASE_ROOT_PARTITION:-2}"
+export BASE_BOOT_PARTITION="${BASE_BOOT_PARTITION:-1}"
+
 export LC_ALL=C
