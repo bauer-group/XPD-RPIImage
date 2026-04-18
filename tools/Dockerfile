@@ -30,8 +30,10 @@ RUN apt-get update \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/*
 
-# Python deps - baked at build time. Rebuild with `run <launcher> --build`
-# after editing scripts/requirements.txt to pick up changes.
+# Python deps - baked at build time. The launcher mirrors the canonical
+# ../scripts/requirements.txt into ./tools/requirements.txt just before this
+# COPY runs (gitignored; Docker COPY cannot reach outside the build context).
+# Rebuild with `run.* --build` after editing scripts/requirements.txt.
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt \
  && rm /tmp/requirements.txt

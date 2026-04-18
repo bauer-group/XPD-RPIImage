@@ -62,7 +62,23 @@ if [[ -z "$IMG" ]]; then
     exit 1
 fi
 
-OUT="dist/bgRPIImage-${VARIANT}-$(date +%Y%m%d).img"
+# Derive version + optional suffix for the output filename.
+#   VERSION       - from env (CI sets it) or parsed from the variant JSON
+#   IMAGE_SUFFIX  - appended after the version, e.g. '-abc1234' for push
+#                   builds; empty for tag releases so the asset is clean.
+if [[ -z "${VERSION:-}" ]]; then
+    VERSION=$(python3 - <<PY
+import json, sys
+try:
+    print(json.load(open("$CONFIG_JSON"))["variant"].get("version", "0.0.0"))
+except Exception:
+    print("0.0.0")
+PY
+)
+fi
+SUFFIX="${IMAGE_SUFFIX:-}"
+
+OUT="dist/bgRPIImage-${VARIANT}-v${VERSION}${SUFFIX}.img"
 cp -v "$IMG" "$OUT"
 echo "[build] compressing"
 xz -T0 -f "$OUT"

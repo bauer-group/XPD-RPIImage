@@ -11,6 +11,10 @@ src/variants/*/image/config
 src/variants/*/_generated/
 src/modules/*/files/_generated/
 
+# tools/requirements.txt is auto-synced from scripts/requirements.txt by
+# the run.* launchers before docker build - so it drifts on every run.
+tools/requirements.txt
+
 # CustomPiOS is cloned at build time into this path
 CustomPiOS/
 !CustomPiOS/.keep

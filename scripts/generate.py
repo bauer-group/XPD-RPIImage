@@ -977,7 +977,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("config", type=Path, help="path to variant JSON config")
     parser.add_argument("--env-file", type=Path, help="optional .env file (KEY=VALUE lines)")
-    parser.add_argument("--dry-run", action="store_true", help="validate & resolve only")
+    parser.add_argument("--dry-run", action="store_true", help="validate & resolve only (rich output)")
+    parser.add_argument("--json", action="store_true", help="validate & print resolved JSON to stdout (no decoration)")
     args = parser.parse_args()
 
     # Load + follow `extends` chain (deep-merge parents into this variant).
@@ -1025,6 +1026,11 @@ def main() -> int:
 
     variant_name = resolved["variant"]["name"]
     variant_version = resolved["variant"].get("version", "?")
+
+    if args.json:
+        # Plain JSON to stdout - for piping into jq in CI scripts.
+        sys.stdout.write(json.dumps(resolved, indent=2) + "\n")
+        return 0
 
     if args.dry_run:
         console.print(Panel.fit(

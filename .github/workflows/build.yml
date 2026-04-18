@@ -1,19 +1,36 @@
 # SPDX-License-Identifier: MIT
+# =============================================================================
 # BAUER GROUP XPD-RPIImage - image build pipeline
-name: build-image
+# =============================================================================
+name: 📦 Build Image
 
 on:
   push:
     branches: [main]
     tags: ["v*.*.*"]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE"
+      - ".gitignore"
+      - ".github/**"
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE"
+      - ".github/**"
   workflow_dispatch:
     inputs:
       variant:
-        description: "Variant to build (blank = all)"
+        description: "🎯 Variant to build (blank = all discovered)"
         required: false
         default: ""
+      skip_build:
+        description: "⏭️ Skip image build (validate only)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -22,69 +39,93 @@ concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  PYTHON_VERSION: "3.14"
+  CUSTOMPIOS_IMAGE: "guysoft/custompios:devel"
+
 jobs:
-  # -------- static validation: JSON schema + python syntax --------
+  # =========================================================================
+  # 🔍  Validate every variant JSON and compute the build matrix in one job.
+  # =========================================================================
   validate:
-    name: validate
+    name: 🔍 Validate
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
+    outputs:
+      variants: ${{ steps.matrix.outputs.variants }}
+      count:    ${{ steps.matrix.outputs.count }}
     steps:
-      - uses: actions/checkout@v4
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
           cache-dependency-path: scripts/requirements.txt
 
-      - name: install deps
+      - name: ⚙️ Install Python dependencies
         run: python -m pip install -r scripts/requirements.txt
 
-      - name: py syntax
+      - name: 🧪 Syntax check
         run: python -m py_compile scripts/generate.py
 
-      - name: validate all variants
+      - name: ✅ Validate all variants
         run: |
           set -euo pipefail
           for f in config/variants/*.json; do
-            echo "::group::$f"
-            python scripts/generate.py "$f" --dry-run > /dev/null
+            echo "::group::🔍 $f"
+            python scripts/generate.py "$f" --dry-run >/dev/null
             echo "::endgroup::"
           done
 
-      - name: render smoke test (canbus-plattform)
+      - name: 🚬 Render smoke test (canbus-plattform)
         env:
           ADMIN_PASSWORD: ci-placeholder-pw
           WIFI_PSK: ci-placeholder-psk
         run: python scripts/generate.py config/variants/canbus-plattform.json
 
-  # -------- discover build matrix from config/variants/*.json --------
-  matrix:
-    name: discover
-    needs: validate
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      variants: ${{ steps.set.outputs.variants }}
-    steps:
-      - uses: actions/checkout@v4
-      - id: set
+      - name: 🎯 Compute build matrix
+        id: matrix
         run: |
           set -euo pipefail
-          input="${{ github.event.inputs.variant || '' }}"
+          input='${{ inputs.variant }}'
           if [[ -n "$input" ]]; then
-            echo "variants=[\"$input\"]" >> "$GITHUB_OUTPUT"
+            v="[\"$input\"]"
           else
-            variants=$(ls config/variants/*.json | xargs -n1 basename | sed 's/\.json$//' | jq -R -s -c 'split("\n") | map(select(length>0))')
-            echo "variants=$variants" >> "$GITHUB_OUTPUT"
+            v=$(ls config/variants/*.json | xargs -n1 basename | sed 's/\.json$//' \
+                | jq -R -s -c 'split("\n") | map(select(length>0))')
           fi
+          echo "variants=$v" >> "$GITHUB_OUTPUT"
+          echo "count=$(echo "$v" | jq 'length')" >> "$GITHUB_OUTPUT"
 
-  # -------- actual image build (privileged docker) --------
+      - name: 📋 Validation summary
+        if: always()
+        run: |
+          {
+            echo "## 🔍 Validation"
+            echo ""
+            echo "| variant | version | schema |"
+            echo "| --- | --- | --- |"
+            for f in config/variants/*.json; do
+              name=$(basename "$f" .json)
+              version=$(jq -r '.variant.version // "?"' "$f")
+              echo "| \`$name\` | v$version | ✅ |"
+            done
+            echo ""
+            echo "🎯 **build matrix** (${{ steps.matrix.outputs.count }}): \`${{ steps.matrix.outputs.variants }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # =========================================================================
+  # 📦  Actual image build - one parallel job per variant.
+  # =========================================================================
   build:
-    name: build (${{ matrix.variant }})
-    needs: matrix
+    name: 📦 Build ${{ matrix.variant }}
+    needs: validate
+    if: ${{ !inputs.skip_build }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
@@ -92,55 +133,241 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: ${{ fromJSON(needs.matrix.outputs.variants) }}
+        variant: ${{ fromJSON(needs.validate.outputs.variants) }}
     steps:
-      - uses: actions/checkout@v4
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
+          python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
           cache-dependency-path: scripts/requirements.txt
 
-      - name: install python deps
+      - name: ⚙️ Install Python dependencies
         run: python -m pip install -r scripts/requirements.txt
 
-      - name: free disk space
+      - name: 🧹 Free runner disk
         run: |
-          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /usr/local/share/boost
+          set -e
+          sudo rm -rf /usr/share/dotnet /opt/ghc \
+                      /usr/local/lib/android /usr/local/share/boost \
+                      "$AGENT_TOOLSDIRECTORY"
           sudo docker image prune -af
+          echo "free: $(df -h / | awk 'NR==2 {print $4}')"
 
-      - name: install host build deps
+      - name: 🔧 Install host build deps
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-              qemu-user-static binfmt-support kpartx xz-utils zip unzip
+            qemu-user-static binfmt-support kpartx xz-utils zip unzip
 
-      - name: build image
+      - name: 💾 Cache CustomPiOS checkout
+        uses: actions/cache@v4
+        with:
+          path: CustomPiOS
+          key: custompios-${{ hashFiles('scripts/bootstrap.sh') }}
+          restore-keys: custompios-
+
+      - name: 🔑 Resolve variant metadata
+        id: meta
         env:
-          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD || 'ci-placeholder-pw' }}
-          WIFI_PSK: ${{ secrets.WIFI_PSK || 'ci-placeholder-psk' }}
-          DOCKER_IMAGE: guysoft/custompios:devel
+          ADMIN_PASSWORD: ci-placeholder-pw
+          WIFI_PSK:       ci-placeholder-psk
+        run: |
+          set -euo pipefail
+          cfg="config/variants/${{ matrix.variant }}.json"
+          # Render the full extends-merged config to a sidecar JSON so every
+          # subsequent step can `jq` it without re-running the generator.
+          python scripts/generate.py "$cfg" --json > /tmp/resolved.json
+          version=$(jq -r '.variant.version // "0.0.0"' /tmp/resolved.json)
+          sha_short="${GITHUB_SHA:0:7}"
+
+          # Artefact / file naming:
+          #   tag push       -> v<version>                 (clean release asset)
+          #   pull_request   -> v<version>-pr<n>-<sha>     (traceable per PR)
+          #   main / dispatch -> v<version>-<sha>          (commit-unique)
+          # The suffix ends up inside the .img.xz filename AND the GH artifact.
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+              suffix=""
+              kind="release"
+          elif [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+              suffix="-pr${{ github.event.pull_request.number }}-${sha_short}"
+              kind="pr"
+          else
+              suffix="-${sha_short}"
+              kind="push"
+          fi
+          {
+              echo "version=${version}"
+              echo "sha_short=${sha_short}"
+              echo "suffix=${suffix}"
+              echo "kind=${kind}"
+              echo "full_tag=v${version}${suffix}"
+              echo "start_epoch=$(date +%s)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: 🖼️ Build image
+        env:
+          ADMIN_PASSWORD:    ${{ secrets.ADMIN_PASSWORD || 'ci-placeholder-pw' }}
+          WIFI_PSK:          ${{ secrets.WIFI_PSK       || 'ci-placeholder-psk' }}
+          DOCKER_IMAGE:      ${{ env.CUSTOMPIOS_IMAGE }}
+          DOCKER_BUILDKIT:   "1"
+          BUILDKIT_PROGRESS: "plain"
+          VERSION:           ${{ steps.meta.outputs.version }}
+          IMAGE_SUFFIX:      ${{ steps.meta.outputs.suffix }}
         run: bash scripts/build.sh "${{ matrix.variant }}"
 
-      - name: checksum
+      - name: 📝 Compute checksums
+        id: checksum
         working-directory: dist
         run: |
-          for f in *.img.xz; do
+          set -euo pipefail
+          shopt -s nullglob
+          files=(*.img.xz)
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "::error::no image produced in dist/"
+            exit 1
+          fi
+          for f in "${files[@]}"; do
             sha256sum "$f" > "$f.sha256"
           done
+          sha=$(awk '{print $1}' "${files[0]}.sha256")
+          size=$(du -h "${files[0]}" | cut -f1)
+          bytes=$(stat -c '%s' "${files[0]}")
+          echo "sha=$sha"     >> "$GITHUB_OUTPUT"
+          echo "size=$size"   >> "$GITHUB_OUTPUT"
+          echo "bytes=$bytes" >> "$GITHUB_OUTPUT"
+          echo "file=${files[0]}" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@v4
+      - name: 📋 Build summary
+        if: always()
+        env:
+          VARIANT:    ${{ matrix.variant }}
+          VERSION:    ${{ steps.meta.outputs.version }}
+          FULL_TAG:   ${{ steps.meta.outputs.full_tag }}
+          KIND:       ${{ steps.meta.outputs.kind }}
+          START:      ${{ steps.meta.outputs.start_epoch }}
+          FILE:       ${{ steps.checksum.outputs.file }}
+          SIZE:       ${{ steps.checksum.outputs.size }}
+          BYTES:      ${{ steps.checksum.outputs.bytes }}
+          SHA:        ${{ steps.checksum.outputs.sha }}
+        run: |
+          set -euo pipefail
+          RESOLVED=/tmp/resolved.json
+          [[ -r "$RESOLVED" ]] || { echo "no resolved config; summary skipped"; exit 0; }
+
+          # --- Extract metadata -------------------------------------------------
+          description=$(jq -r '.variant.description // "-"'         "$RESOLVED")
+          targets=$(jq -r '.targets | join(", ")'                   "$RESOLVED")
+          hostname=$(jq -r '.hostname'                              "$RESOLVED")
+          arch=$(jq -r '.base_image.arch'                           "$RESOLVED")
+          base_url=$(jq -r '.base_image.url'                        "$RESOLVED")
+          base_img=$(basename "$base_url")
+          pkg_count=$(jq -r '.packages | length'                    "$RESOLVED")
+          user_count=$(jq -r '.users | length'                      "$RESOLVED")
+          users=$(jq -r '[.users[].name] | join(", ")'              "$RESOLVED")
+          removed=$(jq -r '.remove_users // [] | join(", ") // "-"' "$RESOLVED")
+          overlays=$(jq -r '[.boot_config.dtoverlays[]?.name] | join(", ")' "$RESOLVED")
+          overlay_count=$(jq -r '.boot_config.dtoverlays // [] | length' "$RESOLVED")
+          can_ifaces=$(jq -r '.can.interfaces // [] | length'       "$RESOLVED")
+          can_detail=$(jq -r '[.can.interfaces // []
+                              | .[] | "\(.name) @ \(.bitrate/1000) kbit/s (txq=\(.txqueuelen // "-"))"] | join(", ")' "$RESOLVED")
+
+          ssh_enabled=$(jq -r '.ssh.enabled // true'                "$RESOLVED")
+          docker_enabled=$(jq -r '.docker.enabled // false'         "$RESOLVED")
+          portainer_enabled=$(jq -r '.portainer.enabled // false'   "$RESOLVED")
+          portainer_bind=$(jq -r '.portainer.bind // "-"'           "$RESOLVED")
+          portainer_ports=$(jq -r '.portainer.ports | "edge=\(.edge) http=\(.http) https=\(.https)"' "$RESOLVED")
+          uu_enabled=$(jq -r '.unattended_upgrades.enabled // false' "$RESOLVED")
+          uu_window=$(jq -r '.unattended_upgrades.schedule | "\(.start)-\(.end)"' "$RESOLVED")
+          reboot_window=$(jq -r '.unattended_upgrades.auto_reboot.window | "\(.start)-\(.end)"' "$RESOLVED")
+          banner_enabled=$(jq -r '.banner.enabled // false'         "$RESOLVED")
+
+          yn() { [[ "$1" == "true" ]] && echo "✅ yes" || echo "❌ no"; }
+
+          # --- Build duration ---------------------------------------------------
+          now=$(date +%s)
+          duration="$(( (now - START) / 60 ))m $(( (now - START) % 60 ))s"
+
+          # --- Emit summary -----------------------------------------------------
+          case "$KIND" in
+            release) badge="🏷️ RELEASE";;
+            pr)      badge="🔀 PR BUILD";;
+            *)       badge="🚧 DEV BUILD";;
+          esac
+          {
+            echo "# 📦 ${VARIANT} · ${FULL_TAG} · ${badge}"
+            echo ""
+            echo "> ${description}"
+            echo ""
+            echo "## 🎯 Target"
+            echo "| key | value |"
+            echo "|---|---|"
+            echo "| Variant | \`${VARIANT}\` |"
+            echo "| Version | \`${VERSION}\` |"
+            echo "| Hostname | \`${hostname}\` |"
+            echo "| Architecture | ${arch} |"
+            echo "| Hardware targets | ${targets} |"
+            echo "| Base image | \`${base_img}\` |"
+            echo ""
+            echo "## ⚙️ Feature matrix"
+            echo "| feature | state | detail |"
+            echo "|---|---|---|"
+            echo "| 🔒 SSH                  | $(yn "$ssh_enabled")        | password auth, no root |"
+            echo "| 🐳 Docker               | $(yn "$docker_enabled")     | CE + compose plugin, IPv6 NAT |"
+            echo "| 🎛 Portainer            | $(yn "$portainer_enabled")  | ${portainer_bind}, ${portainer_ports} |"
+            echo "| 🚌 CAN                  | $([[ $can_ifaces -gt 0 ]] && echo ✅ yes || echo ❌ no) | ${can_detail:--} |"
+            echo "| 🔄 Unattended upgrades  | $(yn "$uu_enabled")         | window ${uu_window}, reboot ${reboot_window} |"
+            echo "| 🖼 Banner / MOTD        | $(yn "$banner_enabled")     | /etc/issue(.net) + dynamic MOTD |"
+            echo ""
+            echo "## 🧩 Contents"
+            echo "| key | value |"
+            echo "|---|---|"
+            echo "| Installed packages | ${pkg_count} |"
+            echo "| Users | ${user_count} · ${users} |"
+            echo "| Removed users | ${removed:--} |"
+            echo "| Device tree overlays | ${overlay_count}${overlays:+ · $overlays} |"
+            echo ""
+            echo "## 📦 Artifact"
+            echo "| key | value |"
+            echo "|---|---|"
+            echo "| File | \`${FILE}\` |"
+            echo "| Compressed size | ${SIZE} (${BYTES} bytes) |"
+            echo "| SHA-256 | \`${SHA}\` |"
+            echo ""
+            echo "## 🏷️ Build context"
+            echo "| key | value |"
+            echo "|---|---|"
+            echo "| Commit | [\`${GITHUB_SHA:0:7}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}) |"
+            echo "| Ref | \`${GITHUB_REF}\` |"
+            echo "| Triggered by | \`${GITHUB_EVENT_NAME}\` · @${GITHUB_ACTOR} |"
+            echo "| Runner | \`${RUNNER_OS} ${RUNNER_ARCH}\` |"
+            echo "| Duration | ${duration} |"
+            echo ""
+            echo "### 🔐 Verify"
+            echo '```bash'
+            echo "echo \"${SHA}  ${FILE}\" | sha256sum -c -"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 📤 Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: bgRPIImage-${{ matrix.variant }}-${{ github.sha }}
+          name: bgRPIImage-${{ matrix.variant }}-${{ steps.meta.outputs.full_tag }}
           path: |
             dist/*.img.xz
             dist/*.sha256
           retention-days: 14
+          if-no-files-found: error
+          compression-level: 0
 
-  # -------- optional: attach artifacts to a tagged release --------
+  # =========================================================================
+  # 🚀  Tag push -> create GitHub release with all built image artifacts.
+  # =========================================================================
   release:
-    name: release
+    name: 🚀 Release
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
@@ -148,14 +375,29 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - name: 📥 Download artifacts
+        uses: actions/download-artifact@v4
         with:
           path: release-assets
           merge-multiple: true
 
-      - uses: softprops/action-gh-release@v2
+      - name: 🏷️ Create GitHub release
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             release-assets/*.img.xz
             release-assets/*.sha256
           generate_release_notes: true
+          fail_on_unmatched_files: true
+          body: |
+            ## 📦 bgRPIImage — ${{ github.ref_name }}
+
+            Built from commit `${{ github.sha }}`.
+
+            ### 🔐 Verify
+            ```bash
+            sha256sum -c *.sha256
+            ```
+
+            ### 📥 Flash
+            Write directly to SD card / eMMC with `dd`, Raspberry Pi Imager or balenaEtcher.
