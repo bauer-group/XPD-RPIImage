@@ -1,0 +1,5 @@
+# Mirrored from ../scripts/requirements.txt at image-build time.
+# Keep in sync; this copy exists because Docker COPY cannot reference paths
+# outside the build context.
+jsonschema>=4.21.0
+rich>=13.7.0
