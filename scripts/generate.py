@@ -430,6 +430,14 @@ def render_users(cfg: dict[str, Any]) -> None:
         script.append(f"  useradd -m -s {shlex.quote(shell)} {shlex.quote(name)}")
         script.append("fi")
         if groups:
+            # `usermod -aG` fails hard on any non-existent group. Pre-create
+            # each one with `groupadd -f` so user-add works even when module
+            # order puts users before the packages (docker, i2c-tools) that
+            # would otherwise install the group.
+            for g in user.get("groups", []):
+                script.append(
+                    f"getent group {shlex.quote(g)} >/dev/null || groupadd {shlex.quote(g)}"
+                )
             script.append(f"usermod -aG {shlex.quote(groups)} {shlex.quote(name)}")
         # chpasswd via stdin keeps the password out of argv / process lists.
         script.append(f"echo {shlex.quote(f'{name}:{pw}')} | chpasswd")
