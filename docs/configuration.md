@@ -14,7 +14,7 @@ with defaults and examples. Source of truth is always the schema.
 | `extends` | string | optional | Relative path to parent variant JSON. See [`variants.md`](variants.md). |
 | `variant` | object | ✅ | Variant metadata (name, description, version). |
 | `base_image` | object | ✅ | Upstream `.img.xz` URL + SHA-256 + arch. |
-| `targets` | array[enum] | ✅ | Hardware targets: `rpi-zero2w`, `rpi4`, `rpi5`, `cm4`, `cm5`. |
+| `targets` | array[enum] | ✅ | Hardware targets: `rpi4`, `rpi5`, `cm4`, `cm5`. (Pi Zero 2 W dropped — 512 MB RAM is insufficient for Docker + Portainer.) |
 | `hostname` | string | ✅ | DNS-compatible hostname (lowercase, `[a-z0-9-]`). |
 | `locale` | object | — | Timezone, keyboard, locale. |
 | `users` | array | ✅ | One or more accounts. |

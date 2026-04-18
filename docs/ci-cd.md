@@ -126,7 +126,7 @@ visible in the Actions UI sidebar:
 | Variant | canbus-plattform |
 | Hostname | bg-canbus |
 | Architecture | arm64 |
-| Hardware targets | rpi-zero2w, rpi4, rpi5, cm4, cm5 |
+| Hardware targets | rpi4, rpi5, cm4, cm5 |
 
 ## ⚙️ Feature matrix
 
