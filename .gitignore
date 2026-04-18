@@ -41,3 +41,4 @@ venv/
 .env
 .env.local
 secrets.json
+.claude/
