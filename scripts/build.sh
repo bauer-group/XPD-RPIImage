@@ -161,3 +161,15 @@ cp -v "$IMG" "$OUT"
 echo "[build] compressing"
 xz -T0 -f "$OUT"
 echo "[build] done -> ${OUT}.xz"
+
+# When CI invokes us via `sudo -E` (needed for loop devices / kpartx /
+# chroot), dist/ ends up owned by root. The next workflow steps
+# (sha256sum, upload-artifact) run as the regular runner user and
+# cannot write into dist/ - they fail with "Permission denied".
+# Hand the output directory back to the invoking user so post-build
+# steps work without another sudo. Also covers image-cache/ + workspace-*
+# which contain many files the runner user might want to clean later.
+if [[ "${EUID:-$(id -u)}" -eq 0 && -n "${SUDO_UID:-}" && -n "${SUDO_GID:-}" ]]; then
+    echo "[build] handing ownership back to ${SUDO_USER:-uid ${SUDO_UID}}"
+    chown -R "${SUDO_UID}:${SUDO_GID}" dist "$ROOT/src/image-cache" "$ROOT/src/workspace-${VARIANT}" 2>/dev/null || true
+fi
