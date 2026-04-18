@@ -1,2 +1,0 @@
-#!/usr/bin/env bash
-test -f /bgRPIImage-users/files/_generated/create-users.sh

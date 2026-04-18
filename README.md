@@ -71,7 +71,7 @@ make deps                                  # pip install requirements
 make validate                              # schema-check all variants
 make build VARIANT=canbus-plattform        # build the image
 ```
-Output lands in `dist/bgRPIImage-<variant>-v<version>.img.xz`.
+Output lands in `dist/bgrpiimage-<variant>-v<version>.img.xz`.
 
 ### Option 3 — GitHub Actions
 
@@ -111,7 +111,7 @@ Adding a new variant is a 10-line JSON file — see
                                                             │
                                                             ▼
                                             ┌──────────────────────────┐
-                                            │ dist/bgRPIImage-…img.xz  │
+                                            │ dist/bgrpiimage-…img.xz  │
                                             └──────────────────────────┘
 ```
 More detail: [`docs/architecture.md`](docs/architecture.md).
@@ -157,19 +157,19 @@ workflow passes them through automatically.
 
 ### Change credentials / network on the device (post-flash)
 
-Every image ships `/usr/local/sbin/bgRPIImage-setup` — a one-stop helper
+Every image ships `/usr/local/sbin/bgrpiimage-setup` — a one-stop helper
 for the routine post-flash changes:
 
 ```bash
-sudo bgRPIImage-setup password                       # rotate admin pw
-sudo bgRPIImage-setup password alice                 # rotate another user
-sudo bgRPIImage-setup wifi "MyNet" "s3cret" DE       # join a WiFi
-sudo bgRPIImage-setup wifi --disable                 # tear down wlan0
-sudo bgRPIImage-setup ip eth0 dhcp                   # back to DHCP
-sudo bgRPIImage-setup ip eth0 static 10.0.0.5/24 10.0.0.1 1.1.1.1
-sudo bgRPIImage-setup status                         # overview
+sudo bgrpiimage-setup password                       # rotate admin pw
+sudo bgrpiimage-setup password alice                 # rotate another user
+sudo bgrpiimage-setup wifi "MyNet" "s3cret" DE       # join a WiFi
+sudo bgrpiimage-setup wifi --disable                 # tear down wlan0
+sudo bgrpiimage-setup ip eth0 dhcp                   # back to DHCP
+sudo bgrpiimage-setup ip eth0 static 10.0.0.5/24 10.0.0.1 1.1.1.1
+sudo bgrpiimage-setup status                         # overview
 ```
-All IP changes land as `/etc/systemd/network/50-bgRPIImage-<iface>.network`
+All IP changes land as `/etc/systemd/network/50-bgrpiimage-<iface>.network`
 drop-ins (our file prefix wins over the image-defaults), so they survive
 upgrades and are trivial to revert by deleting the drop-in.
 
@@ -195,7 +195,7 @@ subcommand reference.
 ├── src/                                   # CustomPiOS distro
 │   ├── config                             # distro-level config
 │   ├── image/config                       # image-level (base URL etc.)
-│   ├── modules/                           # bgRPIImage-{base,users,network,boot,
+│   ├── modules/                           # bgrpiimage-{base,users,network,boot,
 │   │                                      #              can,docker,portainer,
 │   │                                      #              unattended-upgrades}
 │   └── variants/                          # per-variant shell config (generated)

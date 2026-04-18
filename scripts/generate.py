@@ -222,7 +222,7 @@ def clean_generated(module_name: str) -> Path:
 # Renderers - one per feature area
 # -----------------------------------------------------------------------------
 def render_base(cfg: dict[str, Any]) -> None:
-    gen = clean_generated("bgRPIImage-base")
+    gen = clean_generated("bgrpiimage-base")
     write(gen / "hostname", cfg["hostname"] + "\n")
     locale = cfg.get("locale", {})
     lines = [
@@ -234,10 +234,10 @@ def render_base(cfg: dict[str, Any]) -> None:
     packages = cfg.get("packages", [])
     write(gen / "packages.list", "\n".join(packages) + ("\n" if packages else ""))
 
-    # /etc/bgRPIImage-release - sourced by the MOTD banner and any ops tooling.
+    # /etc/bgrpiimage-release - sourced by the MOTD banner and any ops tooling.
     variant = cfg["variant"]
     release_lines = [
-        f'BGRPIIMAGE_DIST="bgRPIImage"\n',
+        f'BGRPIIMAGE_DIST="bgrpiimage"\n',
         f'BGRPIIMAGE_VARIANT={shlex.quote(variant["name"])}\n',
         f'BGRPIIMAGE_VERSION={shlex.quote(variant.get("version", "0.0.0"))}\n',
         f'BGRPIIMAGE_DESCRIPTION={shlex.quote(variant.get("description", ""))}\n',
@@ -306,7 +306,7 @@ _MOTD_SCRIPT = r"""#!/bin/bash
 # Keep this script minimal and tolerant: it must never block a login.
 set +e
 
-[ -r /etc/bgRPIImage-release ] && . /etc/bgRPIImage-release
+[ -r /etc/bgrpiimage-release ] && . /etc/bgrpiimage-release
 
 if [ -t 1 ]; then
     CY=$'\033[1;36m'; GR=$'\033[1;32m'; DIM=$'\033[2m'
@@ -388,10 +388,10 @@ fi
 # hash of "12345678" with the salt that chpasswd picks is predictable enough
 # that we can detect it cheaply: compare the first 10 chars of the hash to a
 # known-unchanged marker stored at image-build time.
-if [ -f /etc/bgRPIImage-default-password-active ] && [ -r /etc/shadow ]; then
+if [ -f /etc/bgrpiimage-default-password-active ] && [ -r /etc/shadow ]; then
     printf "  ${RD}SECURITY:${NC} default admin password is still active.\n"
-    printf "           change it now with: ${YE}sudo bgRPIImage-setup password${NC}\n"
-    printf "           (also review: ${YE}sudo bgRPIImage-setup status${NC})\n"
+    printf "           change it now with: ${YE}sudo bgrpiimage-setup password${NC}\n"
+    printf "           (also review: ${YE}sudo bgrpiimage-setup status${NC})\n"
 fi
 echo "${CY}${sep}${NC}"
 """
@@ -401,7 +401,7 @@ _KNOWN_DEMO_PASSWORDS = {"12345678"}
 
 
 def render_users(cfg: dict[str, Any]) -> None:
-    gen = clean_generated("bgRPIImage-users")
+    gen = clean_generated("bgrpiimage-users")
     users = cfg.get("users", [])
     remove_users = cfg.get("remove_users", [])
     root = cfg.get("root", {})
@@ -411,8 +411,8 @@ def render_users(cfg: dict[str, Any]) -> None:
     # demo password after env resolution. The MOTD reads this marker and
     # prompts the operator to rotate the credential.
     if any(u.get("password") in _KNOWN_DEMO_PASSWORDS for u in users):
-        script.append("touch /etc/bgRPIImage-default-password-active")
-        script.append("chmod 644 /etc/bgRPIImage-default-password-active")
+        script.append("touch /etc/bgrpiimage-default-password-active")
+        script.append("chmod 644 /etc/bgrpiimage-default-password-active")
         script.append("")
 
     for user in users:
@@ -431,9 +431,9 @@ def render_users(cfg: dict[str, Any]) -> None:
         if user.get("sudo_nopasswd"):
             sudoers_line = f"{name} ALL=(ALL) NOPASSWD:ALL"
             script.append(
-                f"echo {shlex.quote(sudoers_line)} > /etc/sudoers.d/010-bgRPIImage-{name}"
+                f"echo {shlex.quote(sudoers_line)} > /etc/sudoers.d/010-bgrpiimage-{name}"
             )
-            script.append(f"chmod 440 /etc/sudoers.d/010-bgRPIImage-{name}")
+            script.append(f"chmod 440 /etc/sudoers.d/010-bgrpiimage-{name}")
         keys = user.get("ssh_authorized_keys") or []
         if keys:
             script.append(f"install -d -m 700 -o {shlex.quote(name)} -g {shlex.quote(name)} /home/{name}/.ssh")
@@ -458,7 +458,7 @@ def render_users(cfg: dict[str, Any]) -> None:
         script.append("getent group wheel >/dev/null || groupadd wheel")
         for u in su_users:
             script.append(f"usermod -aG wheel {shlex.quote(u)}")
-        script.append("install -m 644 /tmp/_bgRPIImage_su_pam /etc/pam.d/su")
+        script.append("install -m 644 /tmp/_bgrpiimage_su_pam /etc/pam.d/su")
 
     ssh_pw = root.get("ssh_password_auth", True)
     ssh_root = root.get("ssh_permit_root_login", False)
@@ -470,10 +470,10 @@ def render_users(cfg: dict[str, Any]) -> None:
     sshd.append(f"PermitRootLogin {'yes' if ssh_root else 'no'}")
     sshd.append("ChallengeResponseAuthentication no")
     sshd.append("UsePAM yes")
-    script.append("cat > /etc/ssh/sshd_config.d/10-bgRPIImage.conf <<'__BGRPIIMAGE_EOF__'")
+    script.append("cat > /etc/ssh/sshd_config.d/10-bgrpiimage.conf <<'__BGRPIIMAGE_EOF__'")
     script.extend(sshd)
     script.append("__BGRPIIMAGE_EOF__")
-    script.append("chmod 644 /etc/ssh/sshd_config.d/10-bgRPIImage.conf")
+    script.append("chmod 644 /etc/ssh/sshd_config.d/10-bgrpiimage.conf")
 
     write(gen / "create-users.sh", "\n".join(script) + "\n", executable=True)
 
@@ -493,7 +493,7 @@ def render_users(cfg: dict[str, Any]) -> None:
 
 
 def render_network(cfg: dict[str, Any]) -> None:
-    gen = clean_generated("bgRPIImage-network")
+    gen = clean_generated("bgrpiimage-network")
     net = cfg.get("network", {})
     nwd = gen / "systemd-networkd"
     nwd.mkdir(parents=True, exist_ok=True)
@@ -562,7 +562,7 @@ def render_network(cfg: dict[str, Any]) -> None:
 
 
 def render_boot(cfg: dict[str, Any]) -> None:
-    gen = clean_generated("bgRPIImage-boot")
+    gen = clean_generated("bgrpiimage-boot")
     boot = cfg.get("boot_config", {})
     lines = ["# === BAUER GROUP auto-generated boot config ===", ""]
     if boot.get("enable_i2c"):
@@ -587,11 +587,11 @@ def render_boot(cfg: dict[str, Any]) -> None:
     for extra in boot.get("extra_lines", []):
         lines.append(extra)
     lines.append("")
-    write(gen / "config-bgRPIImage.txt", "\n".join(lines))
+    write(gen / "config-bgrpiimage.txt", "\n".join(lines))
 
 
 def render_can(cfg: dict[str, Any]) -> None:
-    gen = clean_generated("bgRPIImage-can")
+    gen = clean_generated("bgrpiimage-can")
     can = cfg.get("can", {})
     ifaces = can.get("interfaces", [])
     if not ifaces:
@@ -626,7 +626,7 @@ def render_can(cfg: dict[str, Any]) -> None:
 
 
 def render_docker(cfg: dict[str, Any]) -> None:
-    gen = clean_generated("bgRPIImage-docker")
+    gen = clean_generated("bgrpiimage-docker")
     docker = cfg.get("docker") or {}
     if not docker.get("enabled"):
         write(gen / ".disabled", "")
@@ -686,7 +686,7 @@ def render_docker(cfg: dict[str, Any]) -> None:
 
 
 def render_portainer(cfg: dict[str, Any]) -> None:
-    gen = clean_generated("bgRPIImage-portainer")
+    gen = clean_generated("bgrpiimage-portainer")
     p = cfg.get("portainer") or {}
     if not p.get("enabled"):
         write(gen / ".disabled", "")
@@ -748,7 +748,7 @@ def render_portainer(cfg: dict[str, Any]) -> None:
 
 
 def render_unattended(cfg: dict[str, Any]) -> None:
-    gen = clean_generated("bgRPIImage-unattended-upgrades")
+    gen = clean_generated("bgrpiimage-unattended-upgrades")
     u = cfg.get("unattended_upgrades") or {}
     if not u.get("enabled"):
         write(gen / ".disabled", "")
@@ -838,7 +838,7 @@ def render_unattended(cfg: dict[str, Any]) -> None:
             f'WINDOW_START="{r_start}"',
             f'WINDOW_END="{r_end}"',
             f'IF_REQUIRED_ONLY={"1" if if_required else "0"}',
-            'TAG="bgRPIImage-reboot"',
+            'TAG="bgrpiimage-reboot"',
             'now=$(date +%H:%M)',
             'in_window() {',
             '  local now=$1 start=$2 end=$3',
@@ -869,14 +869,14 @@ def render_unattended(cfg: dict[str, Any]) -> None:
             '/sbin/shutdown -r +1 "bgRPIImage: scheduled reboot after unattended-upgrade (${pkgs:-kernel/system package update})"',
             '',
         ]
-        write(gen / "bgRPIImage-reboot-window.sh", "\n".join(check_script), executable=True)
+        write(gen / "bgrpiimage-reboot-window.sh", "\n".join(check_script), executable=True)
 
         # Event-driven trigger: run the reboot-window check right after every
         # apt-daily-upgrade.service execution. '-' prefix ignores failures so
         # a broken script never blocks the upgrade service from succeeding.
         apt_upgrade_dropin = (
             "[Service]\n"
-            "ExecStartPost=-/usr/local/sbin/bgRPIImage-reboot-window.sh\n"
+            "ExecStartPost=-/usr/local/sbin/bgrpiimage-reboot-window.sh\n"
         )
         write(gen / "apt-daily-upgrade.service.d/override.conf", apt_upgrade_dropin)
 
@@ -887,9 +887,9 @@ def render_unattended(cfg: dict[str, Any]) -> None:
             "\n"
             "[Service]\n"
             "Type=oneshot\n"
-            "ExecStart=/usr/local/sbin/bgRPIImage-reboot-window.sh\n"
+            "ExecStart=/usr/local/sbin/bgrpiimage-reboot-window.sh\n"
         )
-        write(gen / "bgRPIImage-reboot-window.service", svc)
+        write(gen / "bgrpiimage-reboot-window.service", svc)
 
         tmr = (
             "[Unit]\n"
@@ -899,12 +899,12 @@ def render_unattended(cfg: dict[str, Any]) -> None:
             f"OnCalendar=*-*-* {r_start}:00\n"
             f"RandomizedDelaySec={r_window * 60}\n"
             "Persistent=true\n"
-            "Unit=bgRPIImage-reboot-window.service\n"
+            "Unit=bgrpiimage-reboot-window.service\n"
             "\n"
             "[Install]\n"
             "WantedBy=timers.target\n"
         )
-        write(gen / "bgRPIImage-reboot-window.timer", tmr)
+        write(gen / "bgrpiimage-reboot-window.timer", tmr)
 
 
 def _window_minutes(start_hhmm: str, end_hhmm: str) -> int:
@@ -922,14 +922,14 @@ def _window_minutes(start_hhmm: str, end_hhmm: str) -> int:
 # Variant shell config & module selection
 # -----------------------------------------------------------------------------
 ACTIVE_MODULES: list[str] = [
-    "bgRPIImage-base",
-    "bgRPIImage-users",
-    "bgRPIImage-network",
-    "bgRPIImage-boot",
-    "bgRPIImage-can",
-    "bgRPIImage-docker",
-    "bgRPIImage-portainer",
-    "bgRPIImage-unattended-upgrades",
+    "bgrpiimage-base",
+    "bgrpiimage-users",
+    "bgrpiimage-network",
+    "bgrpiimage-boot",
+    "bgrpiimage-can",
+    "bgrpiimage-docker",
+    "bgrpiimage-portainer",
+    "bgrpiimage-unattended-upgrades",
 ]
 
 
@@ -944,7 +944,7 @@ def render_variant_config(cfg: dict[str, Any]) -> None:
     # distro-level src/config. MODULES controls execution order in the chroot.
     variant_cfg: list[str] = []
     variant_cfg.append(f"# Auto-generated variant config for {name}\n")
-    variant_cfg.append(f"export DIST_NAME={shlex.quote(f'bgRPIImage-{name}')}\n")
+    variant_cfg.append(f"export DIST_NAME={shlex.quote(f'bgrpiimage-{name}')}\n")
     variant_cfg.append(f"export DIST_VERSION={shlex.quote(cfg['variant'].get('version', '0.0.0'))}\n")
     variant_cfg.append(f"export MODULES={shlex.quote(' '.join(modules))}\n")
     variant_cfg.append(f"export BGRPIIMAGE_VARIANT={shlex.quote(name)}\n")
@@ -957,13 +957,13 @@ def render_variant_config(cfg: dict[str, Any]) -> None:
 
 def _module_enabled(module: str, cfg: dict[str, Any]) -> bool:
     """Some modules are only included if their section is populated/enabled."""
-    if module == "bgRPIImage-can":
+    if module == "bgrpiimage-can":
         return bool((cfg.get("can") or {}).get("interfaces"))
-    if module == "bgRPIImage-docker":
+    if module == "bgrpiimage-docker":
         return bool((cfg.get("docker") or {}).get("enabled"))
-    if module == "bgRPIImage-portainer":
+    if module == "bgrpiimage-portainer":
         return bool((cfg.get("portainer") or {}).get("enabled"))
-    if module == "bgRPIImage-unattended-upgrades":
+    if module == "bgrpiimage-unattended-upgrades":
         return bool((cfg.get("unattended_upgrades") or {}).get("enabled"))
     return True
 
@@ -1062,14 +1062,14 @@ def main() -> int:
     ))
 
     steps: list[tuple[str, Any]] = [
-        ("bgRPIImage-base",                 render_base),
-        ("bgRPIImage-users",                render_users),
-        ("bgRPIImage-network",              render_network),
-        ("bgRPIImage-boot",                 render_boot),
-        ("bgRPIImage-can",                  render_can),
-        ("bgRPIImage-docker",               render_docker),
-        ("bgRPIImage-portainer",            render_portainer),
-        ("bgRPIImage-unattended-upgrades",  render_unattended),
+        ("bgrpiimage-base",                 render_base),
+        ("bgrpiimage-users",                render_users),
+        ("bgrpiimage-network",              render_network),
+        ("bgrpiimage-boot",                 render_boot),
+        ("bgrpiimage-can",                  render_can),
+        ("bgrpiimage-docker",               render_docker),
+        ("bgrpiimage-portainer",            render_portainer),
+        ("bgrpiimage-unattended-upgrades",  render_unattended),
     ]
 
     table = Table(box=box.SIMPLE, show_header=True, header_style="bold dim")

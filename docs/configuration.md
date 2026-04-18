@@ -78,7 +78,7 @@ as env vars; they override the `${VAR:-default}` fallback when set.
 }
 ```
 - `name` acts as the merge key when `extends` combines `users` arrays.
-- `sudo_nopasswd: true` writes `/etc/sudoers.d/010-bgRPIImage-<name>` with
+- `sudo_nopasswd: true` writes `/etc/sudoers.d/010-bgrpiimage-<name>` with
   `NOPASSWD:ALL`.
 - `ssh_authorized_keys` is optional; listed keys go into
   `/home/<name>/.ssh/authorized_keys` with mode 600.
@@ -97,7 +97,7 @@ as env vars; they override the `${VAR:-default}` fallback when set.
 - `su_nopasswd_users` → added to the `wheel` group and `pam_wheel.so trust`
   is installed so listed users can `su` / `sudo su -` without a password.
 - `ssh_password_auth` and `ssh_permit_root_login` are written to
-  `/etc/ssh/sshd_config.d/10-bgRPIImage.conf`.
+  `/etc/ssh/sshd_config.d/10-bgrpiimage.conf`.
 
 ---
 
@@ -138,10 +138,10 @@ Everything written ends up between fenced markers in
 `/boot/firmware/config.txt`:
 
 ```text
-# >>> bgRPIImage AUTO-GENERATED >>>
+# >>> bgrpiimage AUTO-GENERATED >>>
 dtparam=spi=on
 dtoverlay=mcp2515-can0,oscillator=16000000,interrupt=25
-# <<< bgRPIImage AUTO-GENERATED <<<
+# <<< bgrpiimage AUTO-GENERATED <<<
 ```
 | Key | Effect |
 | --- | --- |
@@ -187,7 +187,7 @@ package list automatically.
 The `daemon` object is written verbatim to `/etc/docker/daemon.json`, so any
 Docker daemon setting is allowed.
 
-`networks[]` entries are materialised via a `bgRPIImage-docker-networks.service`
+`networks[]` entries are materialised via a `bgrpiimage-docker-networks.service`
 that runs once on first boot and marks itself done via a sentinel file.
 
 ---
@@ -250,7 +250,7 @@ Generates three files:
 
 - `/etc/issue` — console pre-login (getty expands `\n`, `\4`, `\6` live)
 - `/etc/issue.net` — SSH pre-login (static, referenced via sshd `Banner` directive)
-- `/etc/update-motd.d/10-bgRPIImage` — dynamic post-login MOTD
+- `/etc/update-motd.d/10-bgrpiimage` — dynamic post-login MOTD
 
 Output preview: [`banner-and-updates.md`](banner-and-updates.md).
 

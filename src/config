@@ -2,7 +2,7 @@
 # Sourced by CustomPiOS's build script before the selected variant's config.
 
 # Distro identity (variant config may refine DIST_NAME / VERSION).
-export DIST_NAME="bgRPIImage"
+export DIST_NAME="bgrpiimage"
 export DIST_VERSION="0.1.0"
 
 # BASE_BOARD -> key into CustomPiOS/src/images.yml. All current variants use

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# bgRPIImage-unattended-upgrades: configure u-u with maintenance window + reboot
+# bgrpiimage-unattended-upgrades: configure u-u with maintenance window + reboot
 # window. The stock Automatic-Reboot-Time is a single timestamp; we need a
-# *window*, so we disable stock reboot and install our own bgRPIImage-reboot-window
+# *window*, so we disable stock reboot and install our own bgrpiimage-reboot-window
 # timer that fires with RandomizedDelaySec across [start,end].
 set -x
 set -e
@@ -11,7 +11,7 @@ export DEBIAN_FRONTEND=noninteractive
 source /common.sh
 install_cleanup_trap
 
-GEN=/bgRPIImage-unattended-upgrades/files/_generated
+GEN=/bgrpiimage-unattended-upgrades/files/_generated
 
 apt-get update
 apt-get install -y --no-install-recommends unattended-upgrades apt-listchanges
@@ -30,15 +30,15 @@ install -D -m 644 "$GEN/apt-daily-upgrade.timer.d/override.conf" \
 #  (a) apt-daily-upgrade.service ExecStartPost drop-in -> event-driven,
 #      runs immediately after every unattended-upgrade attempt. Reboot fires
 #      only when /var/run/reboot-required was set by a package post-install.
-#  (b) bgRPIImage-reboot-window.timer                  -> daily safety net,
+#  (b) bgrpiimage-reboot-window.timer                  -> daily safety net,
 #      catches devices that missed (a) (offline during update window, etc).
-if [[ -f "$GEN/bgRPIImage-reboot-window.sh" ]]; then
-    install -D -m 755 "$GEN/bgRPIImage-reboot-window.sh" /usr/local/sbin/bgRPIImage-reboot-window.sh
-    install -D -m 644 "$GEN/bgRPIImage-reboot-window.service" /etc/systemd/system/bgRPIImage-reboot-window.service
-    install -D -m 644 "$GEN/bgRPIImage-reboot-window.timer"   /etc/systemd/system/bgRPIImage-reboot-window.timer
+if [[ -f "$GEN/bgrpiimage-reboot-window.sh" ]]; then
+    install -D -m 755 "$GEN/bgrpiimage-reboot-window.sh" /usr/local/sbin/bgrpiimage-reboot-window.sh
+    install -D -m 644 "$GEN/bgrpiimage-reboot-window.service" /etc/systemd/system/bgrpiimage-reboot-window.service
+    install -D -m 644 "$GEN/bgrpiimage-reboot-window.timer"   /etc/systemd/system/bgrpiimage-reboot-window.timer
     install -D -m 644 "$GEN/apt-daily-upgrade.service.d/override.conf" \
         /etc/systemd/system/apt-daily-upgrade.service.d/override.conf
-    systemctl enable bgRPIImage-reboot-window.timer
+    systemctl enable bgrpiimage-reboot-window.timer
 fi
 
 systemctl enable unattended-upgrades

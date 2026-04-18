@@ -73,10 +73,10 @@ Release assets, generates changelog from commits since last tag.
 ## 🏷️ Artifact naming
 
 ```text
-  tag push          →  bgRPIImage-<variant>-v<version>
-  push to main      →  bgRPIImage-<variant>-v<version>-<sha7>
-  pull_request      →  bgRPIImage-<variant>-v<version>-pr<n>-<sha7>
-  workflow_dispatch →  bgRPIImage-<variant>-v<version>-<sha7>
+  tag push          →  bgrpiimage-<variant>-v<version>
+  push to main      →  bgrpiimage-<variant>-v<version>-<sha7>
+  pull_request      →  bgrpiimage-<variant>-v<version>-pr<n>-<sha7>
+  workflow_dispatch →  bgrpiimage-<variant>-v<version>-<sha7>
 ```
 The same suffix flows through `scripts/build.sh` (via `VERSION` and
 `IMAGE_SUFFIX` env vars) into the `.img.xz` filename — so the downloaded
@@ -86,7 +86,7 @@ file matches the artifact container name exactly.
 
 Between `v0.1.0` and `v0.2.0` there can be dozens of commits, all declaring
 `version: "0.1.0"` in the JSON. Without the SHA suffix, every push would
-produce `bgRPIImage-canbus-plattform-v0.1.0.img.xz` and overwrite the prior
+produce `bgrpiimage-canbus-plattform-v0.1.0.img.xz` and overwrite the prior
 run's artifact. The SHA keeps them distinct.
 
 ---
@@ -137,7 +137,7 @@ visible in the Actions UI sidebar:
 | Device tree overlays | 2 · mcp2515-can0, mcp2515-can1 |
 
 ## 📦 Artifact
-| File | bgRPIImage-canbus-plattform-v0.1.0-abc1234.img.xz |
+| File | bgrpiimage-canbus-plattform-v0.1.0-abc1234.img.xz |
 | Compressed size | 651 MB |
 | SHA-256 | 0123…abc |
 
@@ -146,7 +146,7 @@ visible in the Actions UI sidebar:
 | Duration | 42m 17s |
 
 ### 🔐 Verify
-echo "…  bgRPIImage-…img.xz" | sha256sum -c -
+echo "…  bgrpiimage-…img.xz" | sha256sum -c -
 ```
 Kind badge:
 

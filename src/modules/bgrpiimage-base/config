@@ -1,2 +1,2 @@
-# bgRPIImage-base module config
+# bgrpiimage-base module config
 BGRPIIMAGE_BASE_EXTRA_PACKAGES="${BGRPIIMAGE_BASE_EXTRA_PACKAGES:-}"

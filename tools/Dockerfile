@@ -42,8 +42,8 @@ WORKDIR /workspace
 
 # A friendly shell prompt so the user knows they're inside the container.
 RUN printf '%s\n' \
-    'export PS1="\[\e[1;36m\](bgRPIImage-tools)\[\e[0m\] \w \$ "' \
+    'export PS1="\[\e[1;36m\](bgrpiimage-tools)\[\e[0m\] \w \$ "' \
     'alias ll="ls -la"' \
-    > /etc/profile.d/bgRPIImage.sh
+    > /etc/profile.d/bgrpiimage.sh
 
 CMD ["/bin/bash", "-l"]

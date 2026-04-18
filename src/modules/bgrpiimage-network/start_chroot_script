@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bgRPIImage-network: switch to systemd-networkd + wpa_supplicant@wlan0
+# bgrpiimage-network: switch to systemd-networkd + wpa_supplicant@wlan0
 set -x
 set -e
 export LC_ALL=C
@@ -8,7 +8,7 @@ export DEBIAN_FRONTEND=noninteractive
 source /common.sh
 install_cleanup_trap
 
-GEN=/bgRPIImage-network/files/_generated
+GEN=/bgrpiimage-network/files/_generated
 
 apt-get update
 apt-get install -y --no-install-recommends \

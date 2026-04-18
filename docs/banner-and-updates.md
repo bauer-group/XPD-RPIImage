@@ -13,7 +13,7 @@ Three distinct surfaces, three mechanisms:
 | --- | --- | --- | --- |
 | Console (HDMI / tty) **pre-login** | `/etc/issue` | getty (expands `\n`, `\4`, `\6`, `\s`, `\r`, `\m`) | Variant, version, live hostname, IPv4/IPv6 of `eth0` + `wlan0` |
 | SSH **pre-login** | `/etc/issue.net` + `sshd_config.d` `Banner` directive | sshd (reads raw, no escape expansion) | Variant, version, description, legal note |
-| All sessions **post-login** | `/etc/update-motd.d/10-bgRPIImage` (executable) | `pam_motd.so` on login | Fully dynamic — see below |
+| All sessions **post-login** | `/etc/update-motd.d/10-bgrpiimage` (executable) | `pam_motd.so` on login | Fully dynamic — see below |
 
 ### Post-login MOTD preview
 
@@ -50,10 +50,10 @@ Source: [`scripts/generate.py`](../scripts/generate.py) → `_MOTD_SCRIPT`.
 
 ### Release metadata sourced by the MOTD
 
-`/etc/bgRPIImage-release` is written at image build time:
+`/etc/bgrpiimage-release` is written at image build time:
 
 ```sh
-BGRPIIMAGE_DIST="bgRPIImage"
+BGRPIIMAGE_DIST="bgrpiimage"
 BGRPIIMAGE_VARIANT="canbus-plattform"
 BGRPIIMAGE_VERSION="0.1.0"
 BGRPIIMAGE_DESCRIPTION="BAUER GROUP CANbus plattform - ..."
@@ -73,9 +73,9 @@ instead of parsing `/etc/os-release`.
 - `apt-daily.timer` / `apt-daily-upgrade.timer` systemd drop-ins →
   shift download + install into the configured `schedule.{start, end}` window
   via `RandomizedDelaySec`
-- `bgRPIImage-reboot-window.{service,timer}` → daily safety-net check
+- `bgrpiimage-reboot-window.{service,timer}` → daily safety-net check
 - `apt-daily-upgrade.service.d/override.conf` → event-driven
-  `ExecStartPost=-/usr/local/sbin/bgRPIImage-reboot-window.sh`
+  `ExecStartPost=-/usr/local/sbin/bgrpiimage-reboot-window.sh`
 
 ### Reboot decision tree
 
@@ -83,7 +83,7 @@ instead of parsing `/etc/os-release`.
   apt-daily-upgrade.service succeeded
           │
           ▼  (ExecStartPost drop-in, event-driven)
-  bgRPIImage-reboot-window.sh
+  bgrpiimage-reboot-window.sh
           │
           ├── /var/run/reboot-required NOT present  ──▶ log "no reboot required", exit
           ├── current time outside window          ──▶ log "deferring", exit
@@ -108,7 +108,7 @@ Same script fires from two places:
 | Trigger | When | Purpose |
 | --- | --- | --- |
 | `apt-daily-upgrade.service` `ExecStartPost=` | right after every update attempt | Fast reaction — reboots within seconds of a successful update if in window |
-| `bgRPIImage-reboot-window.timer` | daily calendar event inside the reboot window | Safety net — catches devices that were offline or whose update service failed during the event |
+| `bgrpiimage-reboot-window.timer` | daily calendar event inside the reboot window | Safety net — catches devices that were offline or whose update service failed during the event |
 
 If the device was off during the update window and boots later, the
 persistent timer catches up next time it fires.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bgRPIImage-can: install can-utils and drop systemd-networkd configs for can0/can1.
+# bgrpiimage-can: install can-utils and drop systemd-networkd configs for can0/can1.
 # systemd-networkd handles both link setup (TransmitQueueLength) and the
 # [CAN] block (bitrate). Alternative would be /etc/network/interfaces.d -
 # but we already standardize on networkd, so we stay consistent.
@@ -11,7 +11,7 @@ export DEBIAN_FRONTEND=noninteractive
 source /common.sh
 install_cleanup_trap
 
-GEN=/bgRPIImage-can/files/_generated
+GEN=/bgrpiimage-can/files/_generated
 
 apt-get update
 if [[ -f "$GEN/packages.list" ]]; then

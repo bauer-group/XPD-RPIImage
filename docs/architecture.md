@@ -52,14 +52,14 @@ Output breakdown:
 
 | Module | Generated artifacts |
 | --- | --- |
-| `bgRPIImage-base` | `hostname`, `locale.env`, `packages.list`, `release.env`, `ssh.env`, `issue`, `issue.net`, `sshd_banner.conf`, `motd-banner.sh` |
-| `bgRPIImage-users` | `create-users.sh`, `pam_su` |
-| `bgRPIImage-network` | `systemd-networkd/10-eth.network`, `20-wlan.network`, `wpa_supplicant/wpa_supplicant-wlan0.conf` |
-| `bgRPIImage-boot` | `config-bgRPIImage.txt` (dtparam + dtoverlay snippet) |
-| `bgRPIImage-can` | `systemd-networkd/40-can0.network`, `40-can1.network`, `packages.list` |
-| `bgRPIImage-docker` | `daemon.json`, `98-docker.conf` (sysctl), `docker-support.service`, `create-networks.sh` |
-| `bgRPIImage-portainer` | `portainer.service`, `portainer.env` |
-| `bgRPIImage-unattended-upgrades` | `50unattended-upgrades`, `20auto-upgrades`, timer overrides, reboot-window service+timer+script |
+| `bgrpiimage-base` | `hostname`, `locale.env`, `packages.list`, `release.env`, `ssh.env`, `issue`, `issue.net`, `sshd_banner.conf`, `motd-banner.sh` |
+| `bgrpiimage-users` | `create-users.sh`, `pam_su` |
+| `bgrpiimage-network` | `systemd-networkd/10-eth.network`, `20-wlan.network`, `wpa_supplicant/wpa_supplicant-wlan0.conf` |
+| `bgrpiimage-boot` | `config-bgRPIImage.txt` (dtparam + dtoverlay snippet) |
+| `bgrpiimage-can` | `systemd-networkd/40-can0.network`, `40-can1.network`, `packages.list` |
+| `bgrpiimage-docker` | `daemon.json`, `98-docker.conf` (sysctl), `docker-support.service`, `create-networks.sh` |
+| `bgrpiimage-portainer` | `portainer.service`, `portainer.env` |
+| `bgrpiimage-unattended-upgrades` | `50unattended-upgrades`, `20auto-upgrades`, timer overrides, reboot-window service+timer+script |
 
 Modules whose feature is disabled in the JSON get a `.disabled` marker and
 are skipped by their `filter` script at build time.
@@ -85,7 +85,7 @@ The interesting logic is in the generator.
 
 ### 4. Delivery
 
-Local: `dist/bgRPIImage-<variant>-v<version>.img.xz` + `.sha256`.
+Local: `dist/bgrpiimage-<variant>-v<version>.img.xz` + `.sha256`.
 
 CI: see [`ci-cd.md`](ci-cd.md). In short:
 
@@ -121,7 +121,7 @@ done by the generator.
 1. Add an optional section to [`config/schema.json`](../config/schema.json).
 2. Add a `render_wireguard()` function to [`scripts/generate.py`](../scripts/generate.py).
 3. Append the module name to `ACTIVE_MODULES` + update `_module_enabled()`.
-4. Create `src/modules/bgRPIImage-wireguard/` with `config`, `filter`,
+4. Create `src/modules/bgrpiimage-wireguard/` with `config`, `filter`,
    `start_chroot_script`.
 5. Set defaults in `config/variants/base.json`.
 

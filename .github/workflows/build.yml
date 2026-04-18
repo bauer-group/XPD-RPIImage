@@ -355,7 +355,7 @@ jobs:
       - name: 📤 Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: bgRPIImage-${{ matrix.variant }}-${{ steps.meta.outputs.full_tag }}
+          name: bgrpiimage-${{ matrix.variant }}-${{ steps.meta.outputs.full_tag }}
           path: |
             dist/*.img.xz
             dist/*.sha256

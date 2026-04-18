@@ -83,7 +83,7 @@ PY
 fi
 SUFFIX="${IMAGE_SUFFIX:-}"
 
-OUT="dist/bgRPIImage-${VARIANT}-v${VERSION}${SUFFIX}.img"
+OUT="dist/bgrpiimage-${VARIANT}-v${VERSION}${SUFFIX}.img"
 cp -v "$IMG" "$OUT"
 echo "[build] compressing"
 xz -T0 -f "$OUT"

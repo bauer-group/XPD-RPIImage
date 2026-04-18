@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+test -d /bgrpiimage-network/files/_generated

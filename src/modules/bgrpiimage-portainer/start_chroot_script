@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bgRPIImage-portainer: install a systemd-managed Portainer CE/EE container
+# bgrpiimage-portainer: install a systemd-managed Portainer CE/EE container
 # that starts automatically on first boot. The actual image pull happens
 # on the target device (not in chroot) - we just deploy the unit.
 set -x
@@ -9,7 +9,7 @@ export LC_ALL=C
 source /common.sh
 install_cleanup_trap
 
-GEN=/bgRPIImage-portainer/files/_generated
+GEN=/bgrpiimage-portainer/files/_generated
 
 install -D -m 644 "$GEN/portainer.service" /etc/systemd/system/portainer.service
 if [[ -f "$GEN/portainer.env" ]]; then

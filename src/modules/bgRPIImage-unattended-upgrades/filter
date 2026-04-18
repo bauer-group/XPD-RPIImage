@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-test -f /bgRPIImage-unattended-upgrades/files/_generated/50unattended-upgrades \
-    && ! test -f /bgRPIImage-unattended-upgrades/files/_generated/.disabled

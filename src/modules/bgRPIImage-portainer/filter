@@ -1,3 +1,0 @@
-#!/usr/bin/env bash
-test -f /bgRPIImage-portainer/files/_generated/portainer.service \
-    && ! test -f /bgRPIImage-portainer/files/_generated/.disabled

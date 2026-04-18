@@ -68,7 +68,7 @@ tools\run.cmd shell --build
 | --- | --- |
 | `validate [variant]` | Schema-check + env resolve (dry-run, no file writes). |
 | `render <variant>` | Generate module artifacts under `src/modules/*/files/_generated/`. |
-| `build <variant>` | Full image build. Produces `dist/bgRPIImage-<variant>-v<version>.img.xz`. |
+| `build <variant>` | Full image build. Produces `dist/bgrpiimage-<variant>-v<version>.img.xz`. |
 | `shell` | Drop into bash inside the tools container. |
 | `clean` | Wipe generated files + `src/workspace/` + `dist/`. |
 | `help` | Show help. |
@@ -103,7 +103,7 @@ All commands take:
 - `docker-ce-cli` + `docker-compose-plugin` — to launch sibling containers.
 - Python deps from `scripts/requirements.txt` (mirrored into
   `tools/requirements.txt` by the launchers).
-- A friendly `(bgRPIImage-tools)` bash prompt so you know where you are.
+- A friendly `(bgrpiimage-tools)` bash prompt so you know where you are.
 
 The image is tagged `bgrpiimage-tools` locally. Override with
 `BGRPIIMAGE_TOOLS_IMAGE=...` env before invoking the launcher.

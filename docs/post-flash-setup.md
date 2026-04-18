@@ -13,16 +13,16 @@ How to rotate credentials, change WiFi, switch between DHCP and static IP
 
 ---
 
-## 🛠️ The `bgRPIImage-setup` helper
+## 🛠️ The `bgrpiimage-setup` helper
 
-Every image installs `/usr/local/sbin/bgRPIImage-setup`. It covers the three
+Every image installs `/usr/local/sbin/bgrpiimage-setup`. It covers the three
 post-flash changes that otherwise require hand-editing `wpa_supplicant.conf`,
 `systemd-networkd` drop-ins and `passwd`.
 
 Always run it as root (`sudo`).
 
 ```bash
-sudo bgRPIImage-setup help
+sudo bgrpiimage-setup help
 ```
 
 ---
@@ -31,14 +31,14 @@ sudo bgRPIImage-setup help
 
 ```bash
 # change admin's password (the default user)
-sudo bgRPIImage-setup password
+sudo bgrpiimage-setup password
 
 # change another account
-sudo bgRPIImage-setup password alice
+sudo bgrpiimage-setup password alice
 ```
 
 Behind the scenes this runs `passwd <user>` and also removes the
-`/etc/bgRPIImage-default-password-active` marker — the MOTD stops warning
+`/etc/bgrpiimage-default-password-active` marker — the MOTD stops warning
 about default credentials on the next login.
 
 ---
@@ -47,12 +47,12 @@ about default credentials on the next login.
 
 ```bash
 # join a network (prompts for the PSK if omitted)
-sudo bgRPIImage-setup wifi "MyNetwork"
-sudo bgRPIImage-setup wifi "MyNetwork" "s3cret-pass"
-sudo bgRPIImage-setup wifi "MyNetwork" "s3cret-pass" AT    # override country
+sudo bgrpiimage-setup wifi "MyNetwork"
+sudo bgrpiimage-setup wifi "MyNetwork" "s3cret-pass"
+sudo bgrpiimage-setup wifi "MyNetwork" "s3cret-pass" AT    # override country
 
 # tear down WiFi entirely
-sudo bgRPIImage-setup wifi --disable
+sudo bgrpiimage-setup wifi --disable
 ```
 
 The PSK is hashed via `wpa_passphrase` before being written to
@@ -68,28 +68,28 @@ networkctl status wlan0
 
 ## 🌐 IP configuration
 
-All changes land as `/etc/systemd/network/50-bgRPIImage-<iface>.network`.
+All changes land as `/etc/systemd/network/50-bgrpiimage-<iface>.network`.
 The `50-` prefix wins over the image-default `10-*` / `20-*` unit files,
 so changes are non-destructive and trivial to revert (just delete the file).
 
 ### DHCP (the default)
 
 ```bash
-sudo bgRPIImage-setup ip eth0 dhcp
-sudo bgRPIImage-setup ip wlan0 dhcp
+sudo bgrpiimage-setup ip eth0 dhcp
+sudo bgrpiimage-setup ip wlan0 dhcp
 ```
 
 ### Static IPv4
 
 ```bash
 # minimum: CIDR address
-sudo bgRPIImage-setup ip eth0 static 10.0.0.5/24
+sudo bgrpiimage-setup ip eth0 static 10.0.0.5/24
 
 # with gateway
-sudo bgRPIImage-setup ip eth0 static 10.0.0.5/24 10.0.0.1
+sudo bgrpiimage-setup ip eth0 static 10.0.0.5/24 10.0.0.1
 
 # with gateway + custom DNS
-sudo bgRPIImage-setup ip eth0 static 10.0.0.5/24 10.0.0.1 192.168.1.53
+sudo bgrpiimage-setup ip eth0 static 10.0.0.5/24 10.0.0.1 192.168.1.53
 ```
 
 After each change the script reloads `systemd-networkd` and
@@ -103,7 +103,7 @@ ip -br addr show eth0
 ### Reverting to image defaults
 
 ```bash
-sudo rm /etc/systemd/network/50-bgRPIImage-eth0.network
+sudo rm /etc/systemd/network/50-bgrpiimage-eth0.network
 sudo networkctl reload
 ```
 
@@ -114,7 +114,7 @@ The image-default drop-in takes over again.
 ## 🔎 Current state
 
 ```bash
-sudo bgRPIImage-setup status
+sudo bgrpiimage-setup status
 ```
 
 Shows variant + version, hostname, all network interfaces (via
@@ -123,7 +123,7 @@ WiFi config path.
 
 ---
 
-## 🔄 What `bgRPIImage-setup` does NOT do
+## 🔄 What `bgrpiimage-setup` does NOT do
 
 - **Does not modify the underlying image.** Changes persist until you
   delete the drop-in file.
@@ -132,7 +132,7 @@ WiFi config path.
 - **Does not manage SSH keys.** Use `ssh-copy-id` from your workstation;
   `.ssh/authorized_keys` for the admin user is mode 700 / 600 already.
 - **Does not configure static IPv6.** Pass `v6` addresses manually by
-  editing the generated `50-bgRPIImage-<iface>.network` drop-in. Open an
+  editing the generated `50-bgrpiimage-<iface>.network` drop-in. Open an
   issue if you want this added as a subcommand.
 
 ---

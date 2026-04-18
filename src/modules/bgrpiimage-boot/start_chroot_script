@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bgRPIImage-boot: append dtoverlays / dtparam entries to firmware config.txt.
+# bgrpiimage-boot: append dtoverlays / dtparam entries to firmware config.txt.
 # Uses a fenced block so subsequent generator runs can replace it idempotently.
 set -x
 set -e
@@ -8,7 +8,7 @@ export LC_ALL=C
 source /common.sh
 install_cleanup_trap
 
-GEN=/bgRPIImage-boot/files/_generated
+GEN=/bgrpiimage-boot/files/_generated
 CFG="${BGRPIIMAGE_BOOT_CONFIG_PATH:-/boot/firmware/config.txt}"
 
 # Fallback for images that still use the legacy path.
@@ -16,12 +16,12 @@ if [[ ! -f "$CFG" && -f /boot/config.txt ]]; then
     CFG=/boot/config.txt
 fi
 if [[ ! -f "$CFG" ]]; then
-    echo "bgRPIImage-boot: no config.txt found - skipping"
+    echo "bgrpiimage-boot: no config.txt found - skipping"
     exit 0
 fi
 
-START_MARK="# >>> bgRPIImage AUTO-GENERATED >>>"
-END_MARK="# <<< bgRPIImage AUTO-GENERATED <<<"
+START_MARK="# >>> bgrpiimage AUTO-GENERATED >>>"
+END_MARK="# <<< bgrpiimage AUTO-GENERATED <<<"
 
 # Strip any previous bgRPIImage block.
 if grep -qF "$START_MARK" "$CFG"; then
@@ -30,6 +30,6 @@ fi
 
 {
     printf '\n%s\n' "$START_MARK"
-    cat "$GEN/config-bgRPIImage.txt"
+    cat "$GEN/config-bgrpiimage.txt"
     printf '%s\n' "$END_MARK"
 } >> "$CFG"

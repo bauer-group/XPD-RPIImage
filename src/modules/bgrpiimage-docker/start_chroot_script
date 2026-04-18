@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# bgRPIImage-docker: install Docker CE from the official Debian repo.
+# bgrpiimage-docker: install Docker CE from the official Debian repo.
 # Raspberry Pi OS derives from Debian, so we use download.docker.com/linux/debian
 # (not /ubuntu as in the snippet - that would install ubuntu packages that
 # conflict with Debian libc on arm64).
@@ -11,7 +11,7 @@ export DEBIAN_FRONTEND=noninteractive
 source /common.sh
 install_cleanup_trap
 
-GEN=/bgRPIImage-docker/files/_generated
+GEN=/bgrpiimage-docker/files/_generated
 
 # Remove any conflicting distro-provided docker packages.
 for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do
@@ -51,8 +51,8 @@ systemctl enable docker
 
 # post-boot network creation (runs once on target hardware, not in chroot)
 if [[ -f "$GEN/create-networks.sh" ]]; then
-    install -D -m 755 "$GEN/create-networks.sh" /usr/local/sbin/bgRPIImage-docker-networks.sh
-    cat > /etc/systemd/system/bgRPIImage-docker-networks.service <<'__EOF__'
+    install -D -m 755 "$GEN/create-networks.sh" /usr/local/sbin/bgrpiimage-docker-networks.sh
+    cat > /etc/systemd/system/bgrpiimage-docker-networks.service <<'__EOF__'
 [Unit]
 Description=BAUER GROUP docker network bootstrap
 Requires=docker.service
@@ -61,14 +61,14 @@ ConditionPathExists=!/var/lib/bgRPIImage/docker-networks.done
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/bgRPIImage-docker-networks.sh
+ExecStart=/usr/local/sbin/bgrpiimage-docker-networks.sh
 ExecStartPost=/bin/sh -c "mkdir -p /var/lib/bgRPIImage && touch /var/lib/bgRPIImage/docker-networks.done"
 RemainAfterExit=yes
 
 [Install]
 WantedBy=multi-user.target
 __EOF__
-    systemctl enable bgRPIImage-docker-networks.service
+    systemctl enable bgrpiimage-docker-networks.service
 fi
 
 apt-get clean
