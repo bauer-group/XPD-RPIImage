@@ -16,10 +16,12 @@ unpack /filesystem/root / root
 GEN=/opt/bgrpiimage/bgrpiimage-network
 
 apt-get update
+# NOTE: crda was removed from Debian in trixie - the regulatory database
+# (wireless-regdb) is now loaded directly by the kernel via cfg80211.
+# See https://tracker.debian.org/news/1510987/removed-crda/
 apt-get install -y --no-install-recommends \
     systemd-resolved \
     wpasupplicant \
-    crda \
     wireless-regdb \
     iw
 
