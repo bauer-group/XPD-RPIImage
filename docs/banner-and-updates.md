@@ -35,6 +35,7 @@ Three distinct surfaces, three mechanisms:
   reboot pending (triggered by: linux-image-6.6.x libc6)    ← only if pending
 ====================================================================
 ```
+
 Source: [`scripts/generate.py`](../scripts/generate.py) → `_MOTD_SCRIPT`.
 
 ### Why three different layers?
@@ -58,6 +59,7 @@ BGRPIIMAGE_VARIANT="canbus-plattform"
 BGRPIIMAGE_VERSION="0.1.0"
 BGRPIIMAGE_DESCRIPTION="BAUER GROUP CANbus plattform - ..."
 ```
+
 Any future ops tooling (Ansible facts, monitoring agents) can source this
 instead of parsing `/etc/os-release`.
 
@@ -90,6 +92,7 @@ instead of parsing `/etc/os-release`.
           └── both conditions met                  ──▶ log triggering packages,
                                                         shutdown -r +1
 ```
+
 Three guard layers make sure a reboot only happens when truly necessary:
 
 1. **Package trigger** — `/var/run/reboot-required` is created **only** by
@@ -133,6 +136,7 @@ persistent timer catches up next time it fires.
   "mail": { "address": "", "on_error_only": true }
 }
 ```
+
 `${distro_codename}` is a **passthrough** — our env resolver leaves it alone
 so APT can substitute it at runtime (with `trixie`, `bookworm`, …).
 
@@ -141,6 +145,7 @@ so APT can substitute it at runtime (with `trixie`, `bookworm`, …).
 ```json
 "auto_reboot": { "enabled": false }
 ```
+
 → Reboot service/timer are not installed. `/var/run/reboot-required` will
 still appear on the device after a kernel update, and the MOTD will surface
 it, but no automatic reboot happens. Ops takes over.

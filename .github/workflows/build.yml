@@ -41,7 +41,10 @@ concurrency:
 
 env:
   PYTHON_VERSION: "3.14"
-  CUSTOMPIOS_IMAGE: "guysoft/custompios:devel"
+  # CustomPiOS pinned in lock-step: docker image (for local builds) and
+  # CUSTOMPIOS_REF (for the cloned scripts used by both CI and local).
+  CUSTOMPIOS_IMAGE: "guysoft/custompios:1.5.0"
+  CUSTOMPIOS_REF:   "1.5.0"
 
 jobs:
   # =========================================================================
@@ -210,14 +213,16 @@ jobs:
 
       - name: 🖼️ Build image
         env:
-          ADMIN_PASSWORD:    ${{ secrets.ADMIN_PASSWORD || 'ci-placeholder-pw' }}
-          WIFI_PSK:          ${{ secrets.WIFI_PSK       || 'ci-placeholder-psk' }}
-          DOCKER_IMAGE:      ${{ env.CUSTOMPIOS_IMAGE }}
-          DOCKER_BUILDKIT:   "1"
-          BUILDKIT_PROGRESS: "plain"
-          VERSION:           ${{ steps.meta.outputs.version }}
-          IMAGE_SUFFIX:      ${{ steps.meta.outputs.suffix }}
-        run: bash scripts/build.sh "${{ matrix.variant }}"
+          ADMIN_PASSWORD:      ${{ secrets.ADMIN_PASSWORD || 'ci-placeholder-pw' }}
+          WIFI_PSK:            ${{ secrets.WIFI_PSK       || 'ci-placeholder-psk' }}
+          CUSTOMPIOS_REF:      ${{ env.CUSTOMPIOS_REF }}
+          VERSION:             ${{ steps.meta.outputs.version }}
+          IMAGE_SUFFIX:        ${{ steps.meta.outputs.suffix }}
+          # CI runner is already a Linux VM with loop devices; run natively
+          # instead of spawning a privileged guysoft/custompios sibling.
+          # Saves a ~700 MB image pull + ~10 s container startup per job.
+          BGRPI_NATIVE_BUILD:  "yes"
+        run: sudo -E bash scripts/build.sh "${{ matrix.variant }}"
 
       - name: 📝 Compute checksums
         id: checksum

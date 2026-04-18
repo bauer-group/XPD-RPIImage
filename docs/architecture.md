@@ -12,6 +12,7 @@ How XPD-RPIImage turns a ~1 KB JSON into a bootable ~650 MB `.img.xz`.
   │  (JSON config) │   │  (Python)     │   │  (CustomPiOS) │   │ (.img / CI)  │
   └───────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
 ```
+
 ### 1. Declaration — `config/variants/*.json`
 
 Each variant is a single JSON file validated against
@@ -28,11 +29,13 @@ Composition via `extends`:
   "users":    [{ "name": "admin", "groups": ["dialout", "spi"] }]  ← merged by name
 }
 ```
+
 Secrets via env-var references:
 
 ```json
 "password": "${ADMIN_PASSWORD:-12345678}"
 ```
+
 Details: [`configuration.md`](configuration.md).
 
 ### 2. Generation — `scripts/generate.py`
@@ -55,10 +58,10 @@ Output breakdown:
 | `bgrpiimage-base` | `hostname`, `locale.env`, `packages.list`, `release.env`, `ssh.env`, `issue`, `issue.net`, `sshd_banner.conf`, `motd-banner.sh` |
 | `bgrpiimage-users` | `create-users.sh`, `pam_su` |
 | `bgrpiimage-network` | `systemd-networkd/10-eth.network`, `20-wlan.network`, `wpa_supplicant/wpa_supplicant-wlan0.conf` |
-| `bgrpiimage-boot` | `config-bgRPIImage.txt` (dtparam + dtoverlay snippet) |
+| `bgrpiimage-boot` | `config-bgrpiimage.txt` (dtparam + dtoverlay snippet) |
 | `bgrpiimage-can` | `systemd-networkd/40-can0.network`, `40-can1.network`, `packages.list` |
 | `bgrpiimage-docker` | `daemon.json`, `98-docker.conf` (sysctl), `docker-support.service`, `create-networks.sh` |
-| `bgrpiimage-portainer` | `portainer.service`, `portainer.env` |
+| `bgrpiimage-portainer` | `docker-compose.yml`, `bgrpiimage-portainer-install.service` (oneshot), `portainer.env` |
 | `bgrpiimage-unattended-upgrades` | `50unattended-upgrades`, `20auto-upgrades`, timer overrides, reboot-window service+timer+script |
 
 Modules whose feature is disabled in the JSON get a `.disabled` marker and
@@ -67,8 +70,15 @@ are skipped by their `filter` script at build time.
 ### 3. Assembly — CustomPiOS chroot
 
 [CustomPiOS][custompios] is cloned into `./CustomPiOS/` by
-`scripts/bootstrap.sh` (gitignored; pin via `CUSTOMPIOS_REF`). The build
-container (`guysoft/custompios:devel`) runs:
+`scripts/bootstrap.sh` (gitignored; pinned to `1.5.0` by default, override via
+`CUSTOMPIOS_REF`). Two execution paths:
+
+- **Native** (CI runner, bare Linux host): `BGRPI_NATIVE_BUILD=yes` — build
+  runs directly, needs `qemu-user-static` + `kpartx` + `xz-utils` on the host.
+- **Dockerised** (macOS/Windows dev): `guysoft/custompios:1.5.0` as a
+  privileged sibling container, mounted with `/distro` → the repo.
+
+Either way CustomPiOS:
 
 1. Downloads the base arm64 Raspberry Pi OS image.
 2. Mounts it via `kpartx` + loop device, resizes root filesystem.
@@ -114,6 +124,7 @@ done by the generator.
 ## 🔄 Extending the system
 
 ### Add a new variant
+
 → [`variants.md`](variants.md). Usually a 10-line JSON file.
 
 ### Add a new feature area (e.g. WireGuard VPN)
@@ -142,6 +153,7 @@ The existing modules are the template. No framework indirection.
     │
     └── /var/run/docker.sock ← bind-mounted into tools, so sibling launches on host
 ```
+
 Two reasons:
 
 - **Privilege containment**: the dev container has *no* `--privileged`, only

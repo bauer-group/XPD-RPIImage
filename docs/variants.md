@@ -19,6 +19,7 @@ child variant **extends** a parent and adds only what differs.
                                                         mcp2515-can1]
   can: (absent)                can: { interfaces: [can0, can1] }
 ```
+
 After merge:
 
 ```text
@@ -29,6 +30,7 @@ After merge:
                            mcp2515-can1]     by-name merge (no duplicates)
   can: { interfaces: [can0, can1] }        ← parent had no `can`, inherited
 ```
+
 Merge rules are implemented in [`scripts/generate.py`](../scripts/generate.py)
 (`deep_merge`):
 
@@ -84,6 +86,7 @@ Create `config/variants/gps-tracker.json`:
   }
 }
 ```
+
 That's it. 25 lines. Validate, render, build:
 
 ```bash
@@ -91,6 +94,7 @@ That's it. 25 lines. Validate, render, build:
 ./tools/run.sh render   gps-tracker
 ./tools/run.sh build    gps-tracker
 ```
+
 The CI matrix picks it up automatically on the next push.
 
 ---
@@ -116,6 +120,7 @@ Chains are allowed — a child can extend a parent that itself extends another:
 ```text
 common.json  ◀─── fleet-eu.json  ◀─── gps-tracker-eu.json
 ```
+
 The generator follows links recursively and detects cycles (raises
 `ValueError("circular extends chain")`).
 
@@ -133,8 +138,11 @@ The generator can print the fully resolved, schema-validated JSON to stdout:
 
 ```bash
 ./tools/run.sh shell
+
 # inside container:
+
 python scripts/generate.py config/variants/canbus-plattform.json --json | jq '.'
 ```
+
 Useful for answering "where does this user's group list actually come from"
 without grep'ing multiple files.

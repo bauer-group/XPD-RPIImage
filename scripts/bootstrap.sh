@@ -6,7 +6,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CUSTOMPIOS_DIR="$ROOT/CustomPiOS"
 CUSTOMPIOS_URL="${CUSTOMPIOS_URL:-https://github.com/guysoft/CustomPiOS.git}"
-CUSTOMPIOS_REF="${CUSTOMPIOS_REF:-master}"
+# Pin the upstream scripts: we test against this specific tag.  Keep this
+# in lock-step with the :1.5.0 docker tooling image.  Override via env.
+CUSTOMPIOS_REF="${CUSTOMPIOS_REF:-1.5.0}"
 
 if [[ ! -d "$CUSTOMPIOS_DIR/.git" ]]; then
     echo "[bootstrap] cloning CustomPiOS from $CUSTOMPIOS_URL @ $CUSTOMPIOS_REF"

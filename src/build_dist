@@ -19,7 +19,22 @@ fi
 export CUSTOM_PI_OS_PATH=$(<"${DIR}/custompios_path")
 export PATH="${PATH}:${CUSTOM_PI_OS_PATH}"
 
+# Explicitly seed BASE_WORKSPACE so CustomPiOS never ends up with an empty
+# value. When a board variant sets BASE_IGNORE_VARIANT_NAME=yes (as
+# raspios_lite_arm64 does), the built-in `|| BASE_WORKSPACE=...` fallback
+# in CustomPiOS/src/config:97 can be bypassed, producing `mkdir -p` with
+# no argument at startup. We pin the workspace path here from the variant
+# arg ($1) where it is always known.
+_bgrpi_variant="${1:-default}"
+if [[ "${_bgrpi_variant}" == "default" ]]; then
+    export BASE_WORKSPACE="${DIST_PATH}/workspace"
+else
+    export BASE_WORKSPACE="${DIST_PATH}/workspace-${_bgrpi_variant}"
+fi
+unset _bgrpi_variant
+
 echo "[bgRPIImage] DIST_PATH=${DIST_PATH}"
 echo "[bgRPIImage] CUSTOM_PI_OS_PATH=${CUSTOM_PI_OS_PATH}"
+echo "[bgRPIImage] BASE_WORKSPACE=${BASE_WORKSPACE}"
 
 exec "${CUSTOM_PI_OS_PATH}/build_custom_os" "$@"

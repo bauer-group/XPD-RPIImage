@@ -39,6 +39,7 @@ Pushes that only touch these paths do **not** trigger the workflow:
   └─────────────┘       │      (120 min)       │       └─────────────┘
                         └──────────────────────┘
 ```
+
 ### 🔍 Validate
 
 - Python 3.14 + `scripts/requirements.txt`
@@ -78,6 +79,7 @@ Release assets, generates changelog from commits since last tag.
   pull_request      →  bgrpiimage-<variant>-v<version>-pr<n>-<sha7>
   workflow_dispatch →  bgrpiimage-<variant>-v<version>-<sha7>
 ```
+
 The same suffix flows through `scripts/build.sh` (via `VERSION` and
 `IMAGE_SUFFIX` env vars) into the `.img.xz` filename — so the downloaded
 file matches the artifact container name exactly.
@@ -120,34 +122,41 @@ visible in the Actions UI sidebar:
 > BAUER GROUP CANbus plattform - base image + Waveshare 17912 …
 
 ## 🎯 Target
+
 | Variant | canbus-plattform |
 | Hostname | bg-canbus |
 | Architecture | arm64 |
 | Hardware targets | rpi-zero2w, rpi4, rpi5, cm4, cm5 |
 
 ## ⚙️ Feature matrix
+
 | 🔒 SSH | ✅ | password auth, no root |
 | 🐳 Docker | ✅ | CE + compose plugin, IPv6 NAT |
 | 🚌 CAN | ✅ | can0 @ 500 kbit/s (txq=65535), can1 @ 500 kbit/s (txq=65535) |
 | 🔄 Unattended upgrades | ✅ | window 02:00-04:00, reboot 03:00-05:00 |
 
 ## 🧩 Contents
+
 | Installed packages | 17 |
 | Users | 1 · admin |
 | Device tree overlays | 2 · mcp2515-can0, mcp2515-can1 |
 
 ## 📦 Artifact
+
 | File | bgrpiimage-canbus-plattform-v0.1.0-abc1234.img.xz |
 | Compressed size | 651 MB |
 | SHA-256 | 0123…abc |
 
 ## 🏷️ Build context
+
 | Commit | abc1234 (linked) |
 | Duration | 42m 17s |
 
 ### 🔐 Verify
+
 echo "…  bgrpiimage-…img.xz" | sha256sum -c -
 ```
+
 Kind badge:
 
 | Badge | Event |

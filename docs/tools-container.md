@@ -25,6 +25,7 @@ no local Python, qemu, kpartx or CustomPiOS clone required.
     └── /var/run/docker.sock  ← bind-mounted INTO tools container
                                  so the sibling is launched on the host Docker
 ```
+
 The tools container itself is **not** privileged. Only the sibling
 `guysoft/custompios` container gets `--privileged`, and only while it is
 mounting / chrooting the base image.
@@ -44,6 +45,7 @@ mounting / chrooting the base image.
 ./tools/run.sh clean                             # wipe generated + dist
 ./tools/run.sh validate -b                       # rebuild tools image first
 ```
+
 ### Windows CMD
 
 ```cmd
@@ -52,6 +54,7 @@ tools\run.cmd build canbus-plattform
 tools\run.cmd build canbus-plattform --env-file ..\.env
 tools\run.cmd shell --build
 ```
+
 ### Windows PowerShell
 
 ```powershell
@@ -60,6 +63,7 @@ tools\run.cmd shell --build
 .\tools\run.ps1 build   -Variant canbus-plattform -EnvFile ..\.env
 .\tools\run.ps1 shell   -Build
 ```
+
 ---
 
 ## ⚙️ Commands

@@ -40,21 +40,33 @@ python3 scripts/generate.py "${PY_ARGS[@]}"
 echo "[build] ensuring CustomPiOS"
 bash scripts/bootstrap.sh
 chmod +x "$ROOT/src/build_dist"
-
-# Use guysoft/custompios container to run the build with loop device access.
-DOCKER_IMAGE="${DOCKER_IMAGE:-guysoft/custompios:devel}"
 mkdir -p dist
 
-echo "[build] launching container $DOCKER_IMAGE for variant '$VARIANT'"
-# update-custompios-paths must run INSIDE the container so the
-# custompios_path sidecar records /distro/CustomPiOS/src (the bind-mount
-# path) instead of the host's absolute path.
-docker run --rm --privileged \
-    --volume "$ROOT":/distro \
-    --workdir /distro/src \
-    "$DOCKER_IMAGE" \
-    bash -c "bash /distro/CustomPiOS/src/update-custompios-paths /distro/src \
-             && ./build_dist ${VARIANT}"
+# Two build paths:
+#   BGRPI_NATIVE_BUILD=yes  -> run directly on the host (CI runners, bare
+#                              Linux dev boxes). No image pull, no privileged
+#                              sibling container. Assumes qemu-user-static /
+#                              kpartx / xz / sfdisk are already installed.
+#   unset / no              -> run inside guysoft/custompios sibling container.
+#                              For local dev on macOS, Windows, or when the
+#                              host lacks build tooling.
+if [[ "${BGRPI_NATIVE_BUILD:-no}" == "yes" ]]; then
+    echo "[build] native mode (no docker) for variant '$VARIANT'"
+    bash "$ROOT/CustomPiOS/src/update-custompios-paths" "$ROOT/src"
+    ( cd "$ROOT/src" && bash ./build_dist "$VARIANT" )
+else
+    DOCKER_IMAGE="${DOCKER_IMAGE:-guysoft/custompios:1.5.0}"
+    echo "[build] launching container $DOCKER_IMAGE for variant '$VARIANT'"
+    # update-custompios-paths must run INSIDE the container so the
+    # custompios_path sidecar records /distro/CustomPiOS/src (the bind-mount
+    # path) instead of the host's absolute path.
+    docker run --rm --privileged \
+        --volume "$ROOT":/distro \
+        --workdir /distro/src \
+        "$DOCKER_IMAGE" \
+        bash -c "bash /distro/CustomPiOS/src/update-custompios-paths /distro/src \
+                 && ./build_dist ${VARIANT}"
+fi
 
 # CustomPiOS leaves the image in workspace-<variant> for non-default variants.
 for ws in "$ROOT/src/workspace-${VARIANT}" "$ROOT/src/workspace"; do

@@ -1,4 +1,4 @@
-# 📦 XPD-RPIImage
+# 📦 RPI-Image
 
 > BAUER GROUP custom Raspberry Pi OS base images for embedded workloads.
 
@@ -34,7 +34,8 @@ Base OS: Raspberry Pi OS arm64 (trixie, 2026-04-13).
 - **Baked-in**:
   - SSH enabled with hardened `sshd_config.d` (no root login, no challenge-response)
   - Docker CE + compose plugin, IPv6 NAT, sensible daemon.json
-  - Portainer CE systemd unit (auto-starts on first boot)
+  - Portainer CE via docker-compose (`restart: unless-stopped`), installed
+    by a first-boot oneshot — Docker daemon handles lifecycle from then on
   - Unattended upgrades with **configurable maintenance + reboot windows**,
     event-driven via `apt-daily-upgrade.service` post-hook
   - Dynamic MOTD banner showing variant, version, kernel, all interfaces
@@ -49,28 +50,34 @@ Base OS: Raspberry Pi OS arm64 (trixie, 2026-04-13).
 
 ```bash
 # Linux / macOS / WSL
+
 ./tools/run.sh validate                    # validate every variant JSON
 ./tools/run.sh render canbus-plattform     # generate module artifacts
 ./tools/run.sh build  canbus-plattform     # full image build (privileged)
 
 # Windows CMD
+
 tools\run.cmd build canbus-plattform
 
 # Windows PowerShell
+
 .\tools\run.ps1 build -Variant canbus-plattform
 ```
+
 See [`docs/tools-container.md`](docs/tools-container.md) for launcher reference.
 
 ### Option 2 — local (needs Python 3.14 + Docker)
 
 ```bash
 cp .env.example .env
+
 # edit .env - set ADMIN_PASSWORD and WIFI_PSK
 
 make deps                                  # pip install requirements
 make validate                              # schema-check all variants
 make build VARIANT=canbus-plattform        # build the image
 ```
+
 Output lands in `dist/bgrpiimage-<variant>-v<version>.img.xz`.
 
 ### Option 3 — GitHub Actions
@@ -114,6 +121,7 @@ Adding a new variant is a 10-line JSON file — see
                                             │ dist/bgrpiimage-…img.xz  │
                                             └──────────────────────────┘
 ```
+
 More detail: [`docs/architecture.md`](docs/architecture.md).
 
 ---
@@ -169,6 +177,7 @@ sudo bgrpiimage-setup ip eth0 dhcp                   # back to DHCP
 sudo bgrpiimage-setup ip eth0 static 10.0.0.5/24 10.0.0.1 1.1.1.1
 sudo bgrpiimage-setup status                         # overview
 ```
+
 All IP changes land as `/etc/systemd/network/50-bgrpiimage-<iface>.network`
 drop-ins (our file prefix wins over the image-defaults), so they survive
 upgrades and are trivial to revert by deleting the drop-in.
@@ -206,6 +215,7 @@ subcommand reference.
 ├── Makefile                               # local convenience targets
 └── docs/
 ```
+
 ---
 
 ## 📜 License

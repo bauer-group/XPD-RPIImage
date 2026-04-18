@@ -31,9 +31,11 @@ sudo bgrpiimage-setup help
 
 ```bash
 # change admin's password (the default user)
+
 sudo bgrpiimage-setup password
 
 # change another account
+
 sudo bgrpiimage-setup password alice
 ```
 
@@ -47,11 +49,13 @@ about default credentials on the next login.
 
 ```bash
 # join a network (prompts for the PSK if omitted)
+
 sudo bgrpiimage-setup wifi "MyNetwork"
 sudo bgrpiimage-setup wifi "MyNetwork" "s3cret-pass"
 sudo bgrpiimage-setup wifi "MyNetwork" "s3cret-pass" AT    # override country
 
 # tear down WiFi entirely
+
 sudo bgrpiimage-setup wifi --disable
 ```
 
@@ -83,12 +87,15 @@ sudo bgrpiimage-setup ip wlan0 dhcp
 
 ```bash
 # minimum: CIDR address
+
 sudo bgrpiimage-setup ip eth0 static 10.0.0.5/24
 
 # with gateway
+
 sudo bgrpiimage-setup ip eth0 static 10.0.0.5/24 10.0.0.1
 
 # with gateway + custom DNS
+
 sudo bgrpiimage-setup ip eth0 static 10.0.0.5/24 10.0.0.1 192.168.1.53
 ```
 
