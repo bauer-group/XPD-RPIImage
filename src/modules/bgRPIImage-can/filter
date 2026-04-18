@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+test -d /bgRPIImage-can/files/_generated/systemd-networkd

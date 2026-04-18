@@ -3,7 +3,7 @@ SHELL := /usr/bin/env bash
 .SHELLFLAGS := -eu -o pipefail -c
 .DEFAULT_GOAL := help
 
-VARIANT ?= can-app
+VARIANT ?= canbus-plattform
 CONFIG  := config/variants/$(VARIANT).json
 ENV_FILE ?=
 

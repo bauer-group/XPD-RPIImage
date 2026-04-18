@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# bgRPIImage-base: hostname, locale, timezone, apt packages
+set -x
+set -e
+export LC_ALL=C
+export DEBIAN_FRONTEND=noninteractive
+
+source /common.sh
+install_cleanup_trap
+
+GEN=/bgRPIImage-base/files/_generated
+
+# --- hostname ---
+if [[ -f "$GEN/hostname" ]]; then
+    install -m 644 "$GEN/hostname" /etc/hostname
+    sed -i "s/127\.0\.1\.1.*/127.0.1.1\t$(cat "$GEN/hostname")/" /etc/hosts \
+        || echo -e "127.0.1.1\t$(cat "$GEN/hostname")" >> /etc/hosts
+fi
+
+# --- locale & timezone ---
+if [[ -f "$GEN/locale.env" ]]; then
+    # shellcheck disable=SC1090
+    source "$GEN/locale.env"
+    ln -sf "/usr/share/zoneinfo/$BGRPIIMAGE_TIMEZONE" /etc/localtime
+    echo "$BGRPIIMAGE_TIMEZONE" > /etc/timezone
+    sed -i "s/^# *\(${BGRPIIMAGE_LOCALE//./\\.} \)/\1/" /etc/locale.gen || true
+    locale-gen "$BGRPIIMAGE_LOCALE" || true
+    update-locale "LANG=$BGRPIIMAGE_LOCALE" "LC_ALL=$BGRPIIMAGE_LOCALE"
+    # Keyboard layout (non-fatal if the package is absent on minimal images)
+    if [[ -f /etc/default/keyboard ]]; then
+        sed -i "s/^XKBLAYOUT=.*/XKBLAYOUT=\"$BGRPIIMAGE_KEYBOARD\"/" /etc/default/keyboard
+    fi
+fi
+
+# --- apt packages ---
+apt-get update
+if [[ -f "$GEN/packages.list" ]]; then
+    xargs -a "$GEN/packages.list" -r apt-get install -y --no-install-recommends
+fi
+if [[ -n "${BGRPIIMAGE_BASE_EXTRA_PACKAGES:-}" ]]; then
+    # shellcheck disable=SC2086
+    apt-get install -y --no-install-recommends $BGRPIIMAGE_BASE_EXTRA_PACKAGES
+fi
+apt-get clean

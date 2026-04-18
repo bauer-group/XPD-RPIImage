@@ -1,0 +1,3 @@
+BGRPIIMAGE_BOOT_MODULE=1
+# Path to the firmware config.txt on Raspberry Pi OS bookworm/trixie.
+BGRPIIMAGE_BOOT_CONFIG_PATH="${BGRPIIMAGE_BOOT_CONFIG_PATH:-/boot/firmware/config.txt}"

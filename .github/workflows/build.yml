@@ -54,11 +54,11 @@ jobs:
             echo "::endgroup::"
           done
 
-      - name: render smoke test (can-app)
+      - name: render smoke test (canbus-plattform)
         env:
           ADMIN_PASSWORD: ci-placeholder-pw
           WIFI_PSK: ci-placeholder-psk
-        run: python scripts/generate.py config/variants/can-app.json
+        run: python scripts/generate.py config/variants/canbus-plattform.json
 
   # -------- discover build matrix from config/variants/*.json --------
   matrix:
@@ -132,7 +132,7 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: bgos-${{ matrix.variant }}-${{ github.sha }}
+          name: bgRPIImage-${{ matrix.variant }}-${{ github.sha }}
           path: |
             dist/*.img.xz
             dist/*.sha256

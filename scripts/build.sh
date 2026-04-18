@@ -8,9 +8,9 @@
 #   4. Copy the resulting .img[.xz] into ./dist/
 #
 # Usage:
-#   scripts/build.sh can-app                       # default variant
-#   scripts/build.sh --env-file .env can-app
-#   VARIANT=can-app scripts/build.sh
+#   scripts/build.sh canbus-plattform                       # default variant
+#   scripts/build.sh --env-file .env canbus-plattform
+#   VARIANT=canbus-plattform scripts/build.sh
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -24,7 +24,7 @@ while [[ $# -gt 0 ]]; do
         *) VARIANT="$1"; shift ;;
     esac
 done
-VARIANT="${VARIANT:-can-app}"
+VARIANT="${VARIANT:-canbus-plattform}"
 CONFIG_JSON="config/variants/${VARIANT}.json"
 
 if [[ ! -f "$CONFIG_JSON" ]]; then
@@ -62,7 +62,7 @@ if [[ -z "$IMG" ]]; then
     exit 1
 fi
 
-OUT="dist/bgos-${VARIANT}-$(date +%Y%m%d).img"
+OUT="dist/bgRPIImage-${VARIANT}-$(date +%Y%m%d).img"
 cp -v "$IMG" "$OUT"
 echo "[build] compressing"
 xz -T0 -f "$OUT"

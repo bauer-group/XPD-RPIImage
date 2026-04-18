@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+test -d /bgRPIImage-docker/files/_generated && ! test -f /bgRPIImage-docker/files/_generated/.disabled

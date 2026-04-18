@@ -1,0 +1,6 @@
+# Auto-generated variant config for canbus-plattform
+DIST_NAME=bgRPIImage-canbus-plattform
+DIST_VERSION=1.0.0
+MODULES='bgRPIImage-base bgRPIImage-users bgRPIImage-network bgRPIImage-boot bgRPIImage-can bgRPIImage-docker bgRPIImage-portainer bgRPIImage-unattended-upgrades'
+BGRPIIMAGE_VARIANT=canbus-plattform
+BGRPIIMAGE_HOSTNAME=bg-can

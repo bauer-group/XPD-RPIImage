@@ -1,2 +1,0 @@
-#!/usr/bin/env bash
-test -f /bgos-users/files/_generated/create-users.sh

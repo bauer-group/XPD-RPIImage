@@ -1,2 +1,0 @@
-#!/usr/bin/env bash
-test -d /bgos-can/files/_generated/systemd-networkd

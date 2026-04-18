@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+test -f /bgRPIImage-boot/files/_generated/config-bgRPIImage.txt

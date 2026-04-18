@@ -1,2 +1,0 @@
-#!/usr/bin/env bash
-test -d /bgos-docker/files/_generated && ! test -f /bgos-docker/files/_generated/.disabled

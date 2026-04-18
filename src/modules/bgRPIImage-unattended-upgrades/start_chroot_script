@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# bgRPIImage-unattended-upgrades: configure u-u with maintenance window + reboot
+# window. The stock Automatic-Reboot-Time is a single timestamp; we need a
+# *window*, so we disable stock reboot and install our own bgRPIImage-reboot-window
+# timer that fires with RandomizedDelaySec across [start,end].
+set -x
+set -e
+export LC_ALL=C
+export DEBIAN_FRONTEND=noninteractive
+
+source /common.sh
+install_cleanup_trap
+
+GEN=/bgRPIImage-unattended-upgrades/files/_generated
+
+apt-get update
+apt-get install -y --no-install-recommends unattended-upgrades apt-listchanges
+
+install -D -m 644 "$GEN/50unattended-upgrades" /etc/apt/apt.conf.d/50unattended-upgrades
+install -D -m 644 "$GEN/20auto-upgrades"       /etc/apt/apt.conf.d/20auto-upgrades
+
+# Timer overrides shift both download + install into our maintenance window.
+install -D -m 644 "$GEN/apt-daily.timer.d/override.conf" \
+    /etc/systemd/system/apt-daily.timer.d/override.conf
+install -D -m 644 "$GEN/apt-daily-upgrade.timer.d/override.conf" \
+    /etc/systemd/system/apt-daily-upgrade.timer.d/override.conf
+
+# Conditional reboot service + timer (only present when auto_reboot.enabled).
+if [[ -f "$GEN/bgRPIImage-reboot-window.sh" ]]; then
+    install -D -m 755 "$GEN/bgRPIImage-reboot-window.sh" /usr/local/sbin/bgRPIImage-reboot-window.sh
+    install -D -m 644 "$GEN/bgRPIImage-reboot-window.service" /etc/systemd/system/bgRPIImage-reboot-window.service
+    install -D -m 644 "$GEN/bgRPIImage-reboot-window.timer"   /etc/systemd/system/bgRPIImage-reboot-window.timer
+    systemctl enable bgRPIImage-reboot-window.timer
+fi
+
+systemctl enable unattended-upgrades
+apt-get clean
