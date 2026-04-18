@@ -31,10 +31,14 @@ if [[ "${_bgrpi_variant}" == "default" ]]; then
 else
     export BASE_WORKSPACE="${DIST_PATH}/workspace-${_bgrpi_variant}"
 fi
+# CustomPiOS's own fallback (src/config:99) for BASE_MOUNT_PATH is also
+# not firing reliably in our environment, so seed it too.
+export BASE_MOUNT_PATH="${BASE_WORKSPACE}/mount"
 unset _bgrpi_variant
 
 echo "[bgRPIImage] DIST_PATH=${DIST_PATH}"
 echo "[bgRPIImage] CUSTOM_PI_OS_PATH=${CUSTOM_PI_OS_PATH}"
 echo "[bgRPIImage] BASE_WORKSPACE=${BASE_WORKSPACE}"
+echo "[bgRPIImage] BASE_MOUNT_PATH=${BASE_MOUNT_PATH}"
 
 exec "${CUSTOM_PI_OS_PATH}/build_custom_os" "$@"
