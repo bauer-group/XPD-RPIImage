@@ -9,7 +9,7 @@ actual image baking runs on top of [CustomPiOS][custompios].
 Supported hardware:
 
 | Target | Status |
-|---|---|
+| --- | --- |
 | Raspberry Pi Zero 2 W | ✅ |
 | Raspberry Pi 4 | ✅ |
 | Raspberry Pi 5 | ✅ |
@@ -59,7 +59,6 @@ tools\run.cmd build canbus-plattform
 # Windows PowerShell
 .\tools\run.ps1 build -Variant canbus-plattform
 ```
-
 See [`docs/tools-container.md`](docs/tools-container.md) for launcher reference.
 
 ### Option 2 — local (needs Python 3.14 + Docker)
@@ -72,7 +71,6 @@ make deps                                  # pip install requirements
 make validate                              # schema-check all variants
 make build VARIANT=canbus-plattform        # build the image
 ```
-
 Output lands in `dist/bgRPIImage-<variant>-v<version>.img.xz`.
 
 ### Option 3 — GitHub Actions
@@ -86,7 +84,7 @@ with permanent download assets.
 ## 📦 Variants
 
 | Variant | Description | Hostname | Extras |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | [`base`](config/variants/base.json) | Generic Raspberry Pi image, Docker-ready, no application-specific hardware. | `bg-rpi` | — |
 | [`canbus-plattform`](config/variants/canbus-plattform.json) | Base + Waveshare 17912 dual isolated CAN HAT (MCP2515 on SPI). | `bg-canbus` | `can0` + `can1` at 500 kbit/s, `can-utils`, dialout/gpio/i2c/spi groups |
 
@@ -97,7 +95,7 @@ Adding a new variant is a 10-line JSON file — see
 
 ## 🧱 Architecture
 
-```
+```text
   ┌─────────────────────┐     ┌───────────────────┐     ┌────────────────────┐
   │ config/variants/*.json │──▶│ scripts/generate.py │──▶│ src/modules/*/files/  │
   │  (declarative, JSON)  │     │  (validate + merge │     │  _generated/ (inputs │
@@ -116,7 +114,6 @@ Adding a new variant is a 10-line JSON file — see
                                             │ dist/bgRPIImage-…img.xz  │
                                             └──────────────────────────┘
 ```
-
 More detail: [`docs/architecture.md`](docs/architecture.md).
 
 ---
@@ -124,10 +121,11 @@ More detail: [`docs/architecture.md`](docs/architecture.md).
 ## 📚 Documentation
 
 | Topic | File |
-|---|---|
+| --- | --- |
 | Architecture + build pipeline | [docs/architecture.md](docs/architecture.md) |
 | JSON config reference + env resolver | [docs/configuration.md](docs/configuration.md) |
 | Creating a new variant (`extends` chain) | [docs/variants.md](docs/variants.md) |
+| **Post-flash setup (password · WiFi · IP)** | [docs/post-flash-setup.md](docs/post-flash-setup.md) |
 | Dockerised tools container | [docs/tools-container.md](docs/tools-container.md) |
 | GitHub Actions CI/CD | [docs/ci-cd.md](docs/ci-cd.md) |
 | Login banner + unattended updates | [docs/banner-and-updates.md](docs/banner-and-updates.md) |
@@ -136,9 +134,19 @@ More detail: [`docs/architecture.md`](docs/architecture.md).
 
 ## 🔐 Secrets & defaults
 
-The bundled JSON ships **demo credentials** (`ADMIN_PASSWORD=12345678`,
-`WIFI_PSK=12345678`) as `${VAR:-default}` references. For anything beyond a
-lab rebuild:
+> ⚠️ **Default credentials shipped by this image:**
+>
+> - `admin` user password → `12345678`
+> - WiFi PSK for `IOT @ BAUER-GROUP` → `12345678`
+>
+> These are **demo credentials** baked in via `${VAR:-default}` references.
+> A fresh flash of an untouched image is only safe inside an isolated lab.
+> On first boot the login banner screams about it and the MOTD keeps
+> reminding you until you rotate the admin password.
+
+### Change credentials at build time (preferred for production)
+
+Bake real values into the image during the build:
 
 1. Copy `.env.example` → `.env`, set real values.
 2. Rebuild: `./tools/run.sh build <variant> --env-file ./.env`.
@@ -147,11 +155,32 @@ lab rebuild:
 In CI, set `ADMIN_PASSWORD` and `WIFI_PSK` as repository secrets — the
 workflow passes them through automatically.
 
+### Change credentials / network on the device (post-flash)
+
+Every image ships `/usr/local/sbin/bgRPIImage-setup` — a one-stop helper
+for the routine post-flash changes:
+
+```bash
+sudo bgRPIImage-setup password                       # rotate admin pw
+sudo bgRPIImage-setup password alice                 # rotate another user
+sudo bgRPIImage-setup wifi "MyNet" "s3cret" DE       # join a WiFi
+sudo bgRPIImage-setup wifi --disable                 # tear down wlan0
+sudo bgRPIImage-setup ip eth0 dhcp                   # back to DHCP
+sudo bgRPIImage-setup ip eth0 static 10.0.0.5/24 10.0.0.1 1.1.1.1
+sudo bgRPIImage-setup status                         # overview
+```
+All IP changes land as `/etc/systemd/network/50-bgRPIImage-<iface>.network`
+drop-ins (our file prefix wins over the image-defaults), so they survive
+upgrades and are trivial to revert by deleting the drop-in.
+
+See [`docs/post-flash-setup.md`](docs/post-flash-setup.md) for the full
+subcommand reference.
+
 ---
 
 ## 🛠️ Project layout
 
-```
+```text
 .
 ├── config/
 │   ├── schema.json                        # JSON schema for variant config
@@ -177,7 +206,6 @@ workflow passes them through automatically.
 ├── Makefile                               # local convenience targets
 └── docs/
 ```
-
 ---
 
 ## 📜 License

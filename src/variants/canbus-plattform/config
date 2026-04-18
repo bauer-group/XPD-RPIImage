@@ -1,6 +1,8 @@
 # Auto-generated variant config for canbus-plattform
-DIST_NAME=bgRPIImage-canbus-plattform
-DIST_VERSION=0.1.0
-MODULES='bgRPIImage-base bgRPIImage-users bgRPIImage-network bgRPIImage-boot bgRPIImage-can bgRPIImage-docker bgRPIImage-portainer bgRPIImage-unattended-upgrades'
-BGRPIIMAGE_VARIANT=canbus-plattform
-BGRPIIMAGE_HOSTNAME=bg-canbus
+export DIST_NAME=bgRPIImage-canbus-plattform
+export DIST_VERSION=0.1.0
+export MODULES='bgRPIImage-base bgRPIImage-users bgRPIImage-network bgRPIImage-boot bgRPIImage-can bgRPIImage-docker bgRPIImage-portainer bgRPIImage-unattended-upgrades'
+export BGRPIIMAGE_VARIANT=canbus-plattform
+export BGRPIIMAGE_HOSTNAME=bg-canbus
+export BGRPIIMAGE_TARGETS=rpi-zero2w,rpi4,rpi5,cm4,cm5
+export BASE_OVERRIDE_HOSTNAME=bg-canbus

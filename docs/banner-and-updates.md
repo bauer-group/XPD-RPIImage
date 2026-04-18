@@ -10,14 +10,14 @@ the JSON and toggled by `banner.enabled` / `unattended_upgrades.enabled`.
 Three distinct surfaces, three mechanisms:
 
 | Surface | File | Rendered by | Content |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Console (HDMI / tty) **pre-login** | `/etc/issue` | getty (expands `\n`, `\4`, `\6`, `\s`, `\r`, `\m`) | Variant, version, live hostname, IPv4/IPv6 of `eth0` + `wlan0` |
 | SSH **pre-login** | `/etc/issue.net` + `sshd_config.d` `Banner` directive | sshd (reads raw, no escape expansion) | Variant, version, description, legal note |
 | All sessions **post-login** | `/etc/update-motd.d/10-bgRPIImage` (executable) | `pam_motd.so` on login | Fully dynamic — see below |
 
 ### Post-login MOTD preview
 
-```
+```text
 ====================================================================
   bgRPIImage  canbus-plattform  v0.1.0
   BAUER GROUP CANbus plattform - base image + Waveshare 17912 ...
@@ -35,7 +35,6 @@ Three distinct surfaces, three mechanisms:
   reboot pending (triggered by: linux-image-6.6.x libc6)    ← only if pending
 ====================================================================
 ```
-
 Source: [`scripts/generate.py`](../scripts/generate.py) → `_MOTD_SCRIPT`.
 
 ### Why three different layers?
@@ -59,7 +58,6 @@ BGRPIIMAGE_VARIANT="canbus-plattform"
 BGRPIIMAGE_VERSION="0.1.0"
 BGRPIIMAGE_DESCRIPTION="BAUER GROUP CANbus plattform - ..."
 ```
-
 Any future ops tooling (Ansible facts, monitoring agents) can source this
 instead of parsing `/etc/os-release`.
 
@@ -81,7 +79,7 @@ instead of parsing `/etc/os-release`.
 
 ### Reboot decision tree
 
-```
+```text
   apt-daily-upgrade.service succeeded
           │
           ▼  (ExecStartPost drop-in, event-driven)
@@ -92,7 +90,6 @@ instead of parsing `/etc/os-release`.
           └── both conditions met                  ──▶ log triggering packages,
                                                         shutdown -r +1
 ```
-
 Three guard layers make sure a reboot only happens when truly necessary:
 
 1. **Package trigger** — `/var/run/reboot-required` is created **only** by
@@ -109,7 +106,7 @@ Three guard layers make sure a reboot only happens when truly necessary:
 Same script fires from two places:
 
 | Trigger | When | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `apt-daily-upgrade.service` `ExecStartPost=` | right after every update attempt | Fast reaction — reboots within seconds of a successful update if in window |
 | `bgRPIImage-reboot-window.timer` | daily calendar event inside the reboot window | Safety net — catches devices that were offline or whose update service failed during the event |
 
@@ -136,7 +133,6 @@ persistent timer catches up next time it fires.
   "mail": { "address": "", "on_error_only": true }
 }
 ```
-
 `${distro_codename}` is a **passthrough** — our env resolver leaves it alone
 so APT can substitute it at runtime (with `trixie`, `bookworm`, …).
 
@@ -145,7 +141,6 @@ so APT can substitute it at runtime (with `trixie`, `bookworm`, …).
 ```json
 "auto_reboot": { "enabled": false }
 ```
-
 → Reboot service/timer are not installed. `/var/run/reboot-required` will
 still appear on the device after a kernel update, and the MOTD will surface
 it, but no automatic reboot happens. Ops takes over.

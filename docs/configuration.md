@@ -9,7 +9,7 @@ with defaults and examples. Source of truth is always the schema.
 ## 📋 Top-level keys
 
 | Key | Type | Required | Purpose |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `$schema` | string | optional | IDE hint — stripped before validation. |
 | `extends` | string | optional | Relative path to parent variant JSON. See [`variants.md`](variants.md). |
 | `variant` | object | ✅ | Variant metadata (name, description, version). |
@@ -40,12 +40,11 @@ Any string value may contain `${VAR}` or `${VAR:-default}`:
 "password": "${ADMIN_PASSWORD:-12345678}",
 "psk":      "${WIFI_PSK}"
 ```
-
 Resolution is single-pass, case-sensitive, and happens **before** schema
 validation (so env values must satisfy the schema's constraints).
 
 | Form | Behavior |
-|---|---|
+| --- | --- |
 | `${VAR}` | Required. Missing value → `KeyError`, build fails. |
 | `${VAR:-default}` | Optional. Uses default when `VAR` is unset or empty. |
 
@@ -78,7 +77,6 @@ as env vars; they override the `${VAR:-default}` fallback when set.
   "ssh_authorized_keys": ["ssh-ed25519 AAAA... admin@workstation"]
 }
 ```
-
 - `name` acts as the merge key when `extends` combines `users` arrays.
 - `sudo_nopasswd: true` writes `/etc/sudoers.d/010-bgRPIImage-<name>` with
   `NOPASSWD:ALL`.
@@ -96,7 +94,6 @@ as env vars; they override the `${VAR:-default}` fallback when set.
   "ssh_permit_root_login": false
 }
 ```
-
 - `su_nopasswd_users` → added to the `wheel` group and `pam_wheel.so trust`
   is installed so listed users can `su` / `sudo su -` without a password.
 - `ssh_password_auth` and `ssh_permit_root_login` are written to
@@ -119,7 +116,6 @@ Each interface entry:
   "dns": ["1.1.1.1", "2606:4700:4700::1111"]
 }
 ```
-
 `wifi` additionally takes:
 
 ```json
@@ -131,7 +127,6 @@ Each interface entry:
   ]
 }
 ```
-
 `systemd-networkd` replaces `NetworkManager` / `dhcpcd` at build time — one
 unit per interface. `wpa_supplicant@wlan0` is enabled automatically.
 
@@ -142,15 +137,14 @@ unit per interface. `wpa_supplicant@wlan0` is enabled automatically.
 Everything written ends up between fenced markers in
 `/boot/firmware/config.txt`:
 
-```
+```text
 # >>> bgRPIImage AUTO-GENERATED >>>
 dtparam=spi=on
 dtoverlay=mcp2515-can0,oscillator=16000000,interrupt=25
 # <<< bgRPIImage AUTO-GENERATED <<<
 ```
-
 | Key | Effect |
-|---|---|
+| --- | --- |
 | `enable_i2c: true` | `dtparam=i2c_arm=on` |
 | `enable_spi: true` | `dtparam=spi=on` |
 | `enable_i2s: true` | `dtparam=i2s=on` |
@@ -175,7 +169,6 @@ when a child variant extends a parent.
   ]
 }
 ```
-
 Writes `/etc/systemd/network/40-can<N>.network`. `can-utils` is added to the
 package list automatically.
 
@@ -191,7 +184,6 @@ package list automatically.
   "networks": [ ... ]    // optional; docker network create on first boot
 }
 ```
-
 The `daemon` object is written verbatim to `/etc/docker/daemon.json`, so any
 Docker daemon setting is allowed.
 
@@ -212,7 +204,6 @@ that runs once on first boot and marks itself done via a sentinel file.
   "auto_start": true
 }
 ```
-
 Installed as a systemd unit (`portainer.service`) that runs `docker run` on
 start — no docker-compose required.
 
@@ -242,7 +233,6 @@ start — no docker-compose required.
   "mail": { "address": "", "on_error_only": true }
 }
 ```
-
 See [`banner-and-updates.md`](banner-and-updates.md) for the full reboot
 decision tree.
 
@@ -256,7 +246,6 @@ decision tree.
   "pre_login_note": "Authorised users only. All access is logged."
 }
 ```
-
 Generates three files:
 
 - `/etc/issue` — console pre-login (getty expands `\n`, `\4`, `\6` live)
@@ -279,5 +268,4 @@ python scripts/generate.py config/variants/your-variant.json --json
 # full render: writes files into src/
 python scripts/generate.py config/variants/your-variant.json
 ```
-
 Or via the tools container: `./tools/run.sh validate your-variant`.

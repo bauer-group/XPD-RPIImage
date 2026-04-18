@@ -6,13 +6,12 @@ How XPD-RPIImage turns a ~1 KB JSON into a bootable ~650 MB `.img.xz`.
 
 ## 🪜 The four stages
 
-```
+```text
   ┌───────────────┐   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
   │ 1. Declaration │──▶│ 2. Generation │──▶│ 3. Assembly  │──▶│ 4. Delivery  │
   │  (JSON config) │   │  (Python)     │   │  (CustomPiOS) │   │ (.img / CI)  │
   └───────────────┘   └──────────────┘   └──────────────┘   └──────────────┘
 ```
-
 ### 1. Declaration — `config/variants/*.json`
 
 Each variant is a single JSON file validated against
@@ -29,13 +28,11 @@ Composition via `extends`:
   "users":    [{ "name": "admin", "groups": ["dialout", "spi"] }]  ← merged by name
 }
 ```
-
 Secrets via env-var references:
 
 ```json
 "password": "${ADMIN_PASSWORD:-12345678}"
 ```
-
 Details: [`configuration.md`](configuration.md).
 
 ### 2. Generation — `scripts/generate.py`
@@ -54,7 +51,7 @@ Python 3.14 utility. For every variant:
 Output breakdown:
 
 | Module | Generated artifacts |
-|---|---|
+| --- | --- |
 | `bgRPIImage-base` | `hostname`, `locale.env`, `packages.list`, `release.env`, `ssh.env`, `issue`, `issue.net`, `sshd_banner.conf`, `motd-banner.sh` |
 | `bgRPIImage-users` | `create-users.sh`, `pam_su` |
 | `bgRPIImage-network` | `systemd-networkd/10-eth.network`, `20-wlan.network`, `wpa_supplicant/wpa_supplicant-wlan0.conf` |
@@ -134,7 +131,7 @@ The existing modules are the template. No framework indirection.
 
 ## 🐳 Why two docker containers for a build?
 
-```
+```text
   host (any OS with Docker)
     │
     ├── docker run bgrpiimage-tools        ← dev container
@@ -145,7 +142,6 @@ The existing modules are the template. No framework indirection.
     │
     └── /var/run/docker.sock ← bind-mounted into tools, so sibling launches on host
 ```
-
 Two reasons:
 
 - **Privilege containment**: the dev container has *no* `--privileged`, only

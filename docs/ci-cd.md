@@ -9,7 +9,7 @@ validation, parallel matrix builds, and tagged releases.
 ## ⏱️ When it triggers
 
 | Event | Triggers build? | Produces release? |
-|---|---|---|
+| --- | --- | --- |
 | Push to `main` | ✅ (outside `paths-ignore`) | — |
 | Push tag `v*.*.*` | ✅ | ✅ |
 | Pull request to `main` | ✅ | — |
@@ -32,14 +32,13 @@ Pushes that only touch these paths do **not** trigger the workflow:
 
 ## 🧬 Jobs
 
-```
+```text
   ┌─────────────┐       ┌──────────────────────┐       ┌─────────────┐
   │ 🔍 Validate │──▶──▶│ 📦 Build <variant>   │──▶──▶│ 🚀 Release  │
   │  (10 min)   │       │  (parallel matrix)   │       │ (tag only)  │
   └─────────────┘       │      (120 min)       │       └─────────────┘
                         └──────────────────────┘
 ```
-
 ### 🔍 Validate
 
 - Python 3.14 + `scripts/requirements.txt`
@@ -73,13 +72,12 @@ Release assets, generates changelog from commits since last tag.
 
 ## 🏷️ Artifact naming
 
-```
+```text
   tag push          →  bgRPIImage-<variant>-v<version>
   push to main      →  bgRPIImage-<variant>-v<version>-<sha7>
   pull_request      →  bgRPIImage-<variant>-v<version>-pr<n>-<sha7>
   workflow_dispatch →  bgRPIImage-<variant>-v<version>-<sha7>
 ```
-
 The same suffix flows through `scripts/build.sh` (via `VERSION` and
 `IMAGE_SUFFIX` env vars) into the `.img.xz` filename — so the downloaded
 file matches the artifact container name exactly.
@@ -96,7 +94,7 @@ run's artifact. The SHA keeps them distinct.
 ## 🗄️ Storage
 
 | Location | Lifetime | Trigger |
-|---|---|---|
+| --- | --- | --- |
 | Actions artifact | **14 days** | every build |
 | GitHub Release asset | **permanent** | tag push only |
 
@@ -116,7 +114,7 @@ Download locations:
 Every build job writes a rich Markdown summary to `$GITHUB_STEP_SUMMARY`,
 visible in the Actions UI sidebar:
 
-```
+```text
 # 📦 canbus-plattform · v0.1.0-abc1234 · 🚧 DEV BUILD
 
 > BAUER GROUP CANbus plattform - base image + Waveshare 17912 …
@@ -150,11 +148,10 @@ visible in the Actions UI sidebar:
 ### 🔐 Verify
 echo "…  bgRPIImage-…img.xz" | sha256sum -c -
 ```
-
 Kind badge:
 
 | Badge | Event |
-|---|---|
+| --- | --- |
 | 🏷️ RELEASE | tag push |
 | 🔀 PR BUILD | pull_request |
 | 🚧 DEV BUILD | push / dispatch |
@@ -166,7 +163,7 @@ Kind badge:
 Set in _Repository Settings → Secrets and variables → Actions_:
 
 | Name | Purpose | Default (CI) |
-|---|---|---|
+| --- | --- | --- |
 | `ADMIN_PASSWORD` | Bakes into `users[].password` | `ci-placeholder-pw` |
 | `WIFI_PSK` | Bakes into `network.wifi.networks[].psk` | `ci-placeholder-psk` |
 
@@ -199,7 +196,7 @@ typos rapidly.
 ## 📈 Performance knobs
 
 | Lever | Impact |
-|---|---|
+| --- | --- |
 | Cache hit on CustomPiOS clone | -5 s per build |
 | Runner disk free-up step | enables the build to finish at all (stock image leaves ~15 GB) |
 | Matrix parallelism | one runner per variant, runs in parallel |

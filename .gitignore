@@ -7,9 +7,14 @@ dist/
 *.tmp
 
 # Generated files from JSON config
-src/variants/*/image/config
 src/variants/*/_generated/
 src/modules/*/files/_generated/
+
+# CustomPiOS drops the custompios_path sidecar at build time
+src/custompios_path
+src/workspace/
+src/workspace-*/
+src/build.log
 
 # tools/requirements.txt is auto-synced from scripts/requirements.txt by
 # the run.* launchers before docker build - so it drifts on every run.

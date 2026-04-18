@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# bgRPIImage - entrypoint wrapper invoked by scripts/build.sh inside the
+# guysoft/custompios sibling container.
+#
+# Pattern mirrors OctoPi: we set DIST_PATH to this src/ directory, read
+# CUSTOM_PI_OS_PATH from the custompios_path sidecar file that
+# `update-custompios-paths` wrote, and delegate to CustomPiOS's
+# build_custom_os entrypoint.
+set -euo pipefail
+
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+export DIST_PATH="${DIR}"
+if [[ ! -f "${DIR}/custompios_path" ]]; then
+    echo "error: ${DIR}/custompios_path is missing." >&2
+    echo "       run: bash CustomPiOS/src/update-custompios-paths src" >&2
+    exit 2
+fi
+export CUSTOM_PI_OS_PATH=$(<"${DIR}/custompios_path")
+export PATH="${PATH}:${CUSTOM_PI_OS_PATH}"
+
+echo "[bgRPIImage] DIST_PATH=${DIST_PATH}"
+echo "[bgRPIImage] CUSTOM_PI_OS_PATH=${CUSTOM_PI_OS_PATH}"
+
+exec "${CUSTOM_PI_OS_PATH}/build_custom_os" "$@"

@@ -7,7 +7,7 @@ no local Python, qemu, kpartx or CustomPiOS clone required.
 
 ## 🎯 What it does
 
-```
+```text
   host (Linux / macOS / Windows with Docker Desktop)
     │
     ├── docker run bgrpiimage-tools          ← dev shell  (not privileged)
@@ -25,7 +25,6 @@ no local Python, qemu, kpartx or CustomPiOS clone required.
     └── /var/run/docker.sock  ← bind-mounted INTO tools container
                                  so the sibling is launched on the host Docker
 ```
-
 The tools container itself is **not** privileged. Only the sibling
 `guysoft/custompios` container gets `--privileged`, and only while it is
 mounting / chrooting the base image.
@@ -45,7 +44,6 @@ mounting / chrooting the base image.
 ./tools/run.sh clean                             # wipe generated + dist
 ./tools/run.sh validate -b                       # rebuild tools image first
 ```
-
 ### Windows CMD
 
 ```cmd
@@ -54,7 +52,6 @@ tools\run.cmd build canbus-plattform
 tools\run.cmd build canbus-plattform --env-file ..\.env
 tools\run.cmd shell --build
 ```
-
 ### Windows PowerShell
 
 ```powershell
@@ -63,13 +60,12 @@ tools\run.cmd shell --build
 .\tools\run.ps1 build   -Variant canbus-plattform -EnvFile ..\.env
 .\tools\run.ps1 shell   -Build
 ```
-
 ---
 
 ## ⚙️ Commands
 
 | Command | Action |
-|---|---|
+| --- | --- |
 | `validate [variant]` | Schema-check + env resolve (dry-run, no file writes). |
 | `render <variant>` | Generate module artifacts under `src/modules/*/files/_generated/`. |
 | `build <variant>` | Full image build. Produces `dist/bgRPIImage-<variant>-v<version>.img.xz`. |
@@ -80,7 +76,7 @@ tools\run.cmd shell --build
 All commands take:
 
 | Flag | Purpose |
-|---|---|
+| --- | --- |
 | `--build` / `-b` / `-Build` | Rebuild the tools image before running (pick up `requirements.txt` changes). |
 | `--env-file <path>` / `-EnvFile <path>` | Pass a `.env` file to the generator and `build.sh`. |
 
@@ -89,7 +85,7 @@ All commands take:
 ## 🖥️ Host requirements
 
 | OS | Requirements |
-|---|---|
+| --- | --- |
 | Linux | Docker engine 20.10+, loop device support (native). |
 | macOS | Docker Desktop 4.x with VirtioFS and Rosetta for arm64 images. |
 | Windows 11 | Docker Desktop WSL2 backend. |

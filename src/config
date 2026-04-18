@@ -1,12 +1,18 @@
-# BAUER GROUP RPI Image - distro-level CustomPiOS config
-# This file is sourced by CustomPiOS build_dist before variant/image configs.
-# Variant-specific values live in src/variants/<name>/config (generated).
+# bgRPIImage - distro-level CustomPiOS config.
+# Sourced by CustomPiOS's build script before the selected variant's config.
 
-DIST_NAME="${DIST_NAME:-bgRPIImage}"
-DIST_VERSION="${DIST_VERSION:-0.0.0}"
+# Distro identity (variant config may refine DIST_NAME / VERSION).
+export DIST_NAME="bgRPIImage"
+export DIST_VERSION="0.1.0"
 
-# Default to the upstream raspios_arm64 trixie image; variant may override.
-BASE_IMAGE_ENLARGEROOT="${BASE_IMAGE_ENLARGEROOT:-2000}"
-BASE_IMAGE_RESIZEROOT="${BASE_IMAGE_RESIZEROOT:-200}"
+# BASE_BOARD -> key into CustomPiOS/src/images.yml. All current variants use
+# arm64 on Raspberry Pi hardware (Pi 4, Pi 5, Pi Zero 2W, CM4, CM5).
+export BASE_BOARD="raspberrypiarm64"
+export BASE_ARCH="arm64"
+
+# Expand the rootfs to make room for Docker images, CAN tooling, etc.
+# Values are in megabytes.
+export BASE_IMAGE_ENLARGEROOT="${BASE_IMAGE_ENLARGEROOT:-2000}"
+export BASE_IMAGE_RESIZEROOT="${BASE_IMAGE_RESIZEROOT:-200}"
 
 export LC_ALL=C

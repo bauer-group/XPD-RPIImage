@@ -61,6 +61,14 @@ if [[ -f "$GEN/ssh.env" ]]; then
     fi
 fi
 
+# --- on-device helper script (static, not generated) ---
+# Lets operators change password / WiFi / IP after flashing without hand-
+# editing systemd-networkd or wpa_supplicant files.
+if [[ -f /bgRPIImage-base/files/static/bgRPIImage-setup ]]; then
+    install -D -m 755 /bgRPIImage-base/files/static/bgRPIImage-setup \
+        /usr/local/sbin/bgRPIImage-setup
+fi
+
 # --- pre-login + post-login banner ---
 if [[ -f "$GEN/motd-banner.sh" ]]; then
     install -D -m 644 "$GEN/issue"            /etc/issue

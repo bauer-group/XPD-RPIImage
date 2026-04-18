@@ -10,7 +10,7 @@ child variant **extends** a parent and adds only what differs.
 
 ## 🏗️ How merging works
 
-```
+```text
   base.json                    canbus-plattform.json
   ─────────                    ─────────────────────
   packages: [vim, jq]          packages: [can-utils]
@@ -19,10 +19,9 @@ child variant **extends** a parent and adds only what differs.
                                                         mcp2515-can1]
   can: (absent)                can: { interfaces: [can0, can1] }
 ```
-
 After merge:
 
-```
+```text
   packages: [vim, jq, can-utils]           ← scalar array: concat + dedupe
   users:    [admin:[sudo, spi, i2c]]       ← named record: by-name merge,
                                              groups concat
@@ -30,12 +29,11 @@ After merge:
                            mcp2515-can1]     by-name merge (no duplicates)
   can: { interfaces: [can0, can1] }        ← parent had no `can`, inherited
 ```
-
 Merge rules are implemented in [`scripts/generate.py`](../scripts/generate.py)
 (`deep_merge`):
 
 | Value kind | Rule |
-|---|---|
+| --- | --- |
 | Two objects (`dict`) | Recursive merge, child keys win on conflict. |
 | Two lists of primitives | `parent + child`, stable-order dedupe. |
 | Two lists of `{name: …}` records | Merge by `name`; entries with matching names deep-merge. |
@@ -86,7 +84,6 @@ Create `config/variants/gps-tracker.json`:
   }
 }
 ```
-
 That's it. 25 lines. Validate, render, build:
 
 ```bash
@@ -94,7 +91,6 @@ That's it. 25 lines. Validate, render, build:
 ./tools/run.sh render   gps-tracker
 ./tools/run.sh build    gps-tracker
 ```
-
 The CI matrix picks it up automatically on the next push.
 
 ---
@@ -102,7 +98,7 @@ The CI matrix picks it up automatically on the next push.
 ## 🧠 Naming conventions
 
 | What | Convention | Example |
-|---|---|---|
+| --- | --- | --- |
 | Variant file | `kebab-case.json` | `canbus-plattform.json` |
 | Variant name | same slug | `"name": "canbus-plattform"` |
 | Hostname | DNS-safe (`[a-z0-9-]{1,63}`) | `bg-canbus` |
@@ -117,10 +113,9 @@ deliberate, matches Linux `hostname` conventions, and keeps DNS happy.
 
 Chains are allowed — a child can extend a parent that itself extends another:
 
-```
+```text
 common.json  ◀─── fleet-eu.json  ◀─── gps-tracker-eu.json
 ```
-
 The generator follows links recursively and detects cycles (raises
 `ValueError("circular extends chain")`).
 
@@ -141,6 +136,5 @@ The generator can print the fully resolved, schema-validated JSON to stdout:
 # inside container:
 python scripts/generate.py config/variants/canbus-plattform.json --json | jq '.'
 ```
-
 Useful for answering "where does this user's group list actually come from"
 without grep'ing multiple files.

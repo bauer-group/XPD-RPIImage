@@ -40,25 +40,30 @@ python3 scripts/generate.py "${PY_ARGS[@]}"
 echo "[build] ensuring CustomPiOS"
 bash scripts/bootstrap.sh
 
-# Update build_dist symlinks inside CustomPiOS.
-( cd "$ROOT/CustomPiOS/src" && bash update "$ROOT/src" )
+# Write custompios_path sidecar into our distro src/ so build_dist can find
+# the CustomPiOS scripts. This replaces the old `bash update` command.
+bash "$ROOT/CustomPiOS/src/update-custompios-paths" "$ROOT/src"
+chmod +x "$ROOT/src/build_dist"
 
 # Use guysoft/custompios container to run the build with loop device access.
 DOCKER_IMAGE="${DOCKER_IMAGE:-guysoft/custompios:devel}"
-WORKSPACE="$ROOT/src/workspace"
-mkdir -p "$WORKSPACE" dist
+mkdir -p dist
 
-echo "[build] launching container $DOCKER_IMAGE"
+echo "[build] launching container $DOCKER_IMAGE for variant '$VARIANT'"
 docker run --rm --privileged \
     --volume "$ROOT":/distro \
     --workdir /distro/src \
     "$DOCKER_IMAGE" \
-    bash -c "./build_dist"
+    bash -c "./build_dist ${VARIANT}"
 
-# CustomPiOS leaves the image in src/workspace.
-IMG=$(ls -1 "$WORKSPACE"/*.img 2>/dev/null | head -n1 || true)
-if [[ -z "$IMG" ]]; then
-    echo "error: no .img produced in $WORKSPACE" >&2
+# CustomPiOS leaves the image in workspace-<variant> for non-default variants.
+for ws in "$ROOT/src/workspace-${VARIANT}" "$ROOT/src/workspace"; do
+    [[ -d "$ws" ]] || continue
+    IMG=$(ls -1 "$ws"/*.img 2>/dev/null | head -n1 || true)
+    [[ -n "$IMG" ]] && break
+done
+if [[ -z "${IMG:-}" ]]; then
+    echo "error: no .img produced (looked in workspace-${VARIANT} and workspace)" >&2
     exit 1
 fi
 
