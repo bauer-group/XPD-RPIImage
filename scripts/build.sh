@@ -55,7 +55,7 @@ if [[ "${BGRPI_NATIVE_BUILD:-no}" == "yes" ]]; then
     bash "$ROOT/CustomPiOS/src/update-custompios-paths" "$ROOT/src"
     ( cd "$ROOT/src" && bash ./build_dist "$VARIANT" )
 else
-    DOCKER_IMAGE="${DOCKER_IMAGE:-guysoft/custompios:1.5.0}"
+    DOCKER_IMAGE="${DOCKER_IMAGE:-guysoft/custompios:devel}"
     echo "[build] launching container $DOCKER_IMAGE for variant '$VARIANT'"
     # update-custompios-paths must run INSIDE the container so the
     # custompios_path sidecar records /distro/CustomPiOS/src (the bind-mount

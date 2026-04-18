@@ -4,5 +4,5 @@ export DIST_VERSION=0.1.0
 export MODULES=bgrpiimage-base,bgrpiimage-users,bgrpiimage-network,bgrpiimage-boot,bgrpiimage-docker,bgrpiimage-portainer,bgrpiimage-unattended-upgrades
 export BGRPIIMAGE_VARIANT=base
 export BGRPIIMAGE_HOSTNAME=bg-rpi
-export BGRPIIMAGE_TARGETS=rpi-zero2w,rpi4,rpi5,cm4,cm5
+export BGRPIIMAGE_TARGETS=rpi4,rpi5,cm4,cm5
 export BASE_OVERRIDE_HOSTNAME=bg-rpi

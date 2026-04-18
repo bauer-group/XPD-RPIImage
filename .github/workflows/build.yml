@@ -41,10 +41,11 @@ concurrency:
 
 env:
   PYTHON_VERSION: "3.14"
-  # CustomPiOS pinned in lock-step: docker image (for local builds) and
-  # CUSTOMPIOS_REF (for the cloned scripts used by both CI and local).
-  CUSTOMPIOS_IMAGE: "guysoft/custompios:1.5.0"
-  CUSTOMPIOS_REF:   "1.5.0"
+  # CustomPiOS: master because 1.5.0 predates raspios' .img.xz switch and
+  # is missing the base_image_downloader.  For strict reproducibility pin
+  # CUSTOMPIOS_REF to a concrete commit SHA here.
+  CUSTOMPIOS_IMAGE: "guysoft/custompios:devel"
+  CUSTOMPIOS_REF:   "master"
 
 jobs:
   # =========================================================================

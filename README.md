@@ -1,6 +1,4 @@
-# 📦 RPI-Image
-
-> BAUER GROUP custom Raspberry Pi OS base images for embedded workloads.
+# 📦 BAUER GROUP custom Raspberry Pi OS base images
 
 Declarative, reproducible, CI-built Raspberry Pi OS images for production and
 development devices. Config lives in JSON, generation is driven by Python,
@@ -10,11 +8,11 @@ Supported hardware:
 
 | Target | Status |
 | --- | --- |
-| Raspberry Pi Zero 2 W | ✅ |
 | Raspberry Pi 4 | ✅ |
 | Raspberry Pi 5 | ✅ |
 | Compute Module 4 (CM4) | ✅ |
 | Compute Module 5 (CM5) | ✅ |
+| Raspberry Pi Zero 2 W | ❌ not supported — 512 MB RAM is insufficient for Docker CE + Portainer + base services |
 
 Base OS: Raspberry Pi OS arm64 (trixie, 2026-04-13).
 

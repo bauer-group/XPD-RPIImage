@@ -10,7 +10,7 @@
     "sha256": "",
     "arch": "arm64"
   },
-  "targets": ["rpi-zero2w", "rpi4", "rpi5", "cm4", "cm5"],
+  "targets": ["rpi4", "rpi5", "cm4", "cm5"],
   "hostname": "bg-rpi",
   "locale": {
     "timezone": "Europe/Berlin",
