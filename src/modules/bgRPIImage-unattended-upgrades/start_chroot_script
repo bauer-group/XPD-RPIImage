@@ -26,10 +26,18 @@ install -D -m 644 "$GEN/apt-daily-upgrade.timer.d/override.conf" \
     /etc/systemd/system/apt-daily-upgrade.timer.d/override.conf
 
 # Conditional reboot service + timer (only present when auto_reboot.enabled).
+# Two triggers wire up the same check script:
+#  (a) apt-daily-upgrade.service ExecStartPost drop-in -> event-driven,
+#      runs immediately after every unattended-upgrade attempt. Reboot fires
+#      only when /var/run/reboot-required was set by a package post-install.
+#  (b) bgRPIImage-reboot-window.timer                  -> daily safety net,
+#      catches devices that missed (a) (offline during update window, etc).
 if [[ -f "$GEN/bgRPIImage-reboot-window.sh" ]]; then
     install -D -m 755 "$GEN/bgRPIImage-reboot-window.sh" /usr/local/sbin/bgRPIImage-reboot-window.sh
     install -D -m 644 "$GEN/bgRPIImage-reboot-window.service" /etc/systemd/system/bgRPIImage-reboot-window.service
     install -D -m 644 "$GEN/bgRPIImage-reboot-window.timer"   /etc/systemd/system/bgRPIImage-reboot-window.timer
+    install -D -m 644 "$GEN/apt-daily-upgrade.service.d/override.conf" \
+        /etc/systemd/system/apt-daily-upgrade.service.d/override.conf
     systemctl enable bgRPIImage-reboot-window.timer
 fi
 

@@ -94,6 +94,78 @@ def resolve_tree(node: Any, env: dict[str, str]) -> Any:
 
 
 # -----------------------------------------------------------------------------
+# Variant composition via `extends`
+# -----------------------------------------------------------------------------
+def load_variant(path: Path, _seen: set[Path] | None = None) -> dict[str, Any]:
+    """Load a variant JSON, recursively applying any `extends` reference.
+
+    `extends` is a relative path (from the current file) to a parent JSON.
+    The parent is loaded first (recursively), then the child is deep-merged
+    onto it. This is BEFORE env-var resolution - so a child can override an
+    `${ADMIN_PASSWORD:-...}` default by setting a literal.
+    """
+    _seen = _seen or set()
+    resolved = path.resolve()
+    if resolved in _seen:
+        chain = " -> ".join(str(p) for p in _seen) + f" -> {resolved}"
+        raise ValueError(f"circular extends chain: {chain}")
+    _seen.add(resolved)
+
+    with resolved.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+    data.pop("$schema", None)
+
+    parent_ref = data.pop("extends", None)
+    if parent_ref:
+        parent_path = (resolved.parent / parent_ref).resolve()
+        parent = load_variant(parent_path, _seen=_seen)
+        data = deep_merge(parent, data)
+    return data
+
+
+def deep_merge(parent: Any, child: Any) -> Any:
+    """Merge child onto parent.
+
+    - dicts          : recursive merge; child keys win on conflict
+    - scalar lists   : concat(parent + child) with stable-order dedupe
+    - named records  : lists of dicts where every item has a `name` field
+                       are merged by name (same name -> deep-merge entries)
+    - other lists    : concat(parent + child)
+    - scalars        : child overrides parent
+    """
+    if isinstance(parent, dict) and isinstance(child, dict):
+        out: dict[str, Any] = {**parent}
+        for k, v in child.items():
+            out[k] = deep_merge(out[k], v) if k in out else v
+        return out
+    if isinstance(parent, list) and isinstance(child, list):
+        combined = list(parent) + list(child)
+        if not combined:
+            return combined
+        if all(isinstance(x, (str, int, float, bool)) for x in combined):
+            seen: set[Any] = set()
+            deduped: list[Any] = []
+            for x in combined:
+                if x not in seen:
+                    seen.add(x)
+                    deduped.append(x)
+            return deduped
+        if all(isinstance(x, dict) and "name" in x for x in combined):
+            by_name: dict[str, dict[str, Any]] = {}
+            order: list[str] = []
+            for item in combined:
+                n = item["name"]
+                if n in by_name:
+                    by_name[n] = deep_merge(by_name[n], item)
+                else:
+                    by_name[n] = item
+                    order.append(n)
+            return [by_name[n] for n in order]
+        return combined
+    return child
+
+
+# -----------------------------------------------------------------------------
 # File writing helpers
 # -----------------------------------------------------------------------------
 def write(path: Path, content: str, *, executable: bool = False) -> None:
@@ -554,13 +626,23 @@ def render_unattended(cfg: dict[str, Any]) -> None:
         r_window = _window_minutes(r_start, r_end)
         if_required = reboot.get("if_required_only", True)
 
+        # The check script is invoked from both
+        #   (a) the maintenance timer (safety net, runs once per day)
+        #   (b) apt-daily-upgrade.service ExecStartPost (event-driven, runs
+        #       right after each update attempt)
+        # A reboot only happens when:
+        #   - /var/run/reboot-required exists (set by kernel / libc / etc.
+        #     package post-install hooks) AND
+        #   - current local time is inside the configured reboot window.
         check_script = [
             "#!/bin/bash",
-            "# Auto-generated: reboots iff /var/run/reboot-required and inside window.",
+            "# Auto-generated: reboot iff a package upgrade set the",
+            "# /var/run/reboot-required flag AND we are inside the window.",
             "set -euo pipefail",
             f'WINDOW_START="{r_start}"',
             f'WINDOW_END="{r_end}"',
             f'IF_REQUIRED_ONLY={"1" if if_required else "0"}',
+            'TAG="bgRPIImage-reboot"',
             'now=$(date +%H:%M)',
             'in_window() {',
             '  local now=$1 start=$2 end=$3',
@@ -570,21 +652,37 @@ def render_unattended(cfg: dict[str, Any]) -> None:
             '    [[ "$now" > "$start" || "$now" == "$start" || "$now" < "$end" ]]',
             '  fi',
             '}',
-            'if ! in_window "$now" "$WINDOW_START" "$WINDOW_END"; then',
-            '  echo "bgRPIImage-reboot: outside window ($now not in $WINDOW_START..$WINDOW_END)"',
-            '  exit 0',
-            'fi',
+            '# (1) guard: must have a pending reboot request from a package',
             'if [[ $IF_REQUIRED_ONLY -eq 1 ]]; then',
             '  if [[ ! -f /var/run/reboot-required ]]; then',
-            '    echo "bgRPIImage-reboot: no reboot required"',
+            '    logger -t "$TAG" "no reboot required - skipping"',
             '    exit 0',
             '  fi',
             'fi',
-            'logger -t bgRPIImage-reboot "rebooting inside window ${WINDOW_START}-${WINDOW_END}"',
-            '/sbin/shutdown -r +1 "bgRPIImage: scheduled reboot after unattended-upgrade"',
+            '# (2) guard: must be inside the configured reboot window',
+            'if ! in_window "$now" "$WINDOW_START" "$WINDOW_END"; then',
+            '  logger -t "$TAG" "reboot required but outside window ($now not in $WINDOW_START-$WINDOW_END) - deferring"',
+            '  exit 0',
+            'fi',
+            '# (3) log the packages that triggered the reboot',
+            'pkgs=""',
+            'if [[ -s /var/run/reboot-required.pkgs ]]; then',
+            '  pkgs=$(tr "\\n" " " < /var/run/reboot-required.pkgs)',
+            'fi',
+            'logger -t "$TAG" "rebooting inside window ${WINDOW_START}-${WINDOW_END} (triggered by: ${pkgs:-unknown})"',
+            '/sbin/shutdown -r +1 "bgRPIImage: scheduled reboot after unattended-upgrade (${pkgs:-kernel/system package update})"',
             '',
         ]
         write(gen / "bgRPIImage-reboot-window.sh", "\n".join(check_script), executable=True)
+
+        # Event-driven trigger: run the reboot-window check right after every
+        # apt-daily-upgrade.service execution. '-' prefix ignores failures so
+        # a broken script never blocks the upgrade service from succeeding.
+        apt_upgrade_dropin = (
+            "[Service]\n"
+            "ExecStartPost=-/usr/local/sbin/bgRPIImage-reboot-window.sh\n"
+        )
+        write(gen / "apt-daily-upgrade.service.d/override.conf", apt_upgrade_dropin)
 
         svc = (
             "[Unit]\n"
@@ -693,11 +791,8 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true", help="validate & resolve only")
     args = parser.parse_args()
 
-    with args.config.open("r", encoding="utf-8") as f:
-        raw = json.load(f)
-    # Strip editor-only $schema reference so strict schema validation doesn't
-    # reject it as an unexpected property.
-    raw.pop("$schema", None)
+    # Load + follow `extends` chain (deep-merge parents into this variant).
+    raw = load_variant(args.config)
 
     env = dict(os.environ)
     if args.env_file and args.env_file.exists():

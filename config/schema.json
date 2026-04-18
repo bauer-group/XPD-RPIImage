@@ -7,6 +7,10 @@
   "required": ["variant", "base_image", "targets", "hostname", "users"],
   "additionalProperties": false,
   "properties": {
+    "extends": {
+      "type": "string",
+      "description": "Relative path to a parent variant JSON. This variant is deep-merged onto the parent before schema validation (objects merge, arrays concatenate)."
+    },
     "variant": {
       "type": "object",
       "required": ["name"],

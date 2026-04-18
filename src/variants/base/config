@@ -1,0 +1,6 @@
+# Auto-generated variant config for base
+DIST_NAME=bgRPIImage-base
+DIST_VERSION=0.1.0
+MODULES='bgRPIImage-base bgRPIImage-users bgRPIImage-network bgRPIImage-boot bgRPIImage-docker bgRPIImage-portainer bgRPIImage-unattended-upgrades'
+BGRPIIMAGE_VARIANT=base
+BGRPIIMAGE_HOSTNAME=bg-rpi
