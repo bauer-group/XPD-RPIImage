@@ -1,0 +1,142 @@
+{
+  "$schema": "../schema.json",
+  "variant": {
+    "name": "can-app",
+    "description": "BAUER GROUP CAN application base image (Waveshare 17912 dual isolated CAN HAT, MCP2515)",
+    "version": "1.0.0"
+  },
+  "base_image": {
+    "url": "https://downloads.raspberrypi.com/raspios_arm64/images/raspios_arm64-2026-04-14/2026-04-13-raspios-trixie-arm64.img.xz",
+    "sha256": "",
+    "arch": "arm64"
+  },
+  "targets": ["rpi-zero2w", "rpi4", "rpi5", "cm4", "cm5"],
+  "hostname": "bgos-can",
+  "locale": {
+    "timezone": "Europe/Berlin",
+    "keyboard": "de",
+    "locale": "en_US.UTF-8"
+  },
+  "users": [
+    {
+      "name": "admin",
+      "password": "${ADMIN_PASSWORD:-12345678}",
+      "groups": ["sudo", "dialout", "gpio", "i2c", "spi", "netdev", "plugdev", "video", "audio", "docker"],
+      "shell": "/bin/bash",
+      "sudo_nopasswd": true
+    }
+  ],
+  "remove_users": ["pi"],
+  "root": {
+    "su_nopasswd_users": ["admin"],
+    "ssh_password_auth": true,
+    "ssh_permit_root_login": false
+  },
+  "packages": [
+    "vim",
+    "mc",
+    "net-tools",
+    "iputils-ping",
+    "dnsutils",
+    "can-utils",
+    "curl",
+    "ca-certificates",
+    "gnupg",
+    "lsb-release",
+    "htop",
+    "tmux",
+    "rsync",
+    "git",
+    "jq",
+    "unattended-upgrades",
+    "apt-listchanges"
+  ],
+  "network": {
+    "ethernet": {
+      "interface": "eth0",
+      "mode": "dhcp",
+      "ipv6": true
+    },
+    "wifi": {
+      "interface": "wlan0",
+      "mode": "dhcp",
+      "ipv6": true,
+      "country": "DE",
+      "networks": [
+        {
+          "ssid": "IOT @ BAUER-GROUP",
+          "psk": "${WIFI_PSK:-12345678}",
+          "priority": 10
+        }
+      ]
+    }
+  },
+  "boot_config": {
+    "enable_i2c": true,
+    "enable_spi": true,
+    "dtoverlays": [
+      { "name": "mcp2515-can0", "params": { "oscillator": "16000000", "interrupt": "25" } },
+      { "name": "mcp2515-can1", "params": { "oscillator": "16000000", "interrupt": "26" } }
+    ]
+  },
+  "can": {
+    "interfaces": [
+      { "name": "can0", "bitrate": 500000, "auto_up": true, "txqueuelen": 1000 },
+      { "name": "can1", "bitrate": 500000, "auto_up": true, "txqueuelen": 1000 }
+    ]
+  },
+  "docker": {
+    "enabled": true,
+    "daemon": {
+      "bip": "10.10.0.1/17",
+      "ipv6": true,
+      "fixed-cidr-v6": "fdff:0::/64",
+      "default-address-pools": [
+        { "base": "10.10.128.0/17", "size": 24 },
+        { "base": "fdff:1::/48", "size": 64 }
+      ],
+      "log-driver": "json-file",
+      "log-opts": { "max-size": "10m", "max-file": "3" }
+    },
+    "sysctl": {
+      "vm.max_map_count": 4194304
+    }
+  },
+  "portainer": {
+    "enabled": true,
+    "edition": "ce",
+    "bind": "0.0.0.0",
+    "image": "portainer/portainer-ce:latest",
+    "ports": { "edge": 8000, "http": 9000, "https": 9443 },
+    "auto_start": true
+  },
+  "unattended_upgrades": {
+    "enabled": true,
+    "allowed_origins": [
+      "origin=Debian,codename=${distro_codename},label=Debian",
+      "origin=Debian,codename=${distro_codename},label=Debian-Security",
+      "origin=Debian,codename=${distro_codename}-security,label=Debian-Security",
+      "origin=Raspbian,codename=${distro_codename},label=Raspbian",
+      "origin=Raspberry Pi Foundation,codename=${distro_codename},label=Raspberry Pi Foundation"
+    ],
+    "package_blocklist": [],
+    "remove_unused_dependencies": true,
+    "schedule": {
+      "start": "02:00",
+      "end": "04:00",
+      "persistent": true
+    },
+    "auto_reboot": {
+      "enabled": true,
+      "if_required_only": true,
+      "window": {
+        "start": "03:00",
+        "end": "05:00"
+      }
+    },
+    "mail": {
+      "address": "",
+      "on_error_only": true
+    }
+  }
+}

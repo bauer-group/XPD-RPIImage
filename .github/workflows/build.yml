@@ -1,0 +1,161 @@
+# SPDX-License-Identifier: MIT
+# BAUER GROUP XPD-RPIImage - image build pipeline
+name: build-image
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      variant:
+        description: "Variant to build (blank = all)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # -------- static validation: JSON schema + python syntax --------
+  validate:
+    name: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: install deps
+        run: python -m pip install -r scripts/requirements.txt
+
+      - name: py syntax
+        run: python -m py_compile scripts/generate.py
+
+      - name: validate all variants
+        run: |
+          set -euo pipefail
+          for f in config/variants/*.json; do
+            echo "::group::$f"
+            python scripts/generate.py "$f" --dry-run > /dev/null
+            echo "::endgroup::"
+          done
+
+      - name: render smoke test (can-app)
+        env:
+          ADMIN_PASSWORD: ci-placeholder-pw
+          WIFI_PSK: ci-placeholder-psk
+        run: python scripts/generate.py config/variants/can-app.json
+
+  # -------- discover build matrix from config/variants/*.json --------
+  matrix:
+    name: discover
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      variants: ${{ steps.set.outputs.variants }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: set
+        run: |
+          set -euo pipefail
+          input="${{ github.event.inputs.variant || '' }}"
+          if [[ -n "$input" ]]; then
+            echo "variants=[\"$input\"]" >> "$GITHUB_OUTPUT"
+          else
+            variants=$(ls config/variants/*.json | xargs -n1 basename | sed 's/\.json$//' | jq -R -s -c 'split("\n") | map(select(length>0))')
+            echo "variants=$variants" >> "$GITHUB_OUTPUT"
+          fi
+
+  # -------- actual image build (privileged docker) --------
+  build:
+    name: build (${{ matrix.variant }})
+    needs: matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(needs.matrix.outputs.variants) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: install python deps
+        run: python -m pip install -r scripts/requirements.txt
+
+      - name: free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /usr/local/share/boost
+          sudo docker image prune -af
+
+      - name: install host build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+              qemu-user-static binfmt-support kpartx xz-utils zip unzip
+
+      - name: build image
+        env:
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD || 'ci-placeholder-pw' }}
+          WIFI_PSK: ${{ secrets.WIFI_PSK || 'ci-placeholder-psk' }}
+          DOCKER_IMAGE: guysoft/custompios:devel
+        run: bash scripts/build.sh "${{ matrix.variant }}"
+
+      - name: checksum
+        working-directory: dist
+        run: |
+          for f in *.img.xz; do
+            sha256sum "$f" > "$f.sha256"
+          done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bgos-${{ matrix.variant }}-${{ github.sha }}
+          path: |
+            dist/*.img.xz
+            dist/*.sha256
+          retention-days: 14
+
+  # -------- optional: attach artifacts to a tagged release --------
+  release:
+    name: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-assets/*.img.xz
+            release-assets/*.sha256
+          generate_release_notes: true

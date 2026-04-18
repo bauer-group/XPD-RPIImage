@@ -1,0 +1,34 @@
+# Build artifacts
+workspace/
+dist/
+*.img
+*.img.xz
+*.zip
+*.tmp
+
+# Generated files from JSON config
+src/variants/*/image/config
+src/variants/*/_generated/
+src/modules/*/files/_generated/
+
+# CustomPiOS is cloned at build time into this path
+CustomPiOS/
+!CustomPiOS/.keep
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Secrets (just in case)
+.env
+.env.local
+secrets.json

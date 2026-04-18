@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+test -f /bgos-boot/files/_generated/config-bgos.txt

@@ -1,0 +1,12 @@
+# BAUER GROUP RPI Image - distro-level CustomPiOS config
+# This file is sourced by CustomPiOS build_dist before variant/image configs.
+# Variant-specific values live in src/variants/<name>/config (generated).
+
+DIST_NAME="${DIST_NAME:-bgos}"
+DIST_VERSION="${DIST_VERSION:-0.0.0}"
+
+# Default to the upstream raspios_arm64 trixie image; variant may override.
+BASE_IMAGE_ENLARGEROOT="${BASE_IMAGE_ENLARGEROOT:-2000}"
+BASE_IMAGE_RESIZEROOT="${BASE_IMAGE_RESIZEROOT:-200}"
+
+export LC_ALL=C

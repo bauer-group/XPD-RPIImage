@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# bgos-portainer: install a systemd-managed Portainer CE/EE container
+# that starts automatically on first boot. The actual image pull happens
+# on the target device (not in chroot) - we just deploy the unit.
+set -x
+set -e
+export LC_ALL=C
+
+source /common.sh
+install_cleanup_trap
+
+GEN=/bgos-portainer/files/_generated
+
+install -D -m 644 "$GEN/portainer.service" /etc/systemd/system/portainer.service
+if [[ -f "$GEN/portainer.env" ]]; then
+    install -D -m 644 "$GEN/portainer.env" /etc/default/portainer
+fi
+
+# shellcheck disable=SC1091
+source "$GEN/portainer.env" 2>/dev/null || true
+
+if [[ "${BGOS_PORTAINER_AUTOSTART:-yes}" == "yes" ]]; then
+    systemctl enable portainer.service
+fi

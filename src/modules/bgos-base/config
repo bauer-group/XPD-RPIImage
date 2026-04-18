@@ -1,0 +1,2 @@
+# bgos-base module config
+BGOS_BASE_EXTRA_PACKAGES="${BGOS_BASE_EXTRA_PACKAGES:-}"

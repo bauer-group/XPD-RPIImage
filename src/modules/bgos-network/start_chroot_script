@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# bgos-network: switch to systemd-networkd + wpa_supplicant@wlan0
+set -x
+set -e
+export LC_ALL=C
+export DEBIAN_FRONTEND=noninteractive
+
+source /common.sh
+install_cleanup_trap
+
+GEN=/bgos-network/files/_generated
+
+apt-get update
+apt-get install -y --no-install-recommends \
+    systemd-resolved \
+    wpasupplicant \
+    crda \
+    wireless-regdb \
+    iw
+
+# systemd-networkd takes ownership of eth0/wlan0
+systemctl enable systemd-networkd
+systemctl enable systemd-resolved
+
+# Disable NetworkManager / dhcpcd if present - they fight over interfaces.
+systemctl disable NetworkManager 2>/dev/null || true
+systemctl disable dhcpcd 2>/dev/null || true
+systemctl mask NetworkManager 2>/dev/null || true
+
+mkdir -p /etc/systemd/network
+if [[ -d "$GEN/systemd-networkd" ]]; then
+    cp -a "$GEN/systemd-networkd/." /etc/systemd/network/
+fi
+
+# resolv.conf -> systemd-resolved stub
+ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+
+# wpa_supplicant per-interface
+if [[ -d "$GEN/wpa_supplicant" ]]; then
+    mkdir -p /etc/wpa_supplicant
+    cp -a "$GEN/wpa_supplicant/." /etc/wpa_supplicant/
+    chmod 600 /etc/wpa_supplicant/wpa_supplicant-*.conf 2>/dev/null || true
+    # enable wpa_supplicant@<iface> for each conf file.
+    for f in /etc/wpa_supplicant/wpa_supplicant-*.conf; do
+        [[ -f "$f" ]] || continue
+        iface=$(basename "$f" .conf); iface=${iface#wpa_supplicant-}
+        systemctl enable "wpa_supplicant@${iface}.service"
+    done
+fi
