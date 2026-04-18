@@ -22,5 +22,11 @@ export BASE_IMAGE_RESIZEROOT="${BASE_IMAGE_RESIZEROOT:-200}"
 # slot) and fails with "operand expected" during sfdisk/jq parsing.
 export BASE_ROOT_PARTITION="${BASE_ROOT_PARTITION:-2}"
 export BASE_BOOT_PARTITION="${BASE_BOOT_PARTITION:-1}"
+# On raspios bookworm/trixie the FAT32 /boot partition lives at
+# /boot/firmware inside the rootfs (moved from /boot during the bookworm
+# cycle). CustomPiOS's mount_image treats an empty value as "", not
+# "boot", so without this both partitions stack at $BASE_MOUNT_PATH and
+# the boot FAT32 shadows usr/bin - breaking qemu-static copy.
+export BASE_BOOT_MOUNT_PATH="${BASE_BOOT_MOUNT_PATH:-boot/firmware}"
 
 export LC_ALL=C
