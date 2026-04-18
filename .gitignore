@@ -16,6 +16,9 @@ src/workspace/
 src/workspace-*/
 src/build.log
 
+# Cached base image downloads (.img.xz and extracted .img)
+src/image-cache/
+
 # tools/requirements.txt is auto-synced from scripts/requirements.txt by
 # the run.* launchers before docker build - so it drifts on every run.
 tools/requirements.txt

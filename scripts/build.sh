@@ -42,6 +42,60 @@ bash scripts/bootstrap.sh
 chmod +x "$ROOT/src/build_dist"
 mkdir -p dist
 
+# ---------------------------------------------------------------------------
+# Download + pre-extract the raspios base image.
+#
+# CustomPiOS itself only understands `.zip` bundles (see its
+# variants/raspios_lite_arm64/config: `ls -t *-{raspbian,raspios}-*.zip`),
+# while current Raspberry Pi OS is distributed as `.img.xz`.  Easiest fix:
+# do the fetch + unxz ourselves and drop the raw `.img` directly into the
+# workspace that CustomPiOS then picks up via `pushd $BASE_WORKSPACE;
+# [ -e *.img ]`.  Cached in src/image-cache/ so re-runs are fast.
+# ---------------------------------------------------------------------------
+WORKSPACE="$ROOT/src/workspace-${VARIANT}"
+mkdir -p "$WORKSPACE"
+if ! ls "$WORKSPACE"/*.img >/dev/null 2>&1; then
+    echo "[build] preparing base image for '$VARIANT'"
+    IMAGE_URL=$(python3 - <<PY
+import json
+cfg = json.load(open("$CONFIG_JSON"))
+# extends chain is resolved lazily by the generator - but for the URL we
+# need to walk it by hand since we are not loading the full renderer here.
+from pathlib import Path
+seen = set()
+while "extends" in cfg and str(Path("$CONFIG_JSON").resolve()) not in seen:
+    seen.add(str(Path("$CONFIG_JSON").resolve()))
+    parent_rel = cfg["extends"]
+    cfg.pop("extends")
+    parent_path = (Path("$CONFIG_JSON").resolve().parent / parent_rel).resolve()
+    parent = json.load(open(parent_path))
+    # shallow: take parent's base_image only if child does not set one.
+    parent.update({k: v for k, v in cfg.items() if v is not None})
+    cfg = parent
+print(cfg["base_image"]["url"])
+PY
+    )
+    echo "[build] URL: $IMAGE_URL"
+
+    CACHE="$ROOT/src/image-cache"
+    mkdir -p "$CACHE"
+    IMG_XZ="$CACHE/$(basename "$IMAGE_URL")"
+    IMG_RAW="${IMG_XZ%.xz}"
+
+    if [[ ! -f "$IMG_XZ" && ! -f "$IMG_RAW" ]]; then
+        echo "[build] downloading $IMG_XZ"
+        curl -fSL --retry 3 -o "$IMG_XZ.partial" "$IMAGE_URL"
+        mv "$IMG_XZ.partial" "$IMG_XZ"
+    fi
+    if [[ -f "$IMG_XZ" && ! -f "$IMG_RAW" ]]; then
+        echo "[build] unxz $IMG_XZ"
+        xz -d --keep "$IMG_XZ"
+    fi
+
+    cp -v "$IMG_RAW" "$WORKSPACE/"
+    echo "[build] placed $(basename "$IMG_RAW") into $WORKSPACE"
+fi
+
 # Two build paths:
 #   BGRPI_NATIVE_BUILD=yes  -> run directly on the host (CI runners, bare
 #                              Linux dev boxes). No image pull, no privileged
