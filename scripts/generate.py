@@ -26,9 +26,32 @@ from typing import Any
 
 try:
     import jsonschema
+    from rich import box
+    from rich.console import Console
+    from rich.json import JSON
+    from rich.panel import Panel
+    from rich.table import Table
 except ImportError:
-    print("error: jsonschema not installed. run: pip install -r scripts/requirements.txt", file=sys.stderr)
+    print("error: missing dependencies. run: pip install -r scripts/requirements.txt", file=sys.stderr)
     sys.exit(2)
+
+# On Windows the default stdout encoding is cp1252 which can't render the
+# Unicode glyphs rich uses for borders / status. Reconfigure to UTF-8 and
+# disable rich's legacy Win32 renderer so ANSI escapes are used instead.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")
+    except (AttributeError, Exception):
+        pass
+
+console = Console(highlight=False, legacy_windows=False)
+
+
+def _error_panel(title: str, body: str, hint: str | None = None) -> None:
+    text = body
+    if hint:
+        text += f"\n\n[dim]hint:[/] {hint}"
+    console.print(Panel(text, title=f"[red]{title}[/]", border_style="red", box=box.ROUNDED))
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_DIR = ROOT / "config"
@@ -784,6 +807,20 @@ def _module_enabled(module: str, cfg: dict[str, Any]) -> bool:
 # -----------------------------------------------------------------------------
 # Entry point
 # -----------------------------------------------------------------------------
+def _module_status(module: str) -> tuple[str, int]:
+    """Return (status, file_count) for a module's _generated dir after render.
+
+    status is one of: rendered / disabled / empty.
+    """
+    gen = MODULES_DIR / module / "files" / "_generated"
+    if not gen.exists():
+        return ("empty", 0)
+    if (gen / ".disabled").exists():
+        return ("disabled", 0)
+    count = sum(1 for p in gen.rglob("*") if p.is_file() and p.name != ".disabled")
+    return ("rendered" if count else "empty", count)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("config", type=Path, help="path to variant JSON config")
@@ -792,7 +829,14 @@ def main() -> int:
     args = parser.parse_args()
 
     # Load + follow `extends` chain (deep-merge parents into this variant).
-    raw = load_variant(args.config)
+    try:
+        raw = load_variant(args.config)
+    except FileNotFoundError as e:
+        _error_panel("config not found", str(e))
+        return 2
+    except ValueError as e:
+        _error_panel("invalid extends chain", str(e))
+        return 2
 
     env = dict(os.environ)
     if args.env_file and args.env_file.exists():
@@ -806,7 +850,11 @@ def main() -> int:
     try:
         resolved = resolve_tree(raw, env)
     except KeyError as e:
-        print(f"error: {e}", file=sys.stderr)
+        _error_panel(
+            "missing environment variable",
+            str(e).strip("'"),
+            hint="export the variable or use ${VAR:-default} in the JSON",
+        )
         return 2
 
     with SCHEMA_PATH.open("r", encoding="utf-8") as f:
@@ -816,24 +864,69 @@ def main() -> int:
     try:
         jsonschema.validate(resolved, schema)
     except jsonschema.ValidationError as e:
-        print(f"error: config does not match schema:\n  {e.message}\n  at: {list(e.absolute_path)}", file=sys.stderr)
+        path = " → ".join(str(x) for x in e.absolute_path) or "(root)"
+        _error_panel(
+            "config validation failed",
+            f"[bold]{e.message}[/]\n[dim]at:[/] {path}",
+        )
         return 2
 
+    variant_name = resolved["variant"]["name"]
+    variant_version = resolved["variant"].get("version", "?")
+
     if args.dry_run:
-        print(json.dumps(resolved, indent=2))
+        console.print(Panel.fit(
+            f"[bold cyan]{variant_name}[/] [dim]v{variant_version}[/] [green]valid[/]",
+            border_style="green", box=box.ROUNDED,
+        ))
+        console.print(JSON.from_data(resolved))
         return 0
 
-    render_base(resolved)
-    render_users(resolved)
-    render_network(resolved)
-    render_boot(resolved)
-    render_can(resolved)
-    render_docker(resolved)
-    render_portainer(resolved)
-    render_unattended(resolved)
-    render_variant_config(resolved)
+    # Header with resolved variant metadata.
+    console.print(Panel(
+        f"[bold cyan]{variant_name}[/]  [dim]v{variant_version}[/]\n"
+        f"[dim]hostname:[/] {resolved['hostname']}\n"
+        f"[dim]targets: [/] {', '.join(resolved['targets'])}",
+        title="[bold]bgRPIImage render[/]", border_style="cyan", box=box.ROUNDED,
+        title_align="left",
+    ))
 
-    print(f"ok: rendered variant '{resolved['variant']['name']}' into src/")
+    steps: list[tuple[str, Any]] = [
+        ("bgRPIImage-base",                 render_base),
+        ("bgRPIImage-users",                render_users),
+        ("bgRPIImage-network",              render_network),
+        ("bgRPIImage-boot",                 render_boot),
+        ("bgRPIImage-can",                  render_can),
+        ("bgRPIImage-docker",               render_docker),
+        ("bgRPIImage-portainer",            render_portainer),
+        ("bgRPIImage-unattended-upgrades",  render_unattended),
+    ]
+
+    table = Table(box=box.SIMPLE, show_header=True, header_style="bold dim")
+    table.add_column("", width=2)
+    table.add_column("module")
+    table.add_column("files", justify="right")
+    table.add_column("status", style="dim")
+
+    total = 0
+    for module, fn in steps:
+        fn(resolved)
+        status, count = _module_status(module)
+        if status == "rendered":
+            table.add_row("[green]✓[/]", module, str(count), "rendered")
+            total += count
+        elif status == "disabled":
+            table.add_row("[yellow]·[/]", f"[dim]{module}[/]", "-", "disabled in config")
+        else:
+            table.add_row("[dim]·[/]", f"[dim]{module}[/]", "-", "no artifacts (skipped by filter)")
+
+    render_variant_config(resolved)
+    console.print(table)
+    console.print(
+        f"  [green]{total}[/] artifact{'s' if total != 1 else ''} written to "
+        f"[dim]src/modules/*/files/_generated/[/]\n"
+        f"  variant config: [dim]src/variants/{variant_name}/config[/]"
+    )
     return 0
 
 
