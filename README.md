@@ -130,6 +130,7 @@ More detail: [`docs/architecture.md`](docs/architecture.md).
 | --- | --- |
 | Architecture + build pipeline | [docs/architecture.md](docs/architecture.md) |
 | JSON config reference + env resolver | [docs/configuration.md](docs/configuration.md) |
+| **Hardware reference** (camera, HDMI, RTC, fan, watchdog, overclock, …) | [docs/hardware.md](docs/hardware.md) |
 | Creating a new variant (`extends` chain) | [docs/variants.md](docs/variants.md) |
 | **Post-flash setup (password · WiFi · IP)** | [docs/post-flash-setup.md](docs/post-flash-setup.md) |
 | Dockerised tools container | [docs/tools-container.md](docs/tools-container.md) |

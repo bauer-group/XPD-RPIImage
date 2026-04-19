@@ -142,6 +142,174 @@
         "extra_lines": { "type": "array", "items": { "type": "string" } }
       }
     },
+    "camera": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "CSI camera configuration. Pi5 always uses libcamera; Pi4 requires legacy=false (libcamera) or legacy=true (deprecated raspivid stack).",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "autodetect": { "type": "boolean", "description": "camera_auto_detect=1 (Pi4/5 libcamera). Leave true unless pinning an explicit sensor overlay." },
+        "sensors": {
+          "type": "array",
+          "description": "Explicit sensor overlays when autodetect is false (e.g. ov5647, imx219, imx296, imx378, imx477, imx519, imx708).",
+          "items": { "type": "string" }
+        },
+        "legacy": { "type": "boolean", "description": "Pi4 only: start_x=1 + gpu_mem split for the deprecated raspivid stack." }
+      }
+    },
+    "hdmi": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Per-output HDMI configuration. port 0 is the left/micro-HDMI on Pi4/5, port 1 is the right one.",
+      "properties": {
+        "outputs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["port"],
+            "properties": {
+              "port":           { "type": "integer", "enum": [0, 1] },
+              "force_hotplug":  { "type": "boolean", "description": "hdmi_force_hotplug - keep the port active even without a connected display." },
+              "group":          { "type": "integer", "enum": [0, 1, 2], "description": "hdmi_group: 0=auto, 1=CEA (TV), 2=DMT (PC monitor)." },
+              "mode":           { "type": "integer", "minimum": 0, "description": "hdmi_mode within the chosen group (see Raspberry Pi docs for the mode table)." },
+              "drive":          { "type": "string", "enum": ["hdmi", "dvi"], "description": "hdmi_drive: hdmi routes audio, dvi does not." },
+              "audio":          { "type": "boolean", "description": "Force HDMI audio even if EDID reports none (hdmi_drive=2 + hdmi_ignore_edid_audio)." },
+              "rotate":         { "type": "integer", "enum": [0, 90, 180, 270], "description": "display_hdmi_rotate (Pi4) / video=...,rotate= (Pi5 KMS)." },
+              "boost":          { "type": "integer", "minimum": 0, "maximum": 11, "description": "config_hdmi_boost for long/noisy cables." }
+            }
+          }
+        }
+      }
+    },
+    "display": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Console / DSI-LCD display settings orthogonal to HDMI.",
+      "properties": {
+        "console_rotate": { "type": "integer", "enum": [0, 90, 180, 270], "description": "fbcon rotation for the Linux text console." },
+        "lcd_rotate":     { "type": "integer", "enum": [0, 90, 180, 270], "description": "display_lcd_rotate - applies to the official Pi touch DSI display." }
+      }
+    },
+    "audio": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Audio subsystem - which output the ALSA default device lands on and whether onboard audio is active.",
+      "properties": {
+        "enabled":        { "type": "boolean", "description": "dtparam=audio=on (onboard PWM/headphone jack)." },
+        "default_output": { "type": "string",  "enum": ["auto", "hdmi0", "hdmi1", "headphones", "dac"], "description": "Preferred ALSA default sink." }
+      }
+    },
+    "gpio": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "GPIO-level hardware toggles. The 1-Wire protocol is exposed as its own block for convenience (DS18B20 temperature sensors etc.).",
+      "properties": {
+        "one_wire": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "pin":     { "type": "integer", "minimum": 0, "maximum": 27, "description": "BCM pin for w1-gpio, default 4." }
+          }
+        }
+      }
+    },
+    "rtc": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "I2C real-time clock HAT. A hardware RTC keeps time across power cycles on off-grid / field devices without NTP. fake_hwclock is installed as a fallback when the HAT is absent.",
+      "properties": {
+        "enabled":       { "type": "boolean" },
+        "model":         { "type": "string", "enum": ["ds3231", "pcf8523", "pcf85063"], "description": "dtoverlay name; matches i2c-rtc's accepted values." },
+        "i2c_bus":       { "type": "integer", "enum": [0, 1, 3, 4, 5, 6], "default": 1 },
+        "fake_hwclock":  { "type": "boolean", "description": "Install fake-hwclock to persist time across reboots when no HAT is attached." }
+      }
+    },
+    "fan": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Active cooling. mode=gpio drives a simple on/off MOSFET via dtoverlay gpio-fan; mode=pwm uses the pwm-fan overlay with temp-curve; mode=emc2301 targets the Pi5 cooling HAT (built-in on the Active Cooler).",
+      "properties": {
+        "enabled":     { "type": "boolean" },
+        "mode":        { "type": "string", "enum": ["gpio", "pwm", "emc2301"] },
+        "gpio":        { "type": "integer", "minimum": 0, "maximum": 27, "description": "BCM pin for gpio/pwm fan (typically 14 on PoE HAT, 18 for PWM HAT)." },
+        "temp_on":     { "type": "integer", "minimum": 0, "description": "Turn-on temperature in millidegC." },
+        "temp_off":    { "type": "integer", "minimum": 0, "description": "Turn-off temperature in millidegC (hysteresis)." }
+      }
+    },
+    "leds": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Power / activity LED behaviour. Use 'off' for stealth deployments, 'heartbeat' for liveness, 'mmc0' for disk I/O feedback.",
+      "properties": {
+        "power":    { "type": "string", "enum": ["on", "off", "heartbeat", "mmc0", "default"] },
+        "activity": { "type": "string", "enum": ["on", "off", "heartbeat", "mmc0", "default"] }
+      }
+    },
+    "overclock": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Performance tuning. Requires an explicit warranty-void acknowledgement - otherwise the config fails validation.",
+      "properties": {
+        "enabled":                { "type": "boolean" },
+        "accept_warranty_void":   { "type": "boolean", "description": "MUST be true when enabled=true. Overclocking sets the permanent OTP warranty bit on Pi4/5." },
+        "arm_freq":               { "type": "integer", "minimum": 600,  "maximum": 3000, "description": "ARM clock in MHz." },
+        "gpu_freq":               { "type": "integer", "minimum": 250,  "maximum": 1000, "description": "GPU core clock in MHz." },
+        "over_voltage":           { "type": "integer", "minimum": -16,  "maximum": 14,   "description": "CPU/GPU core voltage offset (0.025 V steps)." },
+        "sdram_freq":             { "type": "integer", "minimum": 400,  "maximum": 800,  "description": "SDRAM clock in MHz." }
+      }
+    },
+    "memory": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Memory split between VideoCore and Linux. Headless images should shrink gpu_mem (default 76 / 128 depending on board) to free RAM.",
+      "properties": {
+        "gpu_mem":      { "type": "integer", "minimum": 16, "maximum": 944, "description": "Generic gpu_mem in MiB (applies to all boards unless a size-specific override is set)." },
+        "gpu_mem_256":  { "type": "integer", "minimum": 16, "maximum": 192 },
+        "gpu_mem_512":  { "type": "integer", "minimum": 16, "maximum": 384 },
+        "gpu_mem_1024": { "type": "integer", "minimum": 16, "maximum": 944 },
+        "cma":          { "type": "integer", "minimum": 32, "maximum": 944, "description": "Contiguous memory allocator size (MiB). Used for camera + GL." }
+      }
+    },
+    "pcie": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Pi5 / CM4 / CM5 PCIe slot. nvme_boot flips bootloader boot_order so the device boots from an attached NVMe first.",
+      "properties": {
+        "enabled":   { "type": "boolean" },
+        "gen":       { "type": "integer", "enum": [1, 2, 3], "description": "Max PCIe generation (gen3 requires explicit opt-in - beyond spec but usually works on good boards)." },
+        "nvme_boot": { "type": "boolean", "description": "Pi5 only: set BOOT_ORDER in the EEPROM to prefer NVMe." }
+      }
+    },
+    "usb": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "USB power / behaviour tuning.",
+      "properties": {
+        "max_usb_current": { "type": "boolean", "description": "Pi4 only: raise the USB port current ceiling when using a 3A supply (max_usb_current=1)." }
+      }
+    },
+    "bootloader": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Pi5 / CM5 EEPROM bootloader settings. Applied on first boot via rpi-eeprom-config.",
+      "properties": {
+        "boot_order":     { "type": "string", "pattern": "^0x[0-9a-fA-F]+$", "description": "Raw BOOT_ORDER hex (e.g. 0xf461 = NVMe,USB,SD,repeat)." },
+        "wake_on_gpio":   { "type": "boolean", "description": "WAKE_ON_GPIO - soft-off power button behaviour." },
+        "power_off_on_halt": { "type": "boolean", "description": "POWER_OFF_ON_HALT - actually cut power on `poweroff` instead of idling the SoC." }
+      }
+    },
+    "watchdog": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Hardware watchdog (bcm2835-wdt). systemd kicks it automatically; failure to kick within timeout forces a reboot.",
+      "properties": {
+        "enabled":           { "type": "boolean" },
+        "runtime_sec":       { "type": "integer", "minimum": 5, "maximum": 15, "description": "systemd RuntimeWatchdogSec - kicked by systemd-pid1." },
+        "reboot_sec":        { "type": "integer", "minimum": 10, "description": "systemd RebootWatchdogSec - maximum time allowed for orderly shutdown." }
+      }
+    },
     "can": {
       "type": "object",
       "additionalProperties": false,

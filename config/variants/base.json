@@ -82,6 +82,54 @@
     "enable_spi": false,
     "dtoverlays": []
   },
+  "camera": {
+    "enabled": false,
+    "autodetect": true,
+    "legacy": false
+  },
+  "hdmi": {
+    "outputs": []
+  },
+  "display": {
+    "console_rotate": 0,
+    "lcd_rotate": 0
+  },
+  "audio": {
+    "enabled": true,
+    "default_output": "auto"
+  },
+  "gpio": {
+    "one_wire": {
+      "enabled": false,
+      "pin": 4
+    }
+  },
+  "rtc": {
+    "enabled": false,
+    "fake_hwclock": false
+  },
+  "fan": {
+    "enabled": false
+  },
+  "leds": {
+    "power": "default",
+    "activity": "default"
+  },
+  "overclock": {
+    "enabled": false,
+    "accept_warranty_void": false
+  },
+  "memory": {},
+  "pcie": {
+    "enabled": false
+  },
+  "usb": {
+    "max_usb_current": false
+  },
+  "bootloader": {},
+  "watchdog": {
+    "enabled": false
+  },
   "docker": {
     "enabled": true,
     "daemon": {

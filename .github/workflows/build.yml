@@ -291,6 +291,26 @@ jobs:
           reboot_window=$(jq -r '.unattended_upgrades.auto_reboot.window | "\(.start)-\(.end)"' "$RESOLVED")
           banner_enabled=$(jq -r '.banner.enabled // false'         "$RESOLVED")
 
+          # Hardware blocks
+          cam_enabled=$(jq -r '.camera.enabled // false'            "$RESOLVED")
+          hdmi_count=$(jq -r '.hdmi.outputs // [] | length'         "$RESOLVED")
+          audio_default=$(jq -r '.audio.default_output // "auto"'   "$RESOLVED")
+          onewire_enabled=$(jq -r '.gpio.one_wire.enabled // false' "$RESOLVED")
+          rtc_enabled=$(jq -r '.rtc.enabled // false'               "$RESOLVED")
+          rtc_model=$(jq -r '.rtc.model // "-"'                     "$RESOLVED")
+          fan_enabled=$(jq -r '.fan.enabled // false'               "$RESOLVED")
+          fan_mode=$(jq -r '.fan.mode // "-"'                       "$RESOLVED")
+          leds_power=$(jq -r '.leds.power // "default"'             "$RESOLVED")
+          leds_activity=$(jq -r '.leds.activity // "default"'       "$RESOLVED")
+          oc_enabled=$(jq -r '.overclock.enabled // false'          "$RESOLVED")
+          oc_arm=$(jq -r '.overclock.arm_freq // "-"'               "$RESOLVED")
+          mem_gpu=$(jq -r '.memory.gpu_mem // "-"'                  "$RESOLVED")
+          pcie_enabled=$(jq -r '.pcie.enabled // false'             "$RESOLVED")
+          pcie_gen=$(jq -r '.pcie.gen // "-"'                       "$RESOLVED")
+          usb_3a=$(jq -r '.usb.max_usb_current // false'            "$RESOLVED")
+          boot_order=$(jq -r '.bootloader.boot_order // "-"'        "$RESOLVED")
+          wd_enabled=$(jq -r '.watchdog.enabled // false'           "$RESOLVED")
+
           yn() { [[ "$1" == "true" ]] && echo "✅ yes" || echo "❌ no"; }
 
           # --- Build duration ---------------------------------------------------
@@ -327,6 +347,23 @@ jobs:
             echo "| 🚌 CAN                  | $([[ $can_ifaces -gt 0 ]] && echo ✅ yes || echo ❌ no) | ${can_detail:--} |"
             echo "| 🔄 Unattended upgrades  | $(yn "$uu_enabled")         | window ${uu_window}, reboot ${reboot_window} |"
             echo "| 🖼 Banner / MOTD        | $(yn "$banner_enabled")     | /etc/issue(.net) + dynamic MOTD |"
+            echo ""
+            echo "## 🔧 Hardware"
+            echo "| block | state | detail |"
+            echo "|---|---|---|"
+            echo "| 📷 Camera               | $(yn "$cam_enabled")     | libcamera autodetect |"
+            echo "| 🖥 HDMI outputs         | ${hdmi_count}            | per-port group/mode/audio |"
+            echo "| 🔊 Audio default sink   | \`${audio_default}\`     | ALSA pcm.!default |"
+            echo "| 🔌 1-Wire               | $(yn "$onewire_enabled") | w1-gpio overlay |"
+            echo "| ⏰ RTC                  | $(yn "$rtc_enabled")     | ${rtc_model} |"
+            echo "| 🌬 Fan                  | $(yn "$fan_enabled")     | mode=${fan_mode} |"
+            echo "| 💡 LEDs                 | pwr=${leds_power} act=${leds_activity} | dtparam triggers |"
+            echo "| 🏎 Overclock            | $(yn "$oc_enabled")      | arm=${oc_arm}MHz |"
+            echo "| 💾 GPU mem              | ${mem_gpu} MiB           | VideoCore reservation |"
+            echo "| 🔗 PCIe                 | $(yn "$pcie_enabled")    | gen=${pcie_gen} |"
+            echo "| 🔌 USB 3A (Pi4)         | $(yn "$usb_3a")          | max_usb_current |"
+            echo "| 🧭 Bootloader           | ${boot_order}            | Pi5/CM5 EEPROM boot_order |"
+            echo "| 🐕 Watchdog             | $(yn "$wd_enabled")      | bcm2835-wdt via systemd |"
             echo ""
             echo "## 🧩 Contents"
             echo "| key | value |"

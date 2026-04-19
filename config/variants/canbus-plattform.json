@@ -3,8 +3,7 @@
   "extends": "./base.json",
   "variant": {
     "name": "canbus-plattform",
-    "description": "BAUER GROUP CANbus plattform - base image + Waveshare 17912 dual isolated CAN HAT (MCP2515 on SPI)",
-    "version": "0.1.0"
+    "description": "BAUER GROUP CANbus plattform - base image + Waveshare 17912 dual isolated CAN HAT (MCP2515 on SPI)"
   },
   "hostname": "bg-canbus",
   "users": [

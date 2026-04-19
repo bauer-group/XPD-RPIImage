@@ -24,11 +24,28 @@ with defaults and examples. Source of truth is always the schema.
 | `banner` | object | — | Pre- and post-login banners (see below). |
 | `packages` | array | — | APT packages to install. Concatenated with parent. |
 | `network` | object | — | `ethernet` + `wifi` configuration. |
-| `boot_config` | object | — | `/boot/firmware/config.txt` additions. |
+| `boot_config` | object | — | `/boot/firmware/config.txt` low-level toggles and raw `dtoverlays`. |
+| `camera` | object | — | CSI camera: `autodetect` + explicit sensor overlays. See [`hardware.md`](hardware.md). |
+| `hdmi` | object | — | Per-output HDMI config: group, mode, rotation, audio forcing. |
+| `display` | object | — | Console + DSI-LCD rotation. |
+| `audio` | object | — | Onboard audio toggle + default ALSA sink. |
+| `gpio` | object | — | `one_wire` (DS18B20 etc.). |
+| `rtc` | object | — | I2C RTC HAT (DS3231 / PCF8523 / PCF85063) + `fake_hwclock` fallback. |
+| `fan` | object | — | Active cooling (`gpio` / `pwm` / `emc2301`). |
+| `leds` | object | — | Power + activity LED trigger (on/off/heartbeat/mmc0). |
+| `overclock` | object | — | `arm_freq`, `gpu_freq`, `over_voltage`, `sdram_freq`. Requires `accept_warranty_void: true`. |
+| `memory` | object | — | `gpu_mem` split + `cma` size. |
+| `pcie` | object | — | Pi5 / CM4/5 PCIe slot (gen, NVMe boot). |
+| `usb` | object | — | `max_usb_current` (Pi4 USB-C 3A). |
+| `bootloader` | object | — | Pi5/CM5 EEPROM (boot order, wake-on-GPIO, power-off-on-halt). |
+| `watchdog` | object | — | Hardware watchdog (`bcm2835-wdt`) with systemd kick. |
 | `can` | object | — | SocketCAN interfaces (when a CAN HAT is present). |
 | `docker` | object | — | Docker CE install + daemon.json. |
 | `portainer` | object | — | Portainer CE systemd service. |
 | `unattended_upgrades` | object | — | Auto-updates with maintenance + reboot windows. |
+
+> Details, example snippets and caveats for all hardware blocks live in
+> [`hardware.md`](hardware.md).
 
 ---
 

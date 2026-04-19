@@ -574,33 +574,349 @@ def render_network(cfg: dict[str, Any]) -> None:
         write(wpa_dir / f"wpa_supplicant-{iface_name}.conf", "\n".join(wpa))
 
 
+def _overlay_line(name: str, params: dict[str, Any] | None = None) -> str:
+    """Render a `dtoverlay=...` line with optional comma-joined params."""
+    params = params or {}
+    if not params:
+        return f"dtoverlay={name}"
+    parts = [name] + [f"{k}={v}" for k, v in params.items()]
+    return "dtoverlay=" + ",".join(parts)
+
+
+def _emit_boot_section(lines: list[str], heading: str, body: list[str]) -> None:
+    """Append a labelled section to config.txt, skipping empty sections."""
+    if not body:
+        return
+    if lines and lines[-1] != "":
+        lines.append("")
+    lines.append(f"# --- {heading} ---")
+    lines.extend(body)
+
+
 def render_boot(cfg: dict[str, Any]) -> None:
+    """Render the consolidated config-bgrpiimage.txt fragment.
+
+    Covers every JSON block that ends up as Raspberry Pi boot config: the
+    coarse toggles in `boot_config` (I2C/SPI/UART/BT/WiFi + raw dtoverlays),
+    camera / hdmi / display / audio / gpio / leds / rtc / fan / overclock /
+    memory / pcie / usb. Runtime-only blocks (watchdog, bootloader, and the
+    fan / rtc userspace services) are handled by bgrpiimage-hardware.
+    """
     gen = clean_generated("bgrpiimage-boot")
-    boot = cfg.get("boot_config", {})
+    boot = cfg.get("boot_config") or {}
+
     lines = ["# === BAUER GROUP auto-generated boot config ===", ""]
+
+    # --- boot_config (the original toggles) -----------------------------------
+    core: list[str] = []
     if boot.get("enable_i2c"):
-        lines.append("dtparam=i2c_arm=on")
+        core.append("dtparam=i2c_arm=on")
     if boot.get("enable_spi"):
-        lines.append("dtparam=spi=on")
+        core.append("dtparam=spi=on")
     if boot.get("enable_i2s"):
-        lines.append("dtparam=i2s=on")
+        core.append("dtparam=i2s=on")
     if boot.get("enable_uart"):
-        lines.append("enable_uart=1")
+        core.append("enable_uart=1")
     if boot.get("disable_bluetooth"):
-        lines.append("dtoverlay=disable-bt")
+        core.append("dtoverlay=disable-bt")
     if boot.get("disable_wifi"):
-        lines.append("dtoverlay=disable-wifi")
+        core.append("dtoverlay=disable-wifi")
     for ovl in boot.get("dtoverlays", []):
-        params = ovl.get("params") or {}
-        if params:
-            parts = [ovl["name"]] + [f"{k}={v}" for k, v in params.items()]
-            lines.append("dtoverlay=" + ",".join(parts))
-        else:
-            lines.append(f"dtoverlay={ovl['name']}")
-    for extra in boot.get("extra_lines", []):
-        lines.append(extra)
-    lines.append("")
+        core.append(_overlay_line(ovl["name"], ovl.get("params")))
+    _emit_boot_section(lines, "core", core)
+
+    # --- camera ---------------------------------------------------------------
+    cam = cfg.get("camera") or {}
+    if cam.get("enabled"):
+        body: list[str] = []
+        if cam.get("legacy"):
+            # Pi4 deprecated stack. Pi5 ignores these but does no harm.
+            body.append("start_x=1")
+            body.append("gpu_mem=128")
+        # autodetect defaults to True when camera is enabled but the field is
+        # missing - matches Raspberry Pi OS stock behaviour.
+        autodetect = cam.get("autodetect", True)
+        body.append(f"camera_auto_detect={1 if autodetect else 0}")
+        for sensor in cam.get("sensors") or []:
+            body.append(_overlay_line(sensor))
+        _emit_boot_section(lines, "camera", body)
+
+    # --- HDMI per-output ------------------------------------------------------
+    hdmi = cfg.get("hdmi") or {}
+    hdmi_body: list[str] = []
+    for out in hdmi.get("outputs") or []:
+        p = out["port"]
+        # On Pi4+, options take an explicit :port suffix.
+        def _opt(key: str, value: Any) -> str:
+            return f"{key}:{p}={value}"
+        if out.get("force_hotplug"):
+            hdmi_body.append(_opt("hdmi_force_hotplug", 1))
+        if "group" in out:
+            hdmi_body.append(_opt("hdmi_group", out["group"]))
+        if "mode" in out:
+            hdmi_body.append(_opt("hdmi_mode", out["mode"]))
+        drive = out.get("drive")
+        audio_force = out.get("audio")
+        if drive is not None or audio_force:
+            # audio=True implies hdmi, even if drive field is missing; the
+            # two options collapse into one line so we don't emit duplicates.
+            resolved_drive = 1 if drive == "dvi" else 2
+            hdmi_body.append(_opt("hdmi_drive", resolved_drive))
+        if audio_force:
+            hdmi_body.append(_opt("hdmi_ignore_edid_audio", 0))
+        if "rotate" in out and out["rotate"]:
+            # Pi4 legacy KMS path.  Pi5 supports the same option for
+            # vc4-kms-v3d; anything else needs `video=` on the kernel cmdline.
+            hdmi_body.append(_opt("display_hdmi_rotate", out["rotate"] // 90))
+        if "boost" in out:
+            # config_hdmi_boost is port-agnostic; only honour the last one.
+            hdmi_body.append(f"config_hdmi_boost={out['boost']}")
+    _emit_boot_section(lines, "hdmi", hdmi_body)
+
+    # --- Display / console rotation -------------------------------------------
+    disp = cfg.get("display") or {}
+    disp_body: list[str] = []
+    if "console_rotate" in disp and disp["console_rotate"]:
+        # fbcon rotation is expressed as steps of 90 deg (0..3).
+        disp_body.append(f"fbcon=rotate:{disp['console_rotate'] // 90}")
+    if "lcd_rotate" in disp and disp["lcd_rotate"]:
+        disp_body.append(f"display_lcd_rotate={disp['lcd_rotate'] // 90}")
+    _emit_boot_section(lines, "display", disp_body)
+
+    # --- Audio ----------------------------------------------------------------
+    audio = cfg.get("audio") or {}
+    audio_body: list[str] = []
+    if "enabled" in audio:
+        audio_body.append(f"dtparam=audio={'on' if audio['enabled'] else 'off'}")
+    _emit_boot_section(lines, "audio", audio_body)
+    # NOTE: default_output is a runtime ALSA setting, handled by bgrpiimage-hardware.
+
+    # --- GPIO (1-wire) --------------------------------------------------------
+    gpio = cfg.get("gpio") or {}
+    onew = gpio.get("one_wire") or {}
+    if onew.get("enabled"):
+        pin = onew.get("pin", 4)
+        _emit_boot_section(lines, "1-wire",
+                           [_overlay_line("w1-gpio", {"gpiopin": pin})])
+
+    # --- LEDs -----------------------------------------------------------------
+    leds = cfg.get("leds") or {}
+    led_body: list[str] = []
+    # Pi4/5 trigger names that the rpi-eeprom bootloader plus kernel honour
+    # via dtparam=act_led_trigger / pwr_led_trigger.
+    led_trigger_map = {
+        "on": "default-on",
+        "off": "none",
+        "heartbeat": "heartbeat",
+        "mmc0": "mmc0",
+        "default": None,
+    }
+    for which, dtparam_prefix in (("power", "pwr_led"), ("activity", "act_led")):
+        val = leds.get(which)
+        if val is None or val == "default":
+            continue
+        trig = led_trigger_map[val]
+        if trig is None:
+            continue
+        led_body.append(f"dtparam={dtparam_prefix}_trigger={trig}")
+        if val == "off":
+            led_body.append(f"dtparam={dtparam_prefix}_activelow=off")
+    _emit_boot_section(lines, "leds", led_body)
+
+    # --- RTC (dt overlay; userspace side is bgrpiimage-hardware) --------------
+    rtc = cfg.get("rtc") or {}
+    if rtc.get("enabled"):
+        params: dict[str, Any] = {}
+        model = rtc.get("model")
+        if model:
+            params[model] = ""
+        # dtoverlay=i2c-rtc,<model> needs the bare param, not key=value.
+        # Re-render manually so we don't emit `ds3231=` with a trailing eq.
+        if model:
+            _emit_boot_section(lines, "rtc", [f"dtoverlay=i2c-rtc,{model}"])
+
+    # --- Fan (dtoverlay for gpio-fan / rpi-fan / emc2301) ---------------------
+    fan = cfg.get("fan") or {}
+    if fan.get("enabled"):
+        fan_body: list[str] = []
+        mode = fan.get("mode", "gpio")
+        if mode == "gpio":
+            p: dict[str, Any] = {"gpiopin": fan.get("gpio", 14)}
+            if "temp_on" in fan:
+                p["temp"] = fan["temp_on"]
+            fan_body.append(_overlay_line("gpio-fan", p))
+        elif mode == "pwm":
+            fan_body.append(_overlay_line("pwm-fan"))
+        elif mode == "emc2301":
+            # Pi5 Active Cooler / official cooling HAT is on by default; the
+            # overlay forces detection when autoprobe fails (e.g. CM5 IO board).
+            fan_body.append(_overlay_line("rpi-fan"))
+        _emit_boot_section(lines, "fan", fan_body)
+
+    # --- Overclock ------------------------------------------------------------
+    ovc = cfg.get("overclock") or {}
+    if ovc.get("enabled"):
+        ovc_body: list[str] = []
+        for k in ("arm_freq", "gpu_freq", "sdram_freq", "over_voltage"):
+            if k in ovc:
+                ovc_body.append(f"{k}={ovc[k]}")
+        _emit_boot_section(lines, "overclock", ovc_body)
+
+    # --- Memory split ---------------------------------------------------------
+    mem = cfg.get("memory") or {}
+    mem_body: list[str] = []
+    for k in ("gpu_mem", "gpu_mem_256", "gpu_mem_512", "gpu_mem_1024", "cma"):
+        if k in mem:
+            if k == "cma":
+                mem_body.append(f"dtoverlay=vc4-kms-v3d,cma-{mem[k]}")
+            else:
+                mem_body.append(f"{k}={mem[k]}")
+    _emit_boot_section(lines, "memory", mem_body)
+
+    # --- PCIe (Pi5/CM4/CM5) ---------------------------------------------------
+    pcie = cfg.get("pcie") or {}
+    if pcie.get("enabled"):
+        pcie_body = ["dtparam=pciex1"]
+        if "gen" in pcie:
+            pcie_body.append(f"dtparam=pciex1_gen={pcie['gen']}")
+        _emit_boot_section(lines, "pcie", pcie_body)
+
+    # --- USB (Pi4 current cap) ------------------------------------------------
+    usb = cfg.get("usb") or {}
+    if usb.get("max_usb_current"):
+        _emit_boot_section(lines, "usb", ["max_usb_current=1"])
+
+    # --- extra_lines (escape hatch) -------------------------------------------
+    extras = boot.get("extra_lines") or []
+    _emit_boot_section(lines, "extra_lines", list(extras))
+
+    # Trailing newline for a clean config.txt fragment.
+    if lines and lines[-1] != "":
+        lines.append("")
     write(gen / "config-bgrpiimage.txt", "\n".join(lines))
+
+
+def render_hardware(cfg: dict[str, Any]) -> None:
+    """Render runtime-side hardware artefacts.
+
+    Config.txt lines live in render_boot(); this function produces the userspace
+    pieces: hardware.env (consumed by the chroot script), packages.list, the
+    optional EEPROM oneshot service + script. When no hardware block is active
+    the module stays empty - _module_enabled() filters it out downstream.
+    """
+    gen = clean_generated("bgrpiimage-hardware")
+    if not _module_enabled("bgrpiimage-hardware", cfg):
+        # clean_generated leaves an empty dir; that's fine - _module_status
+        # will count zero files and mark the module as "no artifacts".
+        return
+    # shell_var already terminates with "\n"; join without adding extra blanks.
+    env_chunks: list[str] = [
+        "# Auto-generated hardware.env - sourced by start_chroot_script\n",
+    ]
+    packages: set[str] = set()
+
+    rtc = cfg.get("rtc") or {}
+    env_chunks.append(shell_var("BGRPIIMAGE_RTC_ENABLED", "yes" if rtc.get("enabled") else "no"))
+    if rtc.get("enabled"):
+        packages.add("util-linux")  # hwclock lives in util-linux on Debian
+        if rtc.get("fake_hwclock"):
+            packages.add("fake-hwclock")
+    env_chunks.append(shell_var(
+        "BGRPIIMAGE_RTC_FAKE_HWCLOCK", "yes" if rtc.get("fake_hwclock") else "no"
+    ))
+
+    wd = cfg.get("watchdog") or {}
+    env_chunks.append(shell_var("BGRPIIMAGE_WATCHDOG_ENABLED", "yes" if wd.get("enabled") else "no"))
+    if wd.get("enabled"):
+        env_chunks.append(shell_var("BGRPIIMAGE_WATCHDOG_RUNTIME_SEC", wd.get("runtime_sec", 10)))
+        env_chunks.append(shell_var("BGRPIIMAGE_WATCHDOG_REBOOT_SEC", wd.get("reboot_sec", 120)))
+
+    audio = cfg.get("audio") or {}
+    if audio.get("default_output"):
+        env_chunks.append(shell_var("BGRPIIMAGE_AUDIO_DEFAULT_OUTPUT", audio["default_output"]))
+
+    fan = cfg.get("fan") or {}
+    if fan.get("enabled") and fan.get("mode") in ("gpio", "pwm"):
+        # gpio-fan and pwm-fan need a couple of sysfs knobs that the overlay
+        # itself exposes; no additional packages strictly required. Kept here
+        # for future trip-curve script drops.
+        pass
+
+    boot = cfg.get("bootloader") or {}
+    if boot:
+        # Userspace oneshot that applies EEPROM settings once on first boot.
+        eeprom_env_lines: list[str] = [
+            "# Auto-generated eeprom.env - consumed by bgrpiimage-eeprom-apply",
+        ]
+        for key, env_key in (
+            ("boot_order",          "BOOT_ORDER"),
+            ("wake_on_gpio",        "WAKE_ON_GPIO"),
+            ("power_off_on_halt",   "POWER_OFF_ON_HALT"),
+        ):
+            if key not in boot:
+                continue
+            value = boot[key]
+            if isinstance(value, bool):
+                value = 1 if value else 0
+            eeprom_env_lines.append(f"{env_key}={value}")
+        write(gen / "eeprom.env", "\n".join(eeprom_env_lines) + "\n")
+
+        # Shell script: read eeprom.env, merge into a temp config, apply once.
+        apply_script = """#!/usr/bin/env bash
+# Idempotent EEPROM config application. Runs once on first boot; the sentinel
+# file keeps us from touching the bootloader on every reboot.
+set -euo pipefail
+SENTINEL=/var/lib/bgrpiimage/eeprom-applied
+STAMP_DIR=/var/lib/bgrpiimage
+mkdir -p "$STAMP_DIR"
+[[ -f "$SENTINEL" ]] && exit 0
+
+if ! command -v rpi-eeprom-config >/dev/null 2>&1; then
+    echo "rpi-eeprom-config not installed - skipping" >&2
+    touch "$SENTINEL"
+    exit 0
+fi
+
+src=/etc/bgrpiimage/eeprom.env
+[[ -f "$src" ]] || { echo "no eeprom.env"; exit 0; }
+
+tmp=$(mktemp)
+rpi-eeprom-config > "$tmp"
+while IFS='=' read -r key value; do
+    [[ -z "$key" || "$key" =~ ^# ]] && continue
+    if grep -q "^${key}=" "$tmp"; then
+        sed -i "s|^${key}=.*|${key}=${value}|" "$tmp"
+    else
+        echo "${key}=${value}" >> "$tmp"
+    fi
+done < "$src"
+
+rpi-eeprom-config --apply "$tmp" || true
+rm -f "$tmp"
+touch "$SENTINEL"
+"""
+        write(gen / "bgrpiimage-eeprom-apply.sh", apply_script, executable=True)
+
+        eeprom_unit = """[Unit]
+Description=Apply BAUER GROUP EEPROM bootloader config (first boot)
+After=network.target
+ConditionPathExists=!/var/lib/bgrpiimage/eeprom-applied
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/bgrpiimage-eeprom-apply
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+"""
+        write(gen / "bgrpiimage-eeprom-apply.service", eeprom_unit)
+        # rpi-eeprom ships preinstalled on Raspberry Pi OS trixie (arm64);
+        # listing it would just no-op, so we skip adding it to packages.list.
+
+    if packages:
+        write(gen / "packages.list", "\n".join(sorted(packages)) + "\n")
+    write(gen / "hardware.env", "".join(env_chunks))
 
 
 def render_can(cfg: dict[str, Any]) -> None:
@@ -946,6 +1262,28 @@ def render_unattended(cfg: dict[str, Any]) -> None:
         write(gen / "bgrpiimage-reboot-window.timer", tmr)
 
 
+def _semantic_validate(cfg: dict[str, Any]) -> None:
+    """Cross-field validation beyond what JSON Schema expresses.
+
+    Fails fast with a human-readable error rather than a confusing dtoverlay
+    or unit file later on.
+    """
+    ovc = cfg.get("overclock") or {}
+    if ovc.get("enabled") and not ovc.get("accept_warranty_void"):
+        raise ValueError(
+            "overclock.enabled=true requires overclock.accept_warranty_void=true "
+            "- overclocking permanently flips the Pi's warranty OTP bit."
+        )
+
+    fan = cfg.get("fan") or {}
+    if fan.get("enabled") and fan.get("mode") not in ("gpio", "pwm", "emc2301"):
+        raise ValueError("fan.enabled=true requires fan.mode to be gpio|pwm|emc2301")
+
+    rtc = cfg.get("rtc") or {}
+    if rtc.get("enabled") and not rtc.get("model"):
+        raise ValueError("rtc.enabled=true requires rtc.model")
+
+
 def _window_minutes(start_hhmm: str, end_hhmm: str) -> int:
     """Minutes between two HH:MM timestamps, wrapping past midnight if needed."""
     def to_min(s: str) -> int:
@@ -965,6 +1303,7 @@ ACTIVE_MODULES: list[str] = [
     "bgrpiimage-users",
     "bgrpiimage-network",
     "bgrpiimage-boot",
+    "bgrpiimage-hardware",
     "bgrpiimage-can",
     "bgrpiimage-docker",
     "bgrpiimage-portainer",
@@ -1006,6 +1345,14 @@ def _module_enabled(module: str, cfg: dict[str, Any]) -> bool:
         return bool((cfg.get("portainer") or {}).get("enabled"))
     if module == "bgrpiimage-unattended-upgrades":
         return bool((cfg.get("unattended_upgrades") or {}).get("enabled"))
+    if module == "bgrpiimage-hardware":
+        # Active iff at least one runtime-touching hardware block is set.
+        return any((
+            (cfg.get("rtc") or {}).get("enabled"),
+            (cfg.get("watchdog") or {}).get("enabled"),
+            bool(cfg.get("bootloader")),
+            ((cfg.get("audio") or {}).get("default_output") not in (None, "auto")),
+        ))
     return True
 
 
@@ -1077,6 +1424,13 @@ def main() -> int:
         )
         return 2
 
+    # Cross-field checks the JSON schema can't express.
+    try:
+        _semantic_validate(resolved)
+    except ValueError as e:
+        _error_panel("config validation failed", str(e))
+        return 2
+
     variant_name = resolved["variant"]["name"]
     variant_version = resolved["variant"].get("version", "?")
 
@@ -1107,6 +1461,7 @@ def main() -> int:
         ("bgrpiimage-users",                render_users),
         ("bgrpiimage-network",              render_network),
         ("bgrpiimage-boot",                 render_boot),
+        ("bgrpiimage-hardware",             render_hardware),
         ("bgrpiimage-can",                  render_can),
         ("bgrpiimage-docker",               render_docker),
         ("bgrpiimage-portainer",            render_portainer),
