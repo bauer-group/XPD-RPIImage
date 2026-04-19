@@ -108,6 +108,9 @@ jobs:
 
       - name: 📋 Validation summary
         if: always()
+        env:
+          ADMIN_PASSWORD: ci-placeholder-pw
+          WIFI_PSK:       ci-placeholder-psk
         run: |
           {
             echo "## 🔍 Validation"
@@ -116,7 +119,11 @@ jobs:
             echo "| --- | --- | --- |"
             for f in config/variants/*.json; do
               name=$(basename "$f" .json)
-              version=$(jq -r '.variant.version // "?"' "$f")
+              # Read version from the fully resolved config so variants that
+              # inherit `.variant.version` via `extends` report the real value
+              # instead of "?". Falls back to raw JSON if render fails.
+              version=$(python scripts/generate.py "$f" --json 2>/dev/null \
+                        | jq -r '.variant.version // "?"' || jq -r '.variant.version // "?"' "$f")
               echo "| \`$name\` | v$version | ✅ |"
             done
             echo ""
