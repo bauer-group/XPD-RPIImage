@@ -232,9 +232,14 @@ jobs:
           BGRPI_NATIVE_BUILD:  "yes"
         run: sudo -E bash scripts/build.sh "${{ matrix.variant }}"
 
-      - name: 📝 Compute checksums
+      - name: 📝 Compute checksums + manifest
         id: checksum
         working-directory: dist
+        env:
+          VARIANT:  ${{ matrix.variant }}
+          VERSION:  ${{ steps.meta.outputs.version }}
+          FULL_TAG: ${{ steps.meta.outputs.full_tag }}
+          KIND:     ${{ steps.meta.outputs.kind }}
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -243,16 +248,80 @@ jobs:
             echo "::error::no image produced in dist/"
             exit 1
           fi
-          for f in "${files[@]}"; do
-            sha256sum "$f" > "$f.sha256"
-          done
-          sha=$(awk '{print $1}' "${files[0]}.sha256")
-          size=$(du -h "${files[0]}" | cut -f1)
-          bytes=$(stat -c '%s' "${files[0]}")
-          echo "sha=$sha"     >> "$GITHUB_OUTPUT"
-          echo "size=$size"   >> "$GITHUB_OUTPUT"
-          echo "bytes=$bytes" >> "$GITHUB_OUTPUT"
-          echo "file=${files[0]}" >> "$GITHUB_OUTPUT"
+          f="${files[0]}"
+
+          # --- .img.xz (compressed download) -----------------------------------
+          sha256sum "$f" > "$f.sha256"
+          sha=$(awk '{print $1}' "$f.sha256")
+          bytes=$(stat -c '%s' "$f")
+          size=$(du -h "$f" | cut -f1)
+
+          # --- .img (raw / extracted) -----------------------------------------
+          # xz -l --robot returns size info without decompressing. We still
+          # need the sha256 of the raw .img so RPi Imager can verify AFTER
+          # extraction - that's a streaming decompress through sha256sum.
+          extract_bytes=$(xz -l --robot "$f" | awk '/^file/ { print $5 }')
+          extract_sha=$(xz -dc "$f" | sha256sum | awk '{print $1}')
+
+          # --- manifest.json (consumed by the Pages catalog renderer) ---------
+          # Pull descriptive fields from the resolved variant JSON so the
+          # landing page can render rich cards without re-rendering on pages.
+          RESOLVED=/tmp/resolved.json
+          description=$(jq -r '.variant.description // ""' "$RESOLVED")
+          targets=$(jq -r '.targets'                       "$RESOLVED")
+          hostname=$(jq -r '.hostname'                     "$RESOLVED")
+
+          manifest="${f%.img.xz}.manifest.json"
+          release_date=$(date -u +%Y-%m-%d)
+          # Public download URL - only meaningful for tag builds (release),
+          # otherwise just a placeholder so the schema stays stable.
+          if [[ "${KIND}" == "release" ]]; then
+            image_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${FULL_TAG}/${f}"
+          else
+            image_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          fi
+
+          jq -n \
+            --arg variant      "$VARIANT" \
+            --arg version      "$VERSION" \
+            --arg full_tag     "$FULL_TAG" \
+            --arg kind         "$KIND" \
+            --arg description  "$description" \
+            --argjson targets  "$targets" \
+            --arg hostname     "$hostname" \
+            --arg release_date "$release_date" \
+            --arg image_file   "$f" \
+            --arg image_url    "$image_url" \
+            --argjson image_size "$bytes" \
+            --arg image_sha    "$sha" \
+            --argjson extract_size "$extract_bytes" \
+            --arg extract_sha  "$extract_sha" \
+            '{
+              variant: $variant,
+              version: $version,
+              full_tag: $full_tag,
+              kind: $kind,
+              description: $description,
+              targets: $targets,
+              hostname: $hostname,
+              release_date: $release_date,
+              image: {
+                file: $image_file,
+                url:  $image_url,
+                download_size: $image_size,
+                download_sha256: $image_sha,
+                extract_size: $extract_size,
+                extract_sha256: $extract_sha
+              }
+            }' > "$manifest"
+
+          echo "sha=$sha"                       >> "$GITHUB_OUTPUT"
+          echo "size=$size"                     >> "$GITHUB_OUTPUT"
+          echo "bytes=$bytes"                   >> "$GITHUB_OUTPUT"
+          echo "file=$f"                        >> "$GITHUB_OUTPUT"
+          echo "extract_bytes=$extract_bytes"   >> "$GITHUB_OUTPUT"
+          echo "extract_sha=$extract_sha"       >> "$GITHUB_OUTPUT"
+          echo "manifest=$manifest"             >> "$GITHUB_OUTPUT"
 
       - name: 📋 Build summary
         if: always()
@@ -409,6 +478,7 @@ jobs:
           path: |
             dist/*.img.xz
             dist/*.sha256
+            dist/*.manifest.json
           retention-days: 14
           if-no-files-found: error
           compression-level: 0
@@ -442,6 +512,7 @@ jobs:
           files: |
             release-assets/*.img.xz
             release-assets/*.sha256
+            release-assets/*.manifest.json
           fail_on_unmatched_files: true
           append_body: true
           body: |

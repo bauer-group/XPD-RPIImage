@@ -1,0 +1,219 @@
+# SPDX-License-Identifier: MIT
+# =============================================================================
+# BAUER GROUP XPD-RPIImage - GitHub Pages catalog publisher
+# =============================================================================
+# Publishes:
+#   - https://rpi.pages.dvcs.app.bauer-group.com/rpi-imager.json  (OS list)
+#   - https://rpi.pages.dvcs.app.bauer-group.com/                 (info page)
+#
+# The catalog always points at the *latest* GitHub release. It is refreshed:
+#   - on release:published (normal path, triggered by semantic-release +
+#     softprops/action-gh-release appending the image assets)
+#   - on manual workflow_dispatch (force re-render, e.g. after fixing
+#     something in scripts/build_pages.py)
+#
+# Legacy releases (e.g. v0.1.0, built before manifest.json was added to the
+# asset list) get their manifest reconstructed from the .img.xz + .sha256
+# assets right here so the catalog never shows a gap.
+# =============================================================================
+
+name: 🌐 Pages
+
+on:
+  release:
+    types: [published, edited, released]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (blank = latest)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: 🧱 Render site
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      tag: ${{ steps.target.outputs.tag }}
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v6
+
+      - name: 🎯 Resolve target release
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${{ inputs.tag }}"
+          if [[ -z "$tag" ]]; then
+            # release event puts the tag in github.event.release.tag_name;
+            # fall back to the latest published release otherwise.
+            tag="${{ github.event.release.tag_name || '' }}"
+          fi
+          if [[ -z "$tag" ]]; then
+            tag=$(gh release list --limit 1 --json tagName -q '.[0].tagName' -R "$GITHUB_REPOSITORY")
+          fi
+          if [[ -z "$tag" ]]; then
+            echo "::error::no release found to publish"
+            exit 1
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "::notice::publishing catalog for $tag"
+
+      - name: ⬇ Download release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          gh release download "${{ steps.target.outputs.tag }}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --dir release-assets \
+              --pattern "*.img.xz" \
+              --pattern "*.sha256" \
+              --pattern "*.manifest.json"
+          ls -la release-assets
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: 🏗 Reconstruct missing manifests (legacy releases)
+        env:
+          TAG: ${{ steps.target.outputs.tag }}
+        run: |
+          set -euo pipefail
+          cd release-assets
+          shopt -s nullglob
+          for img in *.img.xz; do
+            manifest="${img%.img.xz}.manifest.json"
+            if [[ -f "$manifest" ]]; then
+              echo "keep: $manifest"
+              continue
+            fi
+            echo "reconstruct: $manifest"
+            variant="${img#bgrpiimage-}"
+            variant="${variant%-v*}"
+            version="${TAG#v}"
+
+            download_size=$(stat -c '%s' "$img")
+            download_sha=$(awk '{print $1}' "${img}.sha256")
+            extract_size=$(xz -l --robot "$img" | awk '/^file/ { print $5 }')
+            extract_sha=$(xz -dc "$img" | sha256sum | awk '{print $1}')
+
+            url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/${TAG}/${img}"
+            # Description + targets: pull from the current variant JSON.
+            # For a legacy release where the variant file no longer exists
+            # we fall back to a generic description.
+            cfg="../config/variants/${variant}.json"
+            if [[ -f "$cfg" ]]; then
+              description=$(python ../scripts/generate.py "$cfg" --json 2>/dev/null \
+                            | jq -r '.variant.description // ""')
+              targets=$(python ../scripts/generate.py "$cfg" --json 2>/dev/null \
+                            | jq -c '.targets // []')
+              hostname=$(python ../scripts/generate.py "$cfg" --json 2>/dev/null \
+                            | jq -r '.hostname // "-"')
+            else
+              description="BAUER GROUP RPIImage - ${variant}"
+              targets='["rpi4","rpi5","cm4","cm5"]'
+              hostname="-"
+            fi
+
+            jq -n \
+              --arg variant      "$variant" \
+              --arg version      "$version" \
+              --arg full_tag     "$TAG" \
+              --arg kind         "release" \
+              --arg description  "$description" \
+              --argjson targets  "$targets" \
+              --arg hostname     "$hostname" \
+              --arg release_date "$(date -u +%Y-%m-%d)" \
+              --arg image_file   "$img" \
+              --arg image_url    "$url" \
+              --argjson image_size "$download_size" \
+              --arg image_sha    "$download_sha" \
+              --argjson extract_size "$extract_size" \
+              --arg extract_sha  "$extract_sha" \
+              '{
+                variant: $variant,
+                version: $version,
+                full_tag: $full_tag,
+                kind: $kind,
+                description: $description,
+                targets: $targets,
+                hostname: $hostname,
+                release_date: $release_date,
+                image: {
+                  file: $image_file,
+                  url:  $image_url,
+                  download_size: $image_size,
+                  download_sha256: $image_sha,
+                  extract_size: $extract_size,
+                  extract_sha256: $extract_sha
+                }
+              }' > "$manifest"
+          done
+
+      - name: 🧱 Render site
+        env:
+          TAG:  ${{ steps.target.outputs.tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          cp site/CNAME     _site/CNAME
+          cp site/styles.css _site/styles.css
+          python scripts/build_pages.py \
+            --manifests release-assets \
+            --tag       "$TAG" \
+            --repo      "$REPO" \
+            --catalog-url "https://$(cat site/CNAME | tr -d '[:space:]')/rpi-imager.json" \
+            --out       _site
+          echo "--- _site tree ---"
+          ls -la _site
+
+      - name: 📋 Pages summary
+        run: |
+          {
+            echo "## 🌐 Pages"
+            echo ""
+            echo "Catalog URL: \`https://$(cat site/CNAME | tr -d '[:space:]')/rpi-imager.json\`"
+            echo ""
+            echo "Landing: https://$(cat site/CNAME | tr -d '[:space:]')/"
+            echo ""
+            echo "### Catalog entries"
+            echo ""
+            echo '```json'
+            cat _site/rpi-imager.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 📤 Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+  deploy:
+    name: 🚀 Deploy to Pages
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: 🚀 Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

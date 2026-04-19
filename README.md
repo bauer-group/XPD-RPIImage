@@ -42,6 +42,25 @@ Base OS: Raspberry Pi OS arm64 (trixie, 2026-04-13).
 
 ---
 
+## 💾 Flash an image in 30 seconds
+
+Add our catalog URL to Raspberry Pi Imager (≥ 1.8.5) once — every future
+release shows up automatically, including **Compute Module eMMC flashing**
+via the built-in `rpiboot`.
+
+1. Open **Raspberry Pi Imager → ⚙ Settings → Custom repository**
+2. Paste `https://rpi.pages.dvcs.app.bauer-group.com/rpi-imager.json`
+3. Close settings, restart Imager. Our variants appear under
+   **CHOOSE OS → BAUER GROUP**.
+
+Landing page with direct downloads + full checksums:
+<https://rpi.pages.dvcs.app.bauer-group.com/>
+
+Full flashing guide (SD, USB-SSD, CM4/CM5 via rpiboot, balenaEtcher, manual
+`dd`): [docs/flash.md](docs/flash.md).
+
+---
+
 ## 🚀 Quick start
 
 ### Option 1 — dockerised tools (recommended, zero host deps)
@@ -129,6 +148,7 @@ More detail: [`docs/architecture.md`](docs/architecture.md).
 | Topic | File |
 | --- | --- |
 | Architecture + build pipeline | [docs/architecture.md](docs/architecture.md) |
+| **Flashing** (RPi Imager catalog, CM4/CM5 eMMC, Etcher, dd) | [docs/flash.md](docs/flash.md) |
 | JSON config reference + env resolver | [docs/configuration.md](docs/configuration.md) |
 | **Hardware reference** (camera, HDMI, RTC, fan, watchdog, overclock, …) | [docs/hardware.md](docs/hardware.md) |
 | Creating a new variant (`extends` chain) | [docs/variants.md](docs/variants.md) |
