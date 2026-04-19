@@ -57,10 +57,7 @@ on:
         default: ""
 
 permissions:
-  # `contents: write` so the reconstruct step can attach the nachgebuildete
-  # manifest.json back to legacy releases (idempotent via `gh release
-  # upload --clobber`). Everything else only needs read access.
-  contents: write
+  contents: read
   pages: write
   id-token: write
 
@@ -164,12 +161,10 @@ jobs:
       - name: 🏗 Reconstruct missing manifests (legacy releases)
         env:
           TAG: ${{ steps.target.outputs.tag }}
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           cd release-assets
           shopt -s nullglob
-          reconstructed=()
           for img in *.img.xz; do
             manifest="${img%.img.xz}.manifest.json"
             if [[ -f "$manifest" ]]; then
@@ -237,19 +232,7 @@ jobs:
                   extract_sha256: $extract_sha
                 }
               }' > "$manifest"
-            reconstructed+=("$manifest")
           done
-
-          # Publish the reconstructed manifests back onto the release so
-          # the manifest.json link rendered on the landing page resolves
-          # to an actual asset. --clobber keeps this idempotent across
-          # re-runs (e.g. after a site edit).
-          if [[ ${#reconstructed[@]} -gt 0 ]]; then
-            echo "publishing ${#reconstructed[@]} reconstructed manifest(s) to $TAG"
-            gh release upload "$TAG" "${reconstructed[@]}" \
-              --repo "$GITHUB_REPOSITORY" \
-              --clobber
-          fi
 
       - name: 🧱 Render site
         env:
@@ -264,6 +247,14 @@ jobs:
           cp site/styles.css           _site/styles.css
           cp site/logo.svg             _site/logo.svg
           cp site/logo-wide-white.svg  _site/logo-wide-white.svg
+
+          # Publish the manifests under /manifests/ so the landing page can
+          # link to a stable URL regardless of whether the manifest is also
+          # attached to the release. This avoids retro-uploading assets to
+          # legacy releases (which would require `contents: write`) and
+          # keeps Pages as the single source of truth for catalog metadata.
+          mkdir -p _site/manifests
+          cp release-assets/*.manifest.json _site/manifests/
 
           # When site/CNAME exists we are on a custom domain; otherwise
           # fall back to $SITE_URL (the github.io default). site/CNAME

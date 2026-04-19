@@ -89,7 +89,7 @@
           <div class="actions">
             <a class="btn primary" href="{{ m.image.url }}">⬇ Download .img.xz</a>
             <a class="btn" href="{{ m.image.url }}.sha256">.sha256</a>
-            <a class="btn" href="{{ m.image.url | replace('.img.xz', '.manifest.json') }}">manifest.json</a>
+            <a class="btn" href="manifests/{{ m.image.file | replace('.img.xz', '.manifest.json') }}">manifest.json</a>
           </div>
         </article>
         {% endfor %}
