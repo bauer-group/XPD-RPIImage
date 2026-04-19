@@ -16,16 +16,7 @@
           {
             "files": ["config/variants/base.json"],
             "from": "\"version\": \"[^\"]+\"",
-            "to": "\"version\": \"${nextRelease.version}\"",
-            "countMatches": true,
-            "results": [
-              {
-                "file": "config/variants/base.json",
-                "hasChanged": true,
-                "numMatches": 1,
-                "numReplacements": 1
-              }
-            ]
+            "to": "\"version\": \"${nextRelease.version}\""
           }
         ]
       }
