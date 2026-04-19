@@ -1,3 +1,13 @@
+## [0.2.0](https://github.com/bauer-group/XPD-RPIImage/compare/v0.1.0...v0.2.0) (2026-04-19)
+
+### 🚀 Features
+
+* **pages:** published RPi Imager catalog + landing page via GitHub Pages ([aef8fbb](https://github.com/bauer-group/XPD-RPIImage/commit/aef8fbb6eaa0666c4d617b11e7e40880dcf50e45))
+
+### 🐛 Bug Fixes
+
+* **ci:** resolved inherited variant.version in the validate summary ([404997f](https://github.com/bauer-group/XPD-RPIImage/commit/404997f7daa792d360651c7f1de9946a6af0dbf4))
+
 ## [0.1.0](https://github.com/bauer-group/XPD-RPIImage/compare/v0.0.0...v0.1.0) (2026-04-19)
 
 ### 🚀 Features
