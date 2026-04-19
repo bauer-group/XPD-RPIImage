@@ -1,3 +1,15 @@
+## [0.2.1](https://github.com/bauer-group/XPD-RPIImage/compare/v0.2.0...v0.2.1) (2026-04-19)
+
+### 🐛 Bug Fixes
+
+* **pages:** fell back to previous release when latest has no images yet ([d8dc3b3](https://github.com/bauer-group/XPD-RPIImage/commit/d8dc3b3e7e1f8ebf0552649820bc34b9edb1f276))
+* **pages:** installed scripts/requirements.txt before reconstruct step ([ab42e7a](https://github.com/bauer-group/XPD-RPIImage/commit/ab42e7a5ba783dc2e23785c360ec6471841b8283))
+
+### ♻️ Refactoring
+
+* **pages:** extracted HTML into site/*.tmpl + scoped workflow triggers ([31f4e67](https://github.com/bauer-group/XPD-RPIImage/commit/31f4e676369e040dfe55bcccb199bcda034cd23a))
+* **pages:** switched to Jinja2, wired workflow_run auto-refresh, adopted BAUER GROUP CI ([5cb9a89](https://github.com/bauer-group/XPD-RPIImage/commit/5cb9a8971bb4813ac05862f02a661d8078dbc204)), closes [#FF8500](https://github.com/bauer-group/XPD-RPIImage/issues/FF8500)
+
 ## [0.2.0](https://github.com/bauer-group/XPD-RPIImage/compare/v0.1.0...v0.2.0) (2026-04-19)
 
 ### 🚀 Features
