@@ -57,7 +57,10 @@ on:
         default: ""
 
 permissions:
-  contents: read
+  # `contents: write` so the reconstruct step can attach the nachgebuildete
+  # manifest.json back to legacy releases (idempotent via `gh release
+  # upload --clobber`). Everything else only needs read access.
+  contents: write
   pages: write
   id-token: write
 
@@ -161,10 +164,12 @@ jobs:
       - name: 🏗 Reconstruct missing manifests (legacy releases)
         env:
           TAG: ${{ steps.target.outputs.tag }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           cd release-assets
           shopt -s nullglob
+          reconstructed=()
           for img in *.img.xz; do
             manifest="${img%.img.xz}.manifest.json"
             if [[ -f "$manifest" ]]; then
@@ -232,7 +237,19 @@ jobs:
                   extract_sha256: $extract_sha
                 }
               }' > "$manifest"
+            reconstructed+=("$manifest")
           done
+
+          # Publish the reconstructed manifests back onto the release so
+          # the manifest.json link rendered on the landing page resolves
+          # to an actual asset. --clobber keeps this idempotent across
+          # re-runs (e.g. after a site edit).
+          if [[ ${#reconstructed[@]} -gt 0 ]]; then
+            echo "publishing ${#reconstructed[@]} reconstructed manifest(s) to $TAG"
+            gh release upload "$TAG" "${reconstructed[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --clobber
+          fi
 
       - name: 🧱 Render site
         env:
