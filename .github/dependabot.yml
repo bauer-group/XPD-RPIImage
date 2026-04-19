@@ -1,14 +1,55 @@
+# =============================================================================
+# Dependabot Configuration
+# =============================================================================
+# Keeps GitHub Actions, Python (tools container + build scripts) and the
+# tools Docker base image up to date. Semantic-commit prefixes keep the
+# release workflow's commit analyzer happy - dependency bumps roll into
+# `chore` scope and never move the semver needle on their own.
+# =============================================================================
+
 version: 2
 updates:
+  # GitHub Actions updates
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: weekly
+      day: sunday
+      time: "06:30"
+      timezone: "Etc/UTC"
+    labels:
+      - dependencies
+      - github-actions
+      - dependabot
     commit-message:
       prefix: "chore(ci)"
+
+  # Python build scripts (scripts/generate.py deps)
   - package-ecosystem: pip
     directory: "/scripts"
     schedule:
       interval: weekly
+      day: sunday
+      time: "06:30"
+      timezone: "Etc/UTC"
+    labels:
+      - dependencies
+      - python
+      - dependabot
+    commit-message:
+      prefix: "chore(deps)"
+
+  # Docker base image for the tools container
+  - package-ecosystem: docker
+    directory: "/tools"
+    schedule:
+      interval: weekly
+      day: sunday
+      time: "06:30"
+      timezone: "Etc/UTC"
+    labels:
+      - dependencies
+      - docker
+      - dependabot
     commit-message:
       prefix: "chore(deps)"

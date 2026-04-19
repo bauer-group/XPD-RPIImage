@@ -1,0 +1,53 @@
+# =============================================================================
+# BAUER GROUP XPD-RPIImage - Semantic Release Workflow
+# =============================================================================
+# Triggers:
+#   - Push to main branch (excluding docs/markdown and workflow changes)
+#   - Manual dispatch with force-release option
+#
+# Responsibility:
+#   * bump `.variant.version` in config/variants/base.json
+#   * write CHANGELOG.md
+#   * create tag `vX.Y.Z` and a GitHub release with auto-generated notes
+#
+# Image artifacts (.img.xz + .sha256) are produced by build.yml on the
+# resulting tag push and appended to the release created here.
+# =============================================================================
+
+name: 🚀 Release
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '.github/**'
+      - '*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - '.gitignore'
+  workflow_dispatch:
+    inputs:
+      force-release:
+        description: 'force create release'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  # ============================================
+  # Release Job
+  # ============================================
+
+  release:
+    name: 📦 Create Semantic Release
+    uses: bauer-group/automation-templates/.github/workflows/modules-semantic-release.yml@main
+    with:
+      target-branch: 'main'
+      dry-run: false
+      force-release: ${{ inputs.force-release || false }}
+      extra-plugins: '@google/semantic-release-replace-plugin'
+    secrets: inherit

@@ -387,23 +387,33 @@ jobs:
           path: release-assets
           merge-multiple: true
 
-      - name: 🏷️ Create GitHub release
+      # The GitHub release itself is created by release.yml (semantic-release)
+      # when the version is bumped on main. Here we only *append* the image
+      # artifacts + verify/flash instructions to that existing release.
+      # `append_body: true` keeps semantic-release's auto-generated changelog
+      # intact; without it, the body would be overwritten.
+      - name: 🏷️ Attach images to GitHub release
         uses: softprops/action-gh-release@v3
         with:
           files: |
             release-assets/*.img.xz
             release-assets/*.sha256
-          generate_release_notes: true
           fail_on_unmatched_files: true
+          append_body: true
           body: |
-            ## 📦 bgRPIImage — ${{ github.ref_name }}
+
+            ---
+
+            ## 📦 Image artifacts — ${{ github.ref_name }}
 
             Built from commit `${{ github.sha }}`.
 
             ### 🔐 Verify
+
             ```bash
             sha256sum -c *.sha256
             ```
 
             ### 📥 Flash
+
             Write directly to SD card / eMMC with `dd`, Raspberry Pi Imager or balenaEtcher.
