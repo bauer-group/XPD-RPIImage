@@ -22,6 +22,15 @@ name: 🌐 Pages
 on:
   release:
     types: [published, edited, released]
+  # Re-render the landing page whenever its source changes on main. The
+  # catalog still points at the LATEST release (resolved at runtime), so
+  # editing CSS or templates doesn't need a new image build.
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'scripts/build_pages.py'
+      - '.github/workflows/pages.yml'
   workflow_dispatch:
     inputs:
       tag:
@@ -182,14 +191,15 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p _site
-          cp site/CNAME     _site/CNAME
+          cp site/CNAME      _site/CNAME
           cp site/styles.css _site/styles.css
           python scripts/build_pages.py \
-            --manifests release-assets \
-            --tag       "$TAG" \
-            --repo      "$REPO" \
+            --manifests   release-assets \
+            --templates   site \
+            --tag         "$TAG" \
+            --repo        "$REPO" \
             --catalog-url "https://$(cat site/CNAME | tr -d '[:space:]')/rpi-imager.json" \
-            --out       _site
+            --out         _site
           echo "--- _site tree ---"
           ls -la _site
 

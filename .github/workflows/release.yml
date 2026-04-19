@@ -25,6 +25,9 @@ on:
       - 'docs/**'
       - 'LICENSE'
       - '.gitignore'
+      # Pages site + its renderer are cosmetic; never cut a release for them.
+      - 'site/**'
+      - 'scripts/build_pages.py'
   workflow_dispatch:
     inputs:
       force-release:
