@@ -484,7 +484,12 @@ jobs:
             dist/*.img.xz
             dist/*.sha256
             dist/*.manifest.json
-          retention-days: 14
+          # Tag builds attach to a permanent GitHub release via the release
+          # job below, so the transient Actions artifact only needs to be
+          # around long enough for the release step to download it. Main +
+          # PR builds are disposable dev artefacts; 3 days is enough to
+          # fetch one off a failing CI run without filling storage.
+          retention-days: 3
           if-no-files-found: error
           compression-level: 0
 
