@@ -1,19 +1,28 @@
+{#
+  Landing page for https://rpi.pages.dvcs.app.bauer-group.com/
+
+  Rendered by scripts/build_pages.py with Jinja2 (autoescape on). All
+  variables come from manifests[] + repo/tag/catalog_url/generated.
+#}
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>BAUER GROUP RPIImage – latest release {{tag}}</title>
+  <title>BAUER GROUP RPIImage – latest release {{ tag }}</title>
   <meta name="description" content="Declarative, reproducible Raspberry Pi OS images by BAUER GROUP. RPi Imager catalog + direct downloads." />
   <link rel="stylesheet" href="styles.css" />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20width%3D%22100%22%20height%3D%22100%22%20rx%3D%2220%22%20fill%3D%22%23e80d2e%22%2F%3E%3Ctext%20x%3D%2250%22%20y%3D%2268%22%20font-family%3D%22sans-serif%22%20font-size%3D%2258%22%20font-weight%3D%22900%22%20fill%3D%22white%22%20text-anchor%3D%22middle%22%3EB%3C%2Ftext%3E%3C%2Fsvg%3E" />
+  <link rel="icon" type="image/svg+xml" href="logo.svg" />
 </head>
 <body>
   <header class="hero">
     <div class="inner">
-      <h1>📦 BAUER GROUP <span class="accent">RPIImage</span></h1>
+      <img src="logo-wide-white.svg" alt="BAUER GROUP" class="logo" />
+      <h1>📦 <span class="accent">RPIImage</span></h1>
       <p class="subtitle">Declarative, reproducible, CI-built Raspberry Pi OS images for production and development.</p>
-      <p class="release">Current release: <a href="https://github.com/{{repo}}/releases/tag/{{tag}}"><strong>{{tag}}</strong></a></p>
+      <p class="release">Current release:
+        <a href="https://github.com/{{ repo }}/releases/tag/{{ tag }}"><strong>{{ tag }}</strong></a>
+      </p>
     </div>
   </header>
 
@@ -25,7 +34,7 @@
         <li>Open it and go to <strong>Settings</strong> (the ⚙ icon) → <strong>Custom repository</strong>.</li>
         <li>Paste the catalog URL below and close the settings dialog:
           <div class="copyrow">
-            <code id="catalog-url">{{catalog_url}}</code>
+            <code id="catalog-url">{{ catalog_url }}</code>
             <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('catalog-url').innerText)">Copy</button>
           </div>
         </li>
@@ -51,7 +60,37 @@
     <section class="variants">
       <h2>🧩 Variants in this release</h2>
       <div class="cards">
-{{cards}}
+        {% for m in manifests %}
+        <article class="card">
+          <header>
+            <h2>{{ m.variant }}</h2>
+            <span class="tag">{{ tag }}</span>
+          </header>
+          <p class="description">{{ m.description }}</p>
+          <dl class="meta">
+            <dt>Hostname</dt><dd><code>{{ m.hostname or '-' }}</code></dd>
+            <dt>Targets</dt><dd>{{ m.targets | join(', ') }}</dd>
+            <dt>Download size</dt><dd>{{ m.image.download_size | mib }} MiB</dd>
+            <dt>Extracted size</dt><dd>{{ m.image.extract_size | mib }} MiB</dd>
+            <dt>Release date</dt><dd>{{ m.release_date or '-' }}</dd>
+          </dl>
+          <div class="checksums">
+            <div>
+              <span class="label">SHA-256 (.img.xz)</span>
+              <code>{{ m.image.download_sha256 }}</code>
+            </div>
+            <div>
+              <span class="label">SHA-256 (.img)</span>
+              <code>{{ m.image.extract_sha256 }}</code>
+            </div>
+          </div>
+          <div class="actions">
+            <a class="btn primary" href="{{ m.image.url }}">⬇ Download .img.xz</a>
+            <a class="btn" href="{{ m.image.url }}.sha256">.sha256</a>
+            <a class="btn" href="{{ m.image.url | replace('.img.xz', '.manifest.json') }}">manifest.json</a>
+          </div>
+        </article>
+        {% endfor %}
       </div>
     </section>
 
@@ -71,17 +110,17 @@ sudo bgrpiimage-setup ip eth0 static 10.0.0.5/24 10.0.0.1 1.1.1.1</code></pre>
     <section class="meta-links">
       <h2>📚 More</h2>
       <ul>
-        <li><a href="https://github.com/{{repo}}">Repository on GitHub</a></li>
-        <li><a href="https://github.com/{{repo}}/releases">All releases</a></li>
-        <li><a href="https://github.com/{{repo}}/blob/main/docs/hardware.md">Hardware reference</a></li>
-        <li><a href="https://github.com/{{repo}}/blob/main/docs/flash.md">Flashing guide</a></li>
-        <li><a href="https://github.com/{{repo}}/blob/main/docs/configuration.md">JSON configuration reference</a></li>
+        <li><a href="https://github.com/{{ repo }}">Repository on GitHub</a></li>
+        <li><a href="https://github.com/{{ repo }}/releases">All releases</a></li>
+        <li><a href="https://github.com/{{ repo }}/blob/main/docs/hardware.md">Hardware reference</a></li>
+        <li><a href="https://github.com/{{ repo }}/blob/main/docs/flash.md">Flashing guide</a></li>
+        <li><a href="https://github.com/{{ repo }}/blob/main/docs/configuration.md">JSON configuration reference</a></li>
       </ul>
     </section>
   </main>
 
   <footer>
-    <p>© BAUER GROUP · <a href="https://github.com/{{repo}}/blob/main/LICENSE">MIT</a> · generated {{generated}}</p>
+    <p>© BAUER GROUP · <a href="https://github.com/{{ repo }}/blob/main/LICENSE">MIT</a> · generated {{ generated }}</p>
   </footer>
 </body>
 </html>

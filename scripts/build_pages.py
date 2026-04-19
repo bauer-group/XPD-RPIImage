@@ -3,37 +3,38 @@
 """
 BAUER GROUP XPD-RPIImage - Pages site + RPi Imager catalog renderer.
 
-Loads HTML templates from disk (site/*.tmpl) and substitutes {{placeholders}}.
-No Jinja or other heavy deps - keeps the Pages workflow dependency-free
-beyond what the build scripts already need.
+Uses Jinja2 for the landing page (autoescape on, proper {% for %} over
+variants, filters for size formatting). The RPi Imager catalog is pure
+data so we emit it with json.dumps rather than a template.
 
 Input:
     --manifests DIR     directory with one *.manifest.json per variant
     --tag       vX.Y.Z  release tag to display
     --repo      owner/name
     --catalog-url URL   public URL of the rpi-imager.json
-    --templates DIR     directory containing index.html.tmpl + card.html.tmpl
+    --templates DIR     directory with index.html.j2 (autoescape enabled)
     --out       DIR     destination directory for the rendered site
 
 Output (in --out):
     rpi-imager.json   catalog consumed by RPi Imager's Custom Repository
     index.html        human-facing landing page
-    .nojekyll         disables Jekyll on GitHub Pages (we ship pre-rendered HTML)
+    .nojekyll         disables Jekyll on GitHub Pages
 
 `styles.css` and `CNAME` are copied by the workflow, not rendered here.
 """
 from __future__ import annotations
 
 import argparse
-import html
 import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
-# RPi Imager device names - maps our JSON targets to Imager's identifiers.
+
+# RPi Imager device names - maps our JSON `targets` enum to Imager's IDs.
 TARGET_TO_IMAGER_DEVICE = {
     "rpi4": "pi4-64bit",
     "rpi5": "pi5",
@@ -51,20 +52,6 @@ def load_manifests(directory: Path) -> list[dict[str, Any]]:
     for p in paths:
         with p.open("r", encoding="utf-8") as f:
             out.append(json.load(f))
-    return out
-
-
-def substitute(template: str, values: dict[str, str]) -> str:
-    """Replace every `{{key}}` with `values[key]`.
-
-    Values that are missing are kept as-is so typos are visible in the
-    rendered output rather than silently expanding to empty. No nested
-    substitution, no conditionals - if the template grows logic beyond
-    this, promote to Jinja2 with a proper test suite.
-    """
-    out = template
-    for key, value in values.items():
-        out = out.replace("{{" + key + "}}", value)
     return out
 
 
@@ -94,46 +81,22 @@ def render_rpi_imager_json(manifests: list[dict[str, Any]], tag: str) -> dict[st
     }
 
 
-def render_card(template: str, manifest: dict[str, Any], tag: str) -> str:
-    img = manifest["image"]
-    sha256_url   = img["url"] + ".sha256"
-    # bgrpiimage-<variant>-vX.Y.Z.img.xz → bgrpiimage-<variant>-vX.Y.Z.manifest.json
-    manifest_url = img["url"].rsplit(".img.xz", 1)[0] + ".manifest.json"
-    values = {
-        "variant":         html.escape(manifest["variant"]),
-        "tag":             html.escape(tag),
-        "description":     html.escape(manifest.get("description") or ""),
-        "hostname":        html.escape(manifest.get("hostname") or "-"),
-        "targets":         html.escape(", ".join(manifest["targets"])),
-        "download_mib":    f"{img['download_size'] / 1024 / 1024:,.1f}",
-        "extract_mib":     f"{img['extract_size']  / 1024 / 1024:,.1f}",
-        "release_date":    html.escape(manifest.get("release_date") or "-"),
-        "download_sha256": html.escape(img["download_sha256"]),
-        "extract_sha256":  html.escape(img["extract_sha256"]),
-        "image_url":       html.escape(img["url"]),
-        "sha256_url":      html.escape(sha256_url),
-        "manifest_url":    html.escape(manifest_url),
-    }
-    return substitute(template, values)
+def build_jinja_env(templates_dir: Path) -> Environment:
+    """Jinja env with autoescape + strict undefined + a MiB filter.
 
-
-def render_index_html(
-    index_template: str,
-    card_template: str,
-    manifests: list[dict[str, Any]],
-    tag: str,
-    repo: str,
-    catalog_url: str,
-) -> str:
-    cards = "\n".join(render_card(card_template, m, tag) for m in manifests)
-    generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    return substitute(index_template, {
-        "tag":         html.escape(tag),
-        "repo":        html.escape(repo),
-        "catalog_url": html.escape(catalog_url),
-        "cards":       cards,
-        "generated":   html.escape(generated),
-    })
+    StrictUndefined raises on `{{ foo }}` where `foo` is missing - typos in
+    the template fail the build instead of rendering as `""`, same safety
+    contract we had with the previous text substitution.
+    """
+    env = Environment(
+        loader=FileSystemLoader(templates_dir),
+        autoescape=select_autoescape(["html", "htm", "xml", "j2"]),
+        undefined=StrictUndefined,
+        trim_blocks=True,
+        lstrip_blocks=True,
+    )
+    env.filters["mib"] = lambda bytes_: f"{bytes_ / 1024 / 1024:,.1f}"
+    return env
 
 
 def main() -> int:
@@ -143,7 +106,7 @@ def main() -> int:
     p.add_argument("--repo",        required=True)
     p.add_argument("--catalog-url", required=True)
     p.add_argument("--templates",   required=True, type=Path,
-                   help="directory with index.html.tmpl + card.html.tmpl")
+                   help="directory with index.html.j2")
     p.add_argument("--out",         required=True, type=Path)
     args = p.parse_args()
 
@@ -157,10 +120,16 @@ def main() -> int:
     )
 
     # --- index.html ----------------------------------------------------------
-    index_tmpl = (args.templates / "index.html.tmpl").read_text(encoding="utf-8")
-    card_tmpl  = (args.templates / "card.html.tmpl").read_text(encoding="utf-8")
-    html_text = render_index_html(index_tmpl, card_tmpl, manifests,
-                                   args.tag, args.repo, args.catalog_url)
+    env = build_jinja_env(args.templates)
+    tmpl = env.get_template("index.html.j2")
+    generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    html_text = tmpl.render(
+        manifests=manifests,
+        tag=args.tag,
+        repo=args.repo,
+        catalog_url=args.catalog_url,
+        generated=generated,
+    )
     (args.out / "index.html").write_text(html_text, encoding="utf-8")
 
     # --- .nojekyll -----------------------------------------------------------
