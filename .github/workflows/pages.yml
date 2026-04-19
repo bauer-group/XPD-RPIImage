@@ -64,17 +64,40 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+
+          # Does a release carry at least one .img.xz asset? A release
+          # tag is created BEFORE build.yml finishes attaching images, so
+          # we only treat a release as publishable once the images have
+          # landed - otherwise we'd overwrite a working catalog with an
+          # empty one during the ~25 min build window.
+          has_images() {
+            gh release view "$1" -R "$GITHUB_REPOSITORY" \
+              --json assets -q '[.assets[] | select(.name | endswith(".img.xz"))] | length' 2>/dev/null \
+              | grep -qv "^0$"
+          }
+
           tag="${{ inputs.tag }}"
+          # For release events the tag is explicit; trust it even if assets
+          # are still uploading (the workflow will be re-triggered by the
+          # next `edited` event once images finish uploading).
           if [[ -z "$tag" ]]; then
-            # release event puts the tag in github.event.release.tag_name;
-            # fall back to the latest published release otherwise.
             tag="${{ github.event.release.tag_name || '' }}"
           fi
+
+          # Otherwise pick the most recent release that actually has images.
           if [[ -z "$tag" ]]; then
-            tag=$(gh release list --limit 1 --json tagName -q '.[0].tagName' -R "$GITHUB_REPOSITORY")
+            while read -r candidate; do
+              [[ -n "$candidate" ]] || continue
+              if has_images "$candidate"; then
+                tag="$candidate"
+                break
+              fi
+              echo "::notice::skipping $candidate - no image assets yet"
+            done < <(gh release list --limit 10 --json tagName -q '.[].tagName' -R "$GITHUB_REPOSITORY")
           fi
+
           if [[ -z "$tag" ]]; then
-            echo "::error::no release found to publish"
+            echo "::error::no release with image assets found - has build.yml finished on any tag?"
             exit 1
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
