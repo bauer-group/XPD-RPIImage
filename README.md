@@ -49,12 +49,12 @@ release shows up automatically, including **Compute Module eMMC flashing**
 via the built-in `rpiboot`.
 
 1. Open **Raspberry Pi Imager → ⚙ Settings → Custom repository**
-2. Paste `https://rpi.pages.dvcs.app.bauer-group.com/rpi-imager.json`
+2. Paste `https://bauer-group.github.io/XPD-RPIImage/rpi-imager.json`
 3. Close settings, restart Imager. Our variants appear under
    **CHOOSE OS → BAUER GROUP**.
 
 Landing page with direct downloads + full checksums:
-<https://rpi.pages.dvcs.app.bauer-group.com/>
+<https://bauer-group.github.io/XPD-RPIImage/>
 
 Full flashing guide (SD, USB-SSD, CM4/CM5 via rpiboot, balenaEtcher, manual
 `dd`): [docs/flash.md](docs/flash.md).

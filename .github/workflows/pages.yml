@@ -3,8 +3,16 @@
 # BAUER GROUP XPD-RPIImage - GitHub Pages catalog publisher
 # =============================================================================
 # Publishes:
-#   - https://rpi.pages.dvcs.app.bauer-group.com/rpi-imager.json  (OS list)
-#   - https://rpi.pages.dvcs.app.bauer-group.com/                 (info page)
+#   - https://bauer-group.github.io/XPD-RPIImage/rpi-imager.json  (OS list)
+#   - https://bauer-group.github.io/XPD-RPIImage/                 (info page)
+#
+# To move to a custom domain (e.g. rpi.pages.dvcs.app.bauer-group.com):
+#   1. Add DNS CNAME <subdomain> -> bauer-group.github.io
+#   2. Drop a `site/CNAME` file containing the full hostname
+#   3. Flip SITE_URL below to https://<subdomain>
+#   4. Once GitHub provisions the cert, run:
+#        gh api --method PUT repos/bauer-group/XPD-RPIImage/pages \
+#          -f cname=<subdomain> -F https_enforced=true
 #
 # The catalog always points at the *latest* GitHub release. It is refreshed:
 #   - on release:published (normal path, triggered by semantic-release +
@@ -56,6 +64,11 @@ permissions:
 concurrency:
   group: pages
   cancel-in-progress: true
+
+env:
+  # Public URL the site is served from. Overridden by site/CNAME when
+  # present (see header comment for custom-domain migration).
+  SITE_URL: "https://bauer-group.github.io/XPD-RPIImage"
 
 jobs:
   build:
@@ -228,18 +241,30 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p _site
-          # Copy static assets (CNAME, stylesheet, logos). Templates are
-          # not copied - the renderer consumes them from site/ directly.
-          cp site/CNAME                _site/CNAME
+
+          # Copy static assets (stylesheet, logos). Templates are not copied
+          # - the renderer consumes them from site/ directly.
           cp site/styles.css           _site/styles.css
           cp site/logo.svg             _site/logo.svg
           cp site/logo-wide-white.svg  _site/logo-wide-white.svg
+
+          # When site/CNAME exists we are on a custom domain; otherwise
+          # fall back to $SITE_URL (the github.io default). site/CNAME
+          # also has to be copied INTO _site so GitHub Pages picks up the
+          # hostname on deploy.
+          if [[ -f site/CNAME ]]; then
+            cp site/CNAME _site/CNAME
+            SITE_URL="https://$(cat site/CNAME | tr -d '[:space:]')"
+            echo "::notice::custom domain from site/CNAME: $SITE_URL"
+          fi
+          echo "SITE_URL=$SITE_URL" >> "$GITHUB_ENV"
+
           python scripts/build_pages.py \
             --manifests   release-assets \
             --templates   site \
             --tag         "$TAG" \
             --repo        "$REPO" \
-            --catalog-url "https://$(cat site/CNAME | tr -d '[:space:]')/rpi-imager.json" \
+            --catalog-url "${SITE_URL}/rpi-imager.json" \
             --out         _site
           echo "--- _site tree ---"
           ls -la _site
@@ -249,9 +274,9 @@ jobs:
           {
             echo "## 🌐 Pages"
             echo ""
-            echo "Catalog URL: \`https://$(cat site/CNAME | tr -d '[:space:]')/rpi-imager.json\`"
+            echo "Catalog URL: \`${SITE_URL}/rpi-imager.json\`"
             echo ""
-            echo "Landing: https://$(cat site/CNAME | tr -d '[:space:]')/"
+            echo "Landing: ${SITE_URL}/"
             echo ""
             echo "### Catalog entries"
             echo ""

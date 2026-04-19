@@ -13,12 +13,12 @@ All three verify against the same SHA-256 checksums published alongside every re
 ## 🌐 Catalog URL
 
 ```text
-https://rpi.pages.dvcs.app.bauer-group.com/rpi-imager.json
+https://bauer-group.github.io/XPD-RPIImage/rpi-imager.json
 ```
 
 This JSON catalog always points at the **latest release**. The same origin
 also serves a browsable landing page:
-[https://rpi.pages.dvcs.app.bauer-group.com/](https://rpi.pages.dvcs.app.bauer-group.com/).
+[https://bauer-group.github.io/XPD-RPIImage/](https://bauer-group.github.io/XPD-RPIImage/).
 
 The catalog is regenerated automatically on every new GitHub release.
 
@@ -35,9 +35,11 @@ Compute Modules and can't talk to `rpiboot`.
 2. Launch it, click the **⚙ Settings** icon (lower-right).
 3. Scroll to **Custom repository**.
 4. Paste:
+
    ```text
-   https://rpi.pages.dvcs.app.bauer-group.com/rpi-imager.json
+   https://bauer-group.github.io/XPD-RPIImage/rpi-imager.json
    ```
+
 5. Close the settings dialog → **restart Imager**.
 
 Our variants now appear under **CHOOSE OS → BAUER GROUP** whenever you pick
@@ -46,7 +48,7 @@ a compatible target device.
 ### Flashing an SD card / USB SSD
 
 1. Pick your device under **CHOOSE DEVICE** (Pi 4, Pi 5, etc.).
-2. **CHOOSE OS → BAUER GROUP → <variant>**.
+2. **CHOOSE OS → BAUER GROUP → `<variant>`**.
 3. **CHOOSE STORAGE → your SD card / SSD**.
 4. Click **NEXT**, confirm, wait for verify.
 
@@ -96,11 +98,13 @@ mass-storage mode before Etcher sees them.
 1. Open [balenaEtcher](https://etcher.balena.io/).
 2. Click **Flash from URL**.
 3. Paste the direct release URL, e.g. for the latest canbus-plattform:
+
    ```text
    https://github.com/bauer-group/XPD-RPIImage/releases/latest/download/bgrpiimage-canbus-plattform-vX.Y.Z.img.xz
    ```
+
    Replace `X.Y.Z` with the actual version — check our
-   [landing page](https://rpi.pages.dvcs.app.bauer-group.com/) for current tags.
+   [landing page](https://bauer-group.github.io/XPD-RPIImage/) for current tags.
 4. Select target → Flash.
 
 Etcher verifies the SHA-256 of the decompressed image if our catalog is
