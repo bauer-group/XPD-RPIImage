@@ -89,6 +89,15 @@ jobs:
         uses: actions/setup-python@v6
         with:
           python-version: "3.14"
+          cache: pip
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: ⚙️ Install Python dependencies
+        # generate.py imports jsonschema + rich eagerly, so even the json
+        # subcommand fails without them. Install unconditionally - the site
+        # renderer itself has no extra deps but the reconstruct step leans
+        # on generate.py for description / targets / hostname.
+        run: python -m pip install -r scripts/requirements.txt
 
       - name: 🏗 Reconstruct missing manifests (legacy releases)
         env:
