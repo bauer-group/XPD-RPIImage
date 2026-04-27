@@ -31,17 +31,27 @@
   <main>
     <section class="pitch">
       <h2>🛠 Add this repo to Raspberry Pi Imager</h2>
+      <p>You need <a href="https://www.raspberrypi.com/software/">Raspberry Pi Imager <strong>v2.0.3 or later</strong></a> &mdash; older versions don&rsquo;t persist a custom repository between launches.</p>
+
+      <h3>One-click (recommended)</h3>
       <ol class="steps">
-        <li>Install <a href="https://www.raspberrypi.com/software/">Raspberry Pi Imager</a> (v1.8.5 or later).</li>
-        <li>Open it and go to <strong>Settings</strong> (the ⚙ icon) → <strong>Custom repository</strong>.</li>
-        <li>Paste the catalog URL below and close the settings dialog:
+        <li>
+          <a class="btn primary" href="rpi-imager://open?repo={{ catalog_url }}">Open in Raspberry Pi Imager &rarr;</a>
+          <small>Imager opens with our repo pre-loaded and asks you to confirm.</small>
+        </li>
+        <li>Pick your target device &rarr; pick an image &rarr; flash.</li>
+      </ol>
+
+      <h3>Manual setup (alternative)</h3>
+      <ol class="steps">
+        <li>Open Imager &rarr; <strong>Settings</strong> (⚙) &rarr; <strong>Custom repository</strong>.</li>
+        <li>Paste the catalog URL and close the dialog &mdash; Imager reloads the OS list automatically:
           <div class="copyrow">
             <code id="catalog-url">{{ catalog_url }}</code>
             <button type="button" onclick="navigator.clipboard.writeText(document.getElementById('catalog-url').innerText)">Copy</button>
           </div>
         </li>
-        <li>Restart Imager. Our variants now appear under <strong>Operating System → BAUER GROUP</strong>.</li>
-        <li>Pick your target device → pick an image → flash.</li>
+        <li>Our variants appear under <strong>CHOOSE OS &rarr; BAUER GROUP</strong>.</li>
       </ol>
 
       <h3>🧷 Flashing a Compute Module (CM4 / CM5 eMMC)</h3>

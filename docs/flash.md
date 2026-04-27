@@ -31,19 +31,37 @@ Compute Modules and can't talk to `rpiboot`.
 
 ### Add the BAUER GROUP repository once
 
-1. Install [Raspberry Pi Imager](https://www.raspberrypi.com/software/).
-2. Launch it, click the **⚙ Settings** icon (lower-right).
-3. Scroll to **Custom repository**.
-4. Paste:
+You need [Raspberry Pi Imager](https://www.raspberrypi.com/software/) **v2.0.3 or later**.
+Older versions either lacked the persisted custom-repo UI entirely or required
+launching with `--repo URL` every time (URL was forgotten between sessions).
+
+**Option A — one-click deep link** (Imager 2.0.3+):
+
+> [Open in Raspberry Pi Imager](rpi-imager://open?repo=https://bauer-group.github.io/XPD-RPIImage/rpi-imager.json)
+
+Clicking the link asks your OS to hand the URL to Imager, which opens with
+the catalog pre-loaded and a security-confirmation dialog.
+
+**Option B — manual setup:**
+
+1. Launch Imager, click the **⚙ Settings** icon (lower-right).
+2. Scroll to **Custom repository**.
+3. Paste:
 
    ```text
    https://bauer-group.github.io/XPD-RPIImage/rpi-imager.json
    ```
 
-5. Close the settings dialog → **restart Imager**.
+4. Close the dialog. Imager resets the current session and reloads the OS
+   list automatically — **no manual restart needed**.
 
-Our variants now appear under **CHOOSE OS → BAUER GROUP** whenever you pick
+Our variants appear under **CHOOSE OS → BAUER GROUP** whenever you pick
 a compatible target device.
+
+> **Why not "restart Imager"?** Earlier versions of these docs said to
+> restart. That advice was wrong on Imager 2.0+ (the URL change auto-reloads)
+> and counter-productive on Imager 1.x (the URL wasn't persisted, so a
+> restart wiped it). Upgrade to 2.0.3+ and you're done after one paste.
 
 ### Flashing an SD card / USB SSD
 

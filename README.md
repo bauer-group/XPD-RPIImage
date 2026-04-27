@@ -44,14 +44,23 @@ Base OS: Raspberry Pi OS arm64 (trixie, 2026-04-13).
 
 ## 💾 Flash an image in 30 seconds
 
-Add our catalog URL to Raspberry Pi Imager (≥ 1.8.5) once — every future
-release shows up automatically, including **Compute Module eMMC flashing**
-via the built-in `rpiboot`.
+You need **Raspberry Pi Imager v2.0.3 or later** — earlier versions don't
+persist a custom repository between launches.
+
+**One-click:**
+
+[Open BAUER GROUP repository in Raspberry Pi Imager](rpi-imager://open?repo=https://bauer-group.github.io/XPD-RPIImage/rpi-imager.json)
+
+Imager opens with our catalog pre-loaded and asks for confirmation. After
+that, every future release shows up automatically — including **Compute
+Module eMMC flashing** via the built-in `rpiboot`.
+
+**Manual setup:**
 
 1. Open **Raspberry Pi Imager → ⚙ Settings → Custom repository**
 2. Paste `https://bauer-group.github.io/XPD-RPIImage/rpi-imager.json`
-3. Close settings, restart Imager. Our variants appear under
-   **CHOOSE OS → BAUER GROUP**.
+3. Close the dialog. Imager reloads the OS list automatically — our
+   variants appear under **CHOOSE OS → BAUER GROUP**.
 
 Landing page with direct downloads + full checksums:
 <https://bauer-group.github.io/XPD-RPIImage/>
