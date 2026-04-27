@@ -63,6 +63,32 @@ a compatible target device.
 > and counter-productive on Imager 1.x (the URL wasn't persisted, so a
 > restart wiped it). Upgrade to 2.0.3+ and you're done after one paste.
 
+### What about Imager's "OS Customization" dialog?
+
+When you click **NEXT** after picking an image, Imager offers to set
+hostname, username, WiFi, locale, and SSH keys. **Leave it disabled** for
+our images — pick **"NO"** when asked whether to apply customization.
+
+Our images bake all of that in at build time from
+[`config/variants/<name>.json`](../config/variants/): the `admin` user
+already exists (the stock `pi` user is removed), hostname is `bg-rpi`, WiFi
+and locale are pre-set, SSH is enabled. Imager's customization writes a
+`custom.toml` / `firstrun.sh` that the stock raspios firstboot service runs
+on first boot — and that service was designed to *rename* `pi`, which we
+deleted. Effects when enabled anyway:
+
+| Customization | Effect on our image |
+| --- | --- |
+| Hostname / locale / timezone | Overrides our defaults — usually harmless. |
+| SSH `authorized_keys` | Appended to the existing `admin` user — works. |
+| Username + password | Fragile. Tries to rename a `pi` user that doesn't exist; may silently fail or create a duplicate user beside `admin`. |
+| WiFi SSID/PSK | Writes a second network config alongside ours — both get tried, messy. |
+
+For per-device tuning either rebuild with an edited variant JSON, or after
+flashing SSH in as `admin` / `12345678` and change what you need. For
+fleet-wide customization the source of truth lives in
+[`config/variants/`](../config/variants/) — that's the audit trail.
+
 ### Flashing an SD card / USB SSD
 
 1. Pick your device under **CHOOSE DEVICE** (Pi 4, Pi 5, etc.).
