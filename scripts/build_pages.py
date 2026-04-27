@@ -34,12 +34,16 @@ from typing import Any
 from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 
 
-# RPi Imager device names - maps our JSON `targets` enum to Imager's IDs.
-TARGET_TO_IMAGER_DEVICE = {
-    "rpi4": "pi4-64bit",
-    "rpi5": "pi5",
-    "cm4":  "cm4",
-    "cm5":  "cm5",
+# RPi Imager device tags - maps our JSON `targets` enum to Imager filter tags.
+# The Imager UI groups Compute Modules with their Pi siblings: CM4/CM4S sit
+# under "Raspberry Pi 4" (tags pi4-64bit / pi4-32bit) and CM5 sits under
+# "Raspberry Pi 5" (tags pi5-64bit / pi5-32bit) - there are no standalone
+# cm4/cm5 tags. We ship arm64 images, so we emit only the -64bit family tag.
+TARGET_TO_IMAGER_DEVICES: dict[str, list[str]] = {
+    "rpi4": ["pi4-64bit"],
+    "rpi5": ["pi5-64bit"],
+    "cm4":  ["pi4-64bit"],
+    "cm5":  ["pi5-64bit"],
 }
 
 
@@ -60,7 +64,23 @@ def render_rpi_imager_json(manifests: list[dict[str, Any]], tag: str) -> dict[st
     for m in manifests:
         variant = m["variant"]
         img = m["image"]
-        devices = [TARGET_TO_IMAGER_DEVICE[t] for t in m["targets"] if t in TARGET_TO_IMAGER_DEVICE]
+        # Targets are already constrained by config/schema.json; an unknown
+        # value here means the schema enum and this mapping have drifted -
+        # fail loudly rather than silently emit an empty `devices` array
+        # (which is what hides a variant in RPi Imager).
+        seen: set[str] = set()
+        devices: list[str] = []
+        for t in m["targets"]:
+            if t not in TARGET_TO_IMAGER_DEVICES:
+                raise ValueError(
+                    f"variant {m.get('variant')!r}: target {t!r} has no "
+                    f"Imager tag mapping in TARGET_TO_IMAGER_DEVICES "
+                    f"(known: {sorted(TARGET_TO_IMAGER_DEVICES)})"
+                )
+            for d in TARGET_TO_IMAGER_DEVICES[t]:
+                if d not in seen:
+                    seen.add(d)
+                    devices.append(d)
         os_list.append({
             "name": f"BAUER GROUP RPIImage - {variant} {tag}",
             "description": m.get("description") or f"{variant} image, version {tag}",
