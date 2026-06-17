@@ -10,8 +10,13 @@
 #   * write CHANGELOG.md
 #   * create tag `vX.Y.Z` and a GitHub release with auto-generated notes
 #
-# Image artifacts (.img.xz + .sha256) are produced by build.yml on the
-# resulting tag push and appended to the release created here.
+# Image artifacts (.img.xz + .sha256 + .manifest.json) are attached to the
+# release by build.yml's `release` job. NOTE: the tag is pushed here with
+# GITHUB_TOKEN, and GitHub does not trigger other workflows from
+# GITHUB_TOKEN events, so build.yml does NOT fire automatically on the tag.
+# Dispatch it by hand to populate the assets:
+#   gh workflow run build.yml --ref v<version>
+# (see docs/ci-cd.md -> "When it triggers" for the full rationale)
 # =============================================================================
 
 name: 🚀 Release

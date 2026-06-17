@@ -11,9 +11,26 @@ validation, parallel matrix builds, and tagged releases.
 | Event | Triggers build? | Produces release? |
 | --- | --- | --- |
 | Push to `main` | ✅ (outside `paths-ignore`) | — |
-| Push tag `v*.*.*` | ✅ | ✅ |
+| Push tag `v*.*.*` (manual or PAT) | ✅ | ✅ attaches images |
+| Tag from semantic-release | ⚠️ **no** — see note | release only, **no images** |
 | Pull request to `main` | ✅ | — |
 | `workflow_dispatch` (manual) | ✅ (`skip_build` toggle available) | — |
+
+> ⚠️ **Release images require a manual build dispatch.** semantic-release
+> ([`release.yml`](../.github/workflows/release.yml)) creates the tag and the
+> GitHub Release using the workflow's `GITHUB_TOKEN`. GitHub deliberately does
+> **not** fire other workflows from `GITHUB_TOKEN` events (recursion
+> prevention), so `build.yml`'s `tags: ["v*.*.*"]` trigger never runs on a
+> released tag — the release is published **without** image assets. To attach
+> them, dispatch the build on the tag by hand:
+>
+> ```bash
+> gh workflow run build.yml --ref v<version>   # e.g. v0.2.3
+> ```
+>
+> The dispatch uses your own credentials (not `GITHUB_TOKEN`), so it triggers
+> normally; on a `refs/tags/v*` ref the `🚀 Release` job attaches the
+> `.img.xz` + `.sha256` + `.manifest.json` to the existing release.
 
 ### `paths-ignore`
 
@@ -66,8 +83,14 @@ One parallel job per variant. Steps:
 
 ### 🚀 Release
 
-Fires only on `refs/tags/v*`. Downloads all variant artifacts, uploads as
-Release assets, generates changelog from commits since last tag.
+Runs only on `refs/tags/v*`. Downloads all variant artifacts and **appends**
+them as assets to the GitHub Release semantic-release already created for the
+tag (`append_body: true` preserves the auto-generated changelog).
+
+> This job is **not** reached automatically: semantic-release tags via
+> `GITHUB_TOKEN`, which never triggers `build.yml`. Dispatch the tag build by
+> hand (see the ⚠️ note under **When it triggers** above) to populate a
+> release's image assets.
 
 ---
 
@@ -102,13 +125,13 @@ run's artifact. The SHA keeps them distinct.
 | Actions artifact | **3 days** | every build | ✅ shared with Packages |
 | Actions logs | 90 days (GitHub default) | every build | ✅ shared with Packages |
 | Actions cache | 7 days idle (GitHub default) | cache hit/miss | ❌ separate 10 GB cap per repo |
-| GitHub Release asset | **permanent** | tag push only | ❌ **free, no quota** |
+| GitHub Release asset | **permanent** | dispatched tag build | ❌ **free, no quota** |
 
 > The 3-day TTL applies **only** to the transient Actions artifact. Tag
 > builds end up in BOTH stores — the artifact is just a hand-off mirror
-> for the release job, which downloads it and reuploads as a Release
-> asset within minutes. After 3 days the artifact disappears; the
-> Release asset persists forever.
+> for the release job, which downloads it and reuploads as a Release asset
+> once the tag build is dispatched (see the ⚠️ note above). After 3 days the
+> artifact disappears; the Release asset persists forever.
 
 The Actions retention is configured in [`build.yml`](../.github/workflows/build.yml)
 on the `actions/upload-artifact` step (`retention-days: 3`). It is
