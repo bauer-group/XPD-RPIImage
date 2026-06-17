@@ -37,6 +37,17 @@ if [[ -f "$GEN/locale.env" ]]; then
     fi
 fi
 
+# --- initramfs policy (chroot build) ---
+# initramfs-tools >= 0.148.3+rpt2 refuses MODULES=dep unless /sys is
+# mounted, because it probes sysfs to decide which modules to bundle.
+# The qemu cross-build chroot has no /sys, so update-initramfs fails the
+# moment an apt trigger regenerates the initrd. MODULES=most bundles a
+# broad module set without probing sysfs - the standard choice for
+# chroot-built Raspberry Pi images. Must run before any apt operation.
+if [[ -f /etc/initramfs-tools/initramfs.conf ]]; then
+    sed -i 's/^MODULES=.*/MODULES=most/' /etc/initramfs-tools/initramfs.conf
+fi
+
 # --- apt packages ---
 apt-get update
 if [[ -f "$GEN/packages.list" ]]; then
