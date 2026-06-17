@@ -1,3 +1,9 @@
+## [0.2.3](https://github.com/bauer-group/XPD-RPIImage/compare/v0.2.2...v0.2.3) (2026-06-17)
+
+### 🐛 Bug Fixes
+
+* **build:** forced MODULES=most for initramfs in chroot build ([4d4f43d](https://github.com/bauer-group/XPD-RPIImage/commit/4d4f43d6a1cfbb1ce58ed934e7aa347e2223acb6))
+
 ## [0.2.2](https://github.com/bauer-group/XPD-RPIImage/compare/v0.2.1...v0.2.2) (2026-06-17)
 
 ### 🐛 Bug Fixes
