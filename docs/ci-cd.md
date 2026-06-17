@@ -95,19 +95,101 @@ run's artifact. The SHA keeps them distinct.
 
 ## 🗄️ Storage
 
-| Location | Lifetime | Trigger |
+### Lifetimes
+
+| Location | Lifetime | Trigger | Counts against quota? |
+| --- | --- | --- | --- |
+| Actions artifact | **3 days** | every build | ✅ shared with Packages |
+| Actions logs | 90 days (GitHub default) | every build | ✅ shared with Packages |
+| Actions cache | 7 days idle (GitHub default) | cache hit/miss | ❌ separate 10 GB cap per repo |
+| GitHub Release asset | **permanent** | tag push only | ❌ **free, no quota** |
+
+> The 3-day TTL applies **only** to the transient Actions artifact. Tag
+> builds end up in BOTH stores — the artifact is just a hand-off mirror
+> for the release job, which downloads it and reuploads as a Release
+> asset within minutes. After 3 days the artifact disappears; the
+> Release asset persists forever.
+
+The Actions retention is configured in [`build.yml`](../.github/workflows/build.yml)
+on the `actions/upload-artifact` step (`retention-days: 3`). It is
+deliberately short — main/PR builds are disposable dev artefacts, and 3
+days is long enough to grab one off a failing CI run without bloating
+the org's shared storage.
+
+### Quota rules at a glance
+
+GitHub splits "storage" across several independent buckets. Knowing
+which bucket a file lands in is the difference between "free forever"
+and "we hit the 2 GB Free-tier cap".
+
+| Bucket | Counts against | Notes |
 | --- | --- | --- |
-| Actions artifact | **14 days** | every build |
-| GitHub Release asset | **permanent** | tag push only |
+| **Actions artifacts + logs** | Org shared-storage quota | 500 MB Free / 2 GB Pro/Team / 50 GB Enterprise |
+| **GitHub Packages** (ghcr.io) | Same shared-storage quota | Container layers stack up fast — clean old tags |
+| **Git LFS** | Separate 1 GB storage + 1 GB egress / month | We do not use LFS in this repo |
+| **Git repo size** | Soft cap 5 GB per repo | Just generator code here, ~250 KB |
+| **Release assets** | ❌ **not counted, no quota** | Single-file cap 2 GB, soft cap 10 GB per release |
 
-> The TTL applies **only** to the Actions artifact. Release assets live in
-> Release storage and persist until deleted manually. Tag builds therefore
-> end up in BOTH stores — the artifact is a transient mirror.
+This is why this repo's release strategy works on the Free tier despite
+shipping ~1.6 GB images per variant: every tag attaches its `.img.xz`
+to a GitHub Release, and Release storage is free for public **and**
+private repos.
 
-Download locations:
+### Per-file & per-release caps
 
-- Actions artifact: _Actions → Run → Artifacts section_ (ZIP-wrapped)
-- Release asset: _Releases → Tag → Assets_ (raw `.img.xz`)
+| Limit | Value | Hard or soft? |
+| --- | --- | --- |
+| Single file in a Release | 2 GB | hard — upload rejected above |
+| Total per Release | 10 GB recommended | soft — over goes through, just discouraged |
+| Bandwidth on Release downloads | unlimited | served via GitHub's CDN |
+
+If a variant ever crosses 2 GB compressed (`tegra-*`, image with
+pre-baked AI runtime, etc.), the upload will fail. Workaround: split
+with `split -b 1900M` or chunk into multi-part `.img.xz.{001,002}`.
+
+### Operational guidance
+
+- **Never lengthen the Actions artifact retention casually.** Each
+  variant is ~1.5 GB; 14 days × N variants × M builds/week adds up
+  fast and crowds out other repos sharing the org quota.
+- **Old releases are the only thing that grow Release storage.** It
+  is free, but if you ever need to clean up (e.g. retired variants),
+  delete the Release — that detaches its assets. The git tag stays.
+- **Cache size is capped automatically.** GitHub evicts least-recently-used
+  caches when a repo crosses 10 GB; we cache CustomPiOS clones (~50 MB)
+  and never approach the cap.
+- **PR artifacts auto-evict per Dependabot wave.** Dependabot batches
+  produce 3-4 builds in parallel — they all expire within the same
+  3-day window, so disk usage stays bounded.
+
+### Inspecting the actual usage
+
+```bash
+# Live (non-expired) Actions artifacts and their sizes
+gh api repos/<org>/<repo>/actions/artifacts --paginate \
+  --jq '[.artifacts[] | select(.expired==false)
+         | {name, size_mb: (.size_in_bytes/1048576|floor),
+            created_at, expires_at}]
+        | sort_by(-.size_mb)'
+
+# Release assets and total size per tag
+gh api repos/<org>/<repo>/releases --paginate \
+  --jq '[.[] | {tag: .tag_name, created: .created_at,
+                total_mb: ([.assets[].size]|add/1048576|floor // 0)}]'
+
+# Actions cache size for this repo
+gh api repos/<org>/<repo>/actions/cache/usage
+```
+
+Org-wide billing aggregates live in
+_Org Settings → Billing & plans → Storage_. The `/orgs/.../settings/billing/shared-storage`
+API endpoint was retired by GitHub in 2025 — the UI is now the only
+authoritative source.
+
+### Download locations
+
+- Actions artifact: _Actions → Run → Artifacts section_ (ZIP-wrapped, 3-day TTL)
+- Release asset: _Releases → Tag → Assets_ (raw `.img.xz`, permanent)
 
 ---
 
