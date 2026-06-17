@@ -1,3 +1,17 @@
+## [0.2.2](https://github.com/bauer-group/XPD-RPIImage/compare/v0.2.1...v0.2.2) (2026-06-17)
+
+### 🐛 Bug Fixes
+
+* **base:** updated Raspberry Pi OS base to 2026-04-21 ([93bd941](https://github.com/bauer-group/XPD-RPIImage/commit/93bd941d8495b6bdf6c6fff89a8aa46cefa0039d))
+* **pages:** attached reconstructed manifests back to legacy releases ([0e18821](https://github.com/bauer-group/XPD-RPIImage/commit/0e188210d93b08b70b313353e6ec9c913f2f0c8a))
+* **pages:** fell back to github.io default until custom DNS is wired up ([b080829](https://github.com/bauer-group/XPD-RPIImage/commit/b0808294200850a0b018de4f55dbdb515a265c77))
+* **pages:** let the hero subtitle span one line + richer footer ([fad7ac7](https://github.com/bauer-group/XPD-RPIImage/commit/fad7ac78ad091b41bc10484006d7bfb7070a17a2))
+* **pages:** used Imager family tags for Pi5/CM4/CM5 ([333e74c](https://github.com/bauer-group/XPD-RPIImage/commit/333e74c31b00d2c308a640b6116fa9db878c8fd2))
+
+### ♻️ Refactoring
+
+* **pages:** served manifests as Pages assets, not release uploads ([7ed9c9e](https://github.com/bauer-group/XPD-RPIImage/commit/7ed9c9ead7a7d56b8642ca7c90d1f0492a62988c))
+
 ## [0.2.1](https://github.com/bauer-group/XPD-RPIImage/compare/v0.2.0...v0.2.1) (2026-04-19)
 
 ### 🐛 Bug Fixes
