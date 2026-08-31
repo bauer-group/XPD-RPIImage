@@ -4,6 +4,12 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.4.0](https://github.com/bauer-group/XPD-RPIImage/compare/v0.3.2...v0.4.0) (2026-08-31)
+
+### 🚀 Features
+
+* **security:** expired the shipped default password at first login ([4d15019](https://github.com/bauer-group/XPD-RPIImage/commit/4d15019b7cc57536d86cb76592838a130e29b1a1))
+
 ## [0.3.2](https://github.com/bauer-group/XPD-RPIImage/compare/v0.3.1...v0.3.2) (2026-08-31)
 
 ### 🐛 Bug Fixes
