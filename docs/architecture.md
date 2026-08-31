@@ -64,19 +64,29 @@ Output breakdown:
 | `bgrpiimage-portainer` | `docker-compose.yml`, `bgrpiimage-portainer-install.service` (oneshot), `portainer.env` |
 | `bgrpiimage-unattended-upgrades` | `50unattended-upgrades`, `20auto-upgrades`, timer overrides, reboot-window service+timer+script |
 
-Modules whose feature is disabled in the JSON get a `.disabled` marker and
-are skipped by their `filter` script at build time.
+Modules whose feature is disabled in the JSON are omitted from the generated
+`MODULES=` list in `src/variants/<variant>/config`, so CustomPiOS never
+executes them. (A `.disabled` marker file is also written into the module's
+generated tree, but nothing reads it — it is vestigial.)
 
 ### 3. Assembly — CustomPiOS chroot
 
 [CustomPiOS][custompios] is cloned into `./CustomPiOS/` by
-`scripts/bootstrap.sh` (gitignored; pinned to `1.5.0` by default, override via
-`CUSTOMPIOS_REF`). Two execution paths:
+`scripts/bootstrap.sh` (gitignored). The revision is pinned by **full commit
+SHA** — upstream's tags are lightweight and can be force-moved, so a SHA is the
+stronger pin. The default lives in `scripts/bootstrap.sh` and CI overrides it
+via `CUSTOMPIOS_REF` in `build.yml`; bootstrap verifies the checked-out HEAD
+matches and fails the build if it does not. Current pin: CustomPiOS 2.0.0
+(`d293309aac2f606c609645b441962c8f02b6e8c3`), which requires the
+`python3-git` / `python3-yaml` host packages. Two execution paths:
 
 - **Native** (CI runner, bare Linux host): `BGRPI_NATIVE_BUILD=yes` — build
-  runs directly, needs `qemu-user-static` + `kpartx` + `xz-utils` on the host.
-- **Dockerised** (macOS/Windows dev): `guysoft/custompios:1.5.0` as a
-  privileged sibling container, mounted with `/distro` → the repo.
+  runs directly, needs `qemu-user-static` + `kpartx` + `xz-utils` +
+  `python3-git` + `python3-yaml` on the host.
+- **Dockerised** (macOS/Windows dev): `ghcr.io/guysoft/custompios:sha-d293309`
+  as a privileged sibling container, mounted with `/distro` → the repo.
+  (Upstream moved off Docker Hub; `guysoft/custompios` there is unmaintained.)
+  Only the bind-mounted checkout executes — the container supplies OS deps.
 
 Either way CustomPiOS:
 
@@ -99,7 +109,7 @@ Local: `dist/bgrpiimage-<variant>-v<version>.img.xz` + `.sha256`.
 
 CI: see [`ci-cd.md`](ci-cd.md). In short:
 
-- every push/PR → Actions artifact (14-day TTL), SHA-suffixed filename
+- every push/PR → Actions artifact (`retention-days: 3`), SHA-suffixed filename
 - every tag → GitHub Release asset (permanent), clean version-only filename
 
 ---
@@ -110,8 +120,13 @@ The generator does three jobs a template engine does not:
 
 - **Schema validation** via `jsonschema` — catches typos before build.
 - **`extends` resolution** — recursive load, `name`-keyed deep-merge.
-- **Env-var substitution with fail-fast** — missing secret raises
-  `KeyError`, never silently produces an empty password.
+- **Env-var substitution with fail-fast** — a bare `${VAR}` that is unset
+  raises `KeyError`. Note the `${VAR:-default}` form deliberately opts out of
+  this: the shipped variants use `${ADMIN_PASSWORD:-12345678}` so a first
+  boot works out of the box. That path is not silent — the generator prints a
+  `SECURITY:` warning at build time and the image carries
+  `/etc/bgrpiimage-default-password-active`, which the MOTD reports on every
+  login until the credential is rotated.
 
 Each of these is cheap in Python, awkward in a template layer.
 

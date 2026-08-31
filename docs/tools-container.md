@@ -18,7 +18,7 @@ no local Python, qemu, kpartx or CustomPiOS clone required.
     │     └── bash scripts/build.sh          ← launches…
     │            │
     │            └── docker run --privileged \   ← SIBLING container
-    │                  guysoft/custompios:devel     (has loop devices, qemu)
+    │                  ghcr.io/guysoft/custompios:sha-d293309  (loop devices, qemu)
     │                    │
     │                    └── chroot + unpack → dist/*.img.xz
     │

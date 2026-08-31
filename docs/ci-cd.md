@@ -73,8 +73,10 @@ One parallel job per variant. Steps:
 1. Checkout
 2. Setup Python 3.14, install deps
 3. Free runner disk (strips .NET / Android / Boost — saves ~10 GB)
-4. Install host build deps (`qemu-user-static`, `kpartx`, `xz-utils`, …)
-5. **Cache CustomPiOS** — keyed on `scripts/bootstrap.sh` hash
+4. Install host build deps (`qemu-user-static`, `kpartx`, `xz-utils`,
+   `python3-git`, `python3-yaml`, …)
+5. **Cache CustomPiOS** — keyed on `CUSTOMPIOS_REF` **and** the
+   `scripts/bootstrap.sh` hash, with no `restore-keys` (see below)
 6. Resolve variant metadata → `full_tag`, suffix, start timestamp
 7. Run `bash scripts/build.sh <variant>`
 8. Compute SHA-256, size, byte count
@@ -306,6 +308,32 @@ This saves ~1 runner-hour per wasted build when force-pushing or fixing
 typos rapidly.
 
 ---
+
+## 📌 CustomPiOS pinning
+
+`CUSTOMPIOS_REF` pins the upstream build toolchain to a **full 40-char commit
+SHA** — currently CustomPiOS 2.0.0, `d293309aac2f606c609645b441962c8f02b6e8c3`.
+A SHA rather than a tag, because upstream's tags are lightweight and can be
+force-moved.
+
+Three things enforce the pin, and all three are load-bearing:
+
+| Guard | Why it exists |
+| --- | --- |
+| `scripts/bootstrap.sh` fetches the ref explicitly and **verifies** the resulting `HEAD` | its predecessor ended in `\|\| true`, so a failed update was invisible |
+| The cache key contains `CUSTOMPIOS_REF` | otherwise changing the ref does not invalidate the cache |
+| **No** `restore-keys` on that cache | a prefix match would restore a checkout of a *different* revision |
+
+> **Why this matters.** Before these guards the workflow declared
+> `CUSTOMPIOS_REF: master` but was in fact frozen on CustomPiOS 1.5.0 for
+> 20 months: the cached checkout was shallow, `git pull --ff-only` therefore
+> failed, and `|| true` swallowed it. When the Actions cache finally expired,
+> a fresh clone jumped straight from v1.5.0 to v2.0.0 and the build broke on a
+> missing `GitPython` — on a commit that had nothing to do with the cause.
+
+**To move the pin:** update `CUSTOMPIOS_REF` in `.github/workflows/build.yml`
+(and the default in `scripts/bootstrap.sh`), check whether the new revision
+adds host dependencies, and let CI prove it green before relying on it.
 
 ## 📈 Performance knobs
 
