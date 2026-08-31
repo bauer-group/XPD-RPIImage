@@ -53,7 +53,7 @@ mkdir -p dist
 # intact because it wipes `*.img` only from BASE_WORKSPACE.
 # ---------------------------------------------------------------------------
 echo "[build] preparing base image for '$VARIANT'"
-IMAGE_URL=$(python3 - <<PY
+IMAGE_META=$(python3 - <<PY
 import json
 from pathlib import Path
 cfg_path = Path("$CONFIG_JSON").resolve()
@@ -67,8 +67,11 @@ while "extends" in cfg and cfg_path not in seen:
     parent.update({k: v for k, v in cfg.items() if v is not None})
     cfg = parent
 print(cfg["base_image"]["url"])
+print(cfg["base_image"].get("sha256", ""))
 PY
 )
+IMAGE_URL=$(sed -n '1p' <<<"$IMAGE_META")
+IMAGE_SHA256=$(sed -n '2p' <<<"$IMAGE_META")
 echo "[build] URL: $IMAGE_URL"
 
 CACHE="$ROOT/src/image-cache"
@@ -81,6 +84,25 @@ if [[ ! -f "$IMG_XZ" && ! -f "$IMG_RAW" ]]; then
     curl -fSL --retry 3 -o "$IMG_XZ.partial" "$IMAGE_URL"
     mv "$IMG_XZ.partial" "$IMG_XZ"
 fi
+
+# Verify the base image before it is unpacked and baked into a product.
+# config declares base_image.sha256 but nothing used to check it, so a
+# swapped or truncated upstream image would have shipped silently.
+# Runs on cache hits too - the cache dir is not a trust boundary.
+if [[ -n "$IMAGE_SHA256" && -f "$IMG_XZ" ]]; then
+    echo "[build] verifying sha256 of $(basename "$IMG_XZ")"
+    if ! echo "${IMAGE_SHA256}  ${IMG_XZ}" | sha256sum -c - >/dev/null 2>&1; then
+        actual=$(sha256sum "$IMG_XZ" | cut -d' ' -f1)
+        echo "error: base image checksum mismatch - refusing to build" >&2
+        echo "       expected: ${IMAGE_SHA256}" >&2
+        echo "       actual:   ${actual}" >&2
+        echo "       file:     ${IMG_XZ}" >&2
+        exit 1
+    fi
+elif [[ -z "$IMAGE_SHA256" ]]; then
+    echo "[build] WARNING: no base_image.sha256 declared - image NOT verified" >&2
+fi
+
 if [[ -f "$IMG_XZ" && ! -f "$IMG_RAW" ]]; then
     echo "[build] unxz $IMG_XZ"
     xz -d --keep "$IMG_XZ"
@@ -116,7 +138,12 @@ if [[ "${BGRPI_NATIVE_BUILD:-no}" == "yes" ]]; then
     bash "$ROOT/CustomPiOS/src/update-custompios-paths" "$ROOT/src"
     ( cd "$ROOT/src" && bash ./build_dist "$VARIANT" )
 else
-    DOCKER_IMAGE="${DOCKER_IMAGE:-guysoft/custompios:devel}"
+    # ghcr.io, not Docker Hub: upstream moved its registry in CustomPiOS
+    # commit 1027bcbd and guysoft/custompios:devel has been unmaintained
+    # since 2025-02. Tag matches the CUSTOMPIOS_REF pin in bootstrap.sh -
+    # the container only supplies OS deps (the bind-mounted checkout is what
+    # actually executes), but a v2 checkout needs v2's python packages.
+    DOCKER_IMAGE="${DOCKER_IMAGE:-ghcr.io/guysoft/custompios:sha-d293309}"
     echo "[build] launching container $DOCKER_IMAGE for variant '$VARIANT'"
     # update-custompios-paths must run INSIDE the container so the
     # custompios_path sidecar records /distro/CustomPiOS/src (the bind-mount
