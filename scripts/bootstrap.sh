@@ -21,13 +21,19 @@ CUSTOMPIOS_URL="${CUSTOMPIOS_URL:-https://github.com/guysoft/CustomPiOS.git}"
 CUSTOMPIOS_REF="${CUSTOMPIOS_REF:-d293309aac2f606c609645b441962c8f02b6e8c3}"
 
 # A 40-char hex string is a commit SHA; anything else is a branch or tag name.
-is_sha() { [[ "$1" =~ ^[0-9a-f]{40}$ ]]; }
+# Case-insensitive: git accepts an uppercase SHA, so we must too - otherwise
+# an uppercase pin would silently skip both the short-circuit and the drift check.
+is_sha() { [[ "$1" =~ ^[0-9a-fA-F]{40}$ ]]; }
+
+# git always reports lowercase, so compare against a normalised copy -
+# otherwise an uppercase pin would fail the drift check against itself.
+REF_LC="$(printf '%s' "$CUSTOMPIOS_REF" | tr '[:upper:]' '[:lower:]')"
 
 # Already at the requested revision? Nothing to do. This is the cache-hit
 # path and must stay cheap - no network round-trip.
 if [[ -d "$CUSTOMPIOS_DIR/.git" ]] \
    && is_sha "$CUSTOMPIOS_REF" \
-   && [[ "$(git -C "$CUSTOMPIOS_DIR" rev-parse HEAD 2>/dev/null || true)" == "$CUSTOMPIOS_REF" ]]; then
+   && [[ "$(git -C "$CUSTOMPIOS_DIR" rev-parse HEAD 2>/dev/null || true)" == "$REF_LC" ]]; then
     echo "[bootstrap] CustomPiOS already at $CUSTOMPIOS_REF"
     exit 0
 fi
@@ -50,7 +56,7 @@ HEAD_SHA="$(git -C "$CUSTOMPIOS_DIR" rev-parse HEAD)"
 
 # Fail loudly on drift. The previous version ended in `|| true`, which is how
 # a broken update went unnoticed for 20 months.
-if is_sha "$CUSTOMPIOS_REF" && [[ "$HEAD_SHA" != "$CUSTOMPIOS_REF" ]]; then
+if is_sha "$CUSTOMPIOS_REF" && [[ "$HEAD_SHA" != "$REF_LC" ]]; then
     echo "[bootstrap] ERROR: HEAD is $HEAD_SHA but $CUSTOMPIOS_REF was requested" >&2
     exit 1
 fi
