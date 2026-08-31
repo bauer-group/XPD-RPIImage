@@ -175,8 +175,12 @@ More detail: [`docs/architecture.md`](docs/architecture.md).
 > - `admin` user password → `12345678`
 > - WiFi PSK for `IOT @ BAUER-GROUP` → `12345678`
 >
-> These are **demo credentials** baked in via `${VAR:-default}` references.
-> A fresh flash of an untouched image is only safe inside an isolated lab.
+> These are **published defaults**, on purpose: the images are public, so a
+> discoverable credential is what makes them usable at all. The admin password
+> is shipped **expired** — the first login (console or SSH) forces you to set a
+> new one before you get a session, so it cannot silently stay in place.
+> The WiFi PSK is *not* protected that way: treat an untouched image as safe
+> only on an isolated lab network until you have rotated it.
 > On first boot the login banner screams about it and the MOTD keeps
 > reminding you until you rotate the admin password.
 

@@ -237,8 +237,15 @@ jobs:
 
       - name: 🖼️ Build image
         env:
-          ADMIN_PASSWORD:      ${{ secrets.ADMIN_PASSWORD || 'ci-placeholder-pw' }}
-          WIFI_PSK:            ${{ secrets.WIFI_PSK       || 'ci-placeholder-psk' }}
+          # No 'ci-placeholder-*' fallback: an unset secret resolves to the
+          # empty string, which generate.py's ${VAR:-default} then fills with
+          # the documented default from the variant config. That keeps the
+          # published image's credential identical to what the docs promise -
+          # previously the docs said 12345678 while releases actually shipped
+          # ci-placeholder-pw. The default is expired at build time, so it
+          # must be changed at first login either way.
+          ADMIN_PASSWORD:      ${{ secrets.ADMIN_PASSWORD }}
+          WIFI_PSK:            ${{ secrets.WIFI_PSK }}
           CUSTOMPIOS_REF:      ${{ env.CUSTOMPIOS_REF }}
           VERSION:             ${{ steps.meta.outputs.version }}
           IMAGE_SUFFIX:        ${{ steps.meta.outputs.suffix }}

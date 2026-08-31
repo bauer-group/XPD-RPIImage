@@ -8,8 +8,11 @@ How to rotate credentials, change WiFi, switch between DHCP and static IP
 > - `admin` user password → `12345678`
 > - WiFi PSK for `IOT @ BAUER-GROUP` → `12345678`
 >
-> Change these immediately on first boot. The dynamic MOTD will warn on
-> every login until you rotate the admin password.
+> The admin password ships **expired**: your first login forces a change
+> before a session is granted, so it cannot be left as-is. The MOTD keeps
+> warning until every listed account has actually been rotated, and stops
+> on its own once they have. The WiFi PSK has no such guard — rotate it
+> yourself.
 
 ---
 

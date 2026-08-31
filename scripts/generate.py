@@ -394,9 +394,17 @@ fi
 # that we can detect it cheaply: compare the first 10 chars of the hash to a
 # known-unchanged marker stored at image-build time.
 if [ -f /etc/bgrpiimage-default-password-active ] && [ -r /etc/shadow ]; then
-    printf "  ${RD}SECURITY:${NC} default admin password is still active.\n"
-    printf "           change it now with: ${YE}sudo bgrpiimage-setup password${NC}\n"
-    printf "           (also review: ${YE}sudo bgrpiimage-setup status${NC})\n"
+    _stale=""
+    while read -r _u; do
+        [ -n "$_u" ] || continue
+        [ "$(awk -F: -v u="$_u" '$1==u{print $3}' /etc/shadow)" = "0" ] \
+            && _stale="${_stale} ${_u}"
+    done < /etc/bgrpiimage-default-password-active
+    if [ -n "$_stale" ]; then
+        printf "  ${RD}SECURITY:${NC} default password still unchanged for:%s\n" "$_stale"
+        printf "           it must be changed at the next login\n"
+        printf "           (also review: ${YE}sudo bgrpiimage-setup status${NC})\n"
+    fi
 fi
 echo "${CY}${sep}${NC}"
 """
@@ -424,7 +432,13 @@ def render_users(cfg: dict[str, Any]) -> None:
     weak = [u["name"] for u in users if u.get("password") in _KNOWN_DEMO_PASSWORDS]
     if weak:
         # Runtime side: the MOTD reads this marker and prompts for rotation.
-        script.append("touch /etc/bgrpiimage-default-password-active")
+        # Record WHICH accounts, so the MOTD check can clear itself once the
+        # password is actually rotated instead of nagging forever.
+        script.append(
+            "printf '%s\\n' "
+            + " ".join(shlex.quote(u) for u in weak)
+            + " > /etc/bgrpiimage-default-password-active"
+        )
         script.append("chmod 644 /etc/bgrpiimage-default-password-active")
         script.append("")
         # Build side: say so in the build log too. Without this the only
@@ -457,6 +471,13 @@ def render_users(cfg: dict[str, Any]) -> None:
             script.append(f"usermod -aG {shlex.quote(groups)} {shlex.quote(name)}")
         # chpasswd via stdin keeps the password out of argv / process lists.
         script.append(f"echo {shlex.quote(f'{name}:{pw}')} | chpasswd")
+        if pw in _KNOWN_DEMO_PASSWORDS:
+            # These are PUBLIC images: a documented default credential is what
+            # makes them usable by anyone at all, so the answer is not to hide
+            # it but to make sure it cannot survive first contact. Expiring the
+            # password forces a change before a session is granted - login(1)
+            # on the console and sshd (UsePAM yes) both enforce it.
+            script.append(f"chage -d 0 {shlex.quote(name)}")
         if user.get("sudo_nopasswd"):
             sudoers_line = f"{name} ALL=(ALL) NOPASSWD:ALL"
             script.append(

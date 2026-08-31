@@ -85,7 +85,8 @@ deleted. Effects when enabled anyway:
 | WiFi SSID/PSK | Writes a second network config alongside ours — both get tried, messy. |
 
 For per-device tuning either rebuild with an edited variant JSON, or after
-flashing SSH in as `admin` / `12345678` and change what you need. For
+flashing SSH in as `admin` / `12345678` (you will be prompted to set a new
+password immediately) and change what you need. For
 fleet-wide customization the source of truth lives in
 [`config/variants/`](../config/variants/) — that's the audit trail.
 
@@ -204,12 +205,15 @@ sha256sum -c bgrpiimage-*.img.xz.sha256
 
 ## 🚨 Default credentials
 
-> The images ship with **demo credentials** — safe only on isolated lab
-> networks.
+> The images ship with **published default credentials** — deliberately, so a
+> public image is usable. The admin password is expired at build time and must
+> be changed at first login; the WiFi PSK is not, so treat an untouched image
+> as lab-only until you rotate it.
 >
 > - `admin` → `12345678`
 > - WiFi PSK (`IOT @ BAUER-GROUP`) → `12345678`
 
-Rotate immediately on first boot, or bake real values at build time via
+The admin password change is enforced at first login. Rotate the PSK too, or
+bake real values at build time via
 `.env` → see [post-flash-setup.md](post-flash-setup.md) and the security
 section of the main [README](../README.md).

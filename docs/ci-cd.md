@@ -278,13 +278,29 @@ Kind badge:
 
 Set in _Repository Settings → Secrets and variables → Actions_:
 
-| Name | Purpose | Default (CI) |
+| Name | Purpose | If unset |
 | --- | --- | --- |
-| `ADMIN_PASSWORD` | Bakes into `users[].password` | `ci-placeholder-pw` |
-| `WIFI_PSK` | Bakes into `network.wifi.networks[].psk` | `ci-placeholder-psk` |
+| `ADMIN_PASSWORD` | Bakes into `users[].password` | the variant default (`12345678`), shipped **expired** |
+| `WIFI_PSK` | Bakes into `network.wifi.networks[].psk` | the variant default (`12345678`) |
 
-Missing secrets fall back to the placeholders (so CI passes) — real
-deployments should always set them.
+Both are optional by design. These images are **public**, so a secret admin
+password would make a published release asset unusable to everyone who
+downloads it. An unset secret resolves to the empty string, which
+`generate.py`'s `${VAR:-default}` fills with the documented default from the
+variant config — so what ships matches what the docs promise.
+
+> Previously this table was wrong in a way that mattered: the workflow
+> substituted `ci-placeholder-pw` when the secret was unset, and no secrets
+> were ever configured. Every published release asset therefore carried a
+> credential written in plain text in a public repo, and the demo-password
+> detection did not recognise it — so neither the build warning nor the
+> on-device MOTD nag fired.
+
+The protection is not secrecy but expiry: any account left on a known default
+password is created with `chage -d 0`, so console login and sshd (`UsePAM
+yes`) both force a change before granting a session. Set `ADMIN_PASSWORD` when
+you want a private image with no forced rotation; the WiFi PSK has no
+equivalent guard.
 
 ---
 
@@ -322,7 +338,7 @@ Three things enforce the pin, and all three are load-bearing:
 | --- | --- |
 | `scripts/bootstrap.sh` fetches the ref explicitly and **verifies** the resulting `HEAD` | its predecessor ended in `\|\| true`, so a failed update was invisible |
 | The cache key contains `CUSTOMPIOS_REF` | otherwise changing the ref does not invalidate the cache |
-| **No** `restore-keys` on that cache | a prefix match would restore a checkout of a *different* revision |
+| **No** `restore-keys` on that cache | a prefix match would restore a checkout of a _different_ revision |
 
 > **Why this matters.** Before these guards the workflow declared
 > `CUSTOMPIOS_REF: master` but was in fact frozen on CustomPiOS 1.5.0 for
