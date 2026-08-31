@@ -45,6 +45,8 @@ clean: ## remove generated module files and build workspace
 	@rm -rf src/workspace src/workspace-* dist
 	@# generated at build time by scripts/build.sh / update-custompios-paths
 	@rm -f src/config.local src/custompios_path src/build.log
+	@# generated variant configs (gitignored build output, see .gitignore)
+	@rm -f src/variants/*/config
 	@echo "cleaned (base image cache kept - use distclean to drop it)"
 
 .PHONY: distclean

@@ -226,7 +226,7 @@ that runs once on first boot and marks itself done via a sentinel file.
   "enabled": true,
   "edition": "ce",                // "ce" | "ee"
   "bind": "0.0.0.0",              // or 127.0.0.1 for loopback-only
-  "image": "portainer/portainer-ce:latest",
+  "image": "portainer/portainer-ce:2.45.0",
   "ports": { "edge": 8000, "http": 9000, "https": 9443 },
   "auto_start": true
 }

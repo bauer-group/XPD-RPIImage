@@ -47,7 +47,8 @@ Python 3.14 utility. For every variant:
    dedupe, named-record arrays merge by `name`).
 3. **Resolves** `${VAR}` references against `os.environ` + optional `--env-file`.
 4. **Validates** the resolved object against `config/schema.json`.
-5. **Renders** artifacts into `src/modules/<module>/files/_generated/`.
+5. **Renders** artifacts into
+   `src/modules/<module>/filesystem/root/opt/bgrpiimage/<module>/`.
 6. **Writes** the per-variant CustomPiOS shell config to
    `src/variants/<name>/config` (module list, DIST_VERSION, hostname…).
 
@@ -93,9 +94,10 @@ Either way CustomPiOS:
 1. Downloads the base arm64 Raspberry Pi OS image.
 2. Mounts it via `kpartx` + loop device, resizes root filesystem.
 3. Binds our `src/` tree into the chroot.
-4. For each module in `MODULES=…`, if the module's `filter` exits 0:
+4. For each module in `MODULES=…` (disabled modules are already absent
+   from that list):
    - Runs `start_chroot_script` under `qemu-aarch64-static`.
-   - Module copies its `files/_generated/*` to the appropriate location,
+   - Module unpacks its `filesystem/root/` tree to the appropriate location,
      enables systemd units, installs packages.
 5. Unmounts, compresses resulting image.
 
@@ -147,7 +149,7 @@ done by the generator.
 1. Add an optional section to [`config/schema.json`](../config/schema.json).
 2. Add a `render_wireguard()` function to [`scripts/generate.py`](../scripts/generate.py).
 3. Append the module name to `ACTIVE_MODULES` + update `_module_enabled()`.
-4. Create `src/modules/bgrpiimage-wireguard/` with `config`, `filter`,
+4. Create `src/modules/bgrpiimage-wireguard/` with `config` and
    `start_chroot_script`.
 5. Set defaults in `config/variants/base.json`.
 
@@ -164,7 +166,7 @@ The existing modules are the template. No framework indirection.
     │     python + make + jq + docker CLI     (not privileged)
     │     │
     │     └── docker run --privileged \    ← sibling container
-    │           guysoft/custompios             (needs loop devices)
+    │           ghcr.io/guysoft/custompios     (needs loop devices)
     │
     └── /var/run/docker.sock ← bind-mounted into tools, so sibling launches on host
 ```
