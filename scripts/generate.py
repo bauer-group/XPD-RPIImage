@@ -415,10 +415,20 @@ def render_users(cfg: dict[str, Any]) -> None:
     # Drop a marker file when at least one user still carries a ship-default
     # demo password after env resolution. The MOTD reads this marker and
     # prompts the operator to rotate the credential.
-    if any(u.get("password") in _KNOWN_DEMO_PASSWORDS for u in users):
+    weak = [u["name"] for u in users if u.get("password") in _KNOWN_DEMO_PASSWORDS]
+    if weak:
+        # Runtime side: the MOTD reads this marker and prompts for rotation.
         script.append("touch /etc/bgrpiimage-default-password-active")
         script.append("chmod 644 /etc/bgrpiimage-default-password-active")
         script.append("")
+        # Build side: say so in the build log too. Without this the only
+        # signal is on the device itself, so an image can be built, published
+        # and flashed before anyone learns it carries a ship-default password
+        # (e.g. when ADMIN_PASSWORD is dropped by sudo's env_reset in CI).
+        console.print(
+            f"[bold red]SECURITY:[/] user(s) {', '.join(weak)} carry a known "
+            f"default password - set ADMIN_PASSWORD to build a hardened image"
+        )
 
     for user in users:
         name = user["name"]
@@ -1022,7 +1032,7 @@ def render_portainer(cfg: dict[str, Any]) -> None:
     bind = p.get("bind", "0.0.0.0")
     edition = p.get("edition", "ce")
     image = p.get("image") or (
-        "portainer/portainer-ce:latest" if edition == "ce" else "portainer/portainer-ee:latest"
+        "portainer/portainer-ce:2.45.0" if edition == "ce" else "portainer/portainer-ee:2.45.0"
     )
     ports = p.get("ports") or {}
     edge = ports.get("edge", 8000)
