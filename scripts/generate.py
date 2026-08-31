@@ -402,7 +402,13 @@ echo "${CY}${sep}${NC}"
 """
 
 
-_KNOWN_DEMO_PASSWORDS = {"12345678"}
+# Known-weak credentials that must never reach a device unannounced.
+# The CI placeholders matter as much as the config default: build.yml falls
+# back to them when secrets.ADMIN_PASSWORD / secrets.WIFI_PSK are unset, so
+# without them listed here a published release asset would carry a password
+# that is written in plain text in a public repository - and would get
+# neither the build warning nor the on-device MOTD nag.
+_KNOWN_DEMO_PASSWORDS = {"12345678", "ci-placeholder-pw", "ci-placeholder-psk"}
 
 
 def render_users(cfg: dict[str, Any]) -> None:
