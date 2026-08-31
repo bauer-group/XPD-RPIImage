@@ -7,7 +7,10 @@ dist/
 *.tmp
 
 # Generated files from JSON config
-src/variants/*/_generated/
+# Generated variant configs: generate.py rewrites these before every build
+# (scripts/build.sh:38), so committing them only guarantees version drift -
+# semantic-release bumps config/variants/*.json without regenerating them.
+src/variants/*/config
 src/modules/*/filesystem/root/opt/bgrpiimage/
 
 # CustomPiOS drops the custompios_path sidecar at build time
