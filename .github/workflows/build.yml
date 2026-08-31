@@ -46,11 +46,13 @@ concurrency:
 
 env:
   PYTHON_VERSION: "3.14"
-  # CustomPiOS: master because 1.5.0 predates raspios' .img.xz switch and
-  # is missing the base_image_downloader.  For strict reproducibility pin
-  # CUSTOMPIOS_REF to a concrete commit SHA here.
-  CUSTOMPIOS_IMAGE: "guysoft/custompios:devel"
-  CUSTOMPIOS_REF:   "master"
+  # CustomPiOS 2.0.0, pinned by SHA. Upstream's tags are lightweight and can
+  # be force-moved, so the SHA is the stronger pin. Bumping this is deliberate:
+  # v2 needs python3-git / python3-yaml (installed in "Install host build deps")
+  # and scripts/bootstrap.sh verifies the checked-out HEAD matches.
+  # Previously this said "master", which silently froze on 1.5.0 for 20 months
+  # via the Actions cache and then jumped to v2 the moment that cache expired.
+  CUSTOMPIOS_REF:   "d293309aac2f606c609645b441962c8f02b6e8c3"
 
 jobs:
   # =========================================================================
@@ -176,15 +178,24 @@ jobs:
       - name: 🔧 Install host build deps
         run: |
           sudo apt-get update
+          # python3-git / python3-yaml are CustomPiOS v2 requirements. They must
+          # come from apt, not pip: v2's python entrypoints carry a hard
+          # `#!/usr/bin/python3` shebang and run under `sudo -E`, so neither
+          # actions/setup-python nor scripts/requirements.txt can reach them.
           sudo apt-get install -y --no-install-recommends \
-            qemu-user-static binfmt-support kpartx xz-utils zip unzip
+            qemu-user-static binfmt-support kpartx xz-utils zip unzip \
+            python3-git python3-yaml
 
       - name: 💾 Cache CustomPiOS checkout
         uses: actions/cache@v5
         with:
           path: CustomPiOS
-          key: custompios-${{ hashFiles('scripts/bootstrap.sh') }}
-          restore-keys: custompios-
+          # The ref MUST be part of the key, otherwise changing CUSTOMPIOS_REF
+          # is invisible to the cache. Deliberately NO restore-keys: a prefix
+          # match would happily restore a checkout of a different revision,
+          # which is precisely how this build stayed frozen on CustomPiOS 1.5.0
+          # while the workflow claimed to track master.
+          key: custompios-${{ env.CUSTOMPIOS_REF }}-${{ hashFiles('scripts/bootstrap.sh') }}
 
       - name: 🔑 Resolve variant metadata
         id: meta
