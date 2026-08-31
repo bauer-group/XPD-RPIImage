@@ -4,6 +4,15 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.3.2](https://github.com/bauer-group/XPD-RPIImage/compare/v0.3.1...v0.3.2) (2026-08-31)
+
+### 🐛 Bug Fixes
+
+* **build:** accepted an uppercase CustomPiOS SHA pin ([85cff73](https://github.com/bauer-group/XPD-RPIImage/commit/85cff739e23f52900a2e62da1189efc4a5c2fdba))
+* **build:** verified the image that is actually consumed ([8df0dd5](https://github.com/bauer-group/XPD-RPIImage/commit/8df0dd570acafd260712cfad66adcd25bbe5e973))
+* **security:** flagged the CI placeholder credentials as weak ([d5f7567](https://github.com/bauer-group/XPD-RPIImage/commit/d5f756764d4f33471505f594dee42a352738a0d4))
+* **tools:** quoted the host path passed to the tools container ([9b1d0f6](https://github.com/bauer-group/XPD-RPIImage/commit/9b1d0f661f33c83df3928693b492112eb80d6f8c))
+
 ## [0.3.1](https://github.com/bauer-group/XPD-RPIImage/compare/v0.3.0...v0.3.1) (2026-08-31)
 
 ### 🐛 Bug Fixes
