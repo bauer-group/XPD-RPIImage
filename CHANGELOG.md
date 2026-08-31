@@ -4,6 +4,12 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.3.1](https://github.com/bauer-group/XPD-RPIImage/compare/v0.3.0...v0.3.1) (2026-08-31)
+
+### 🐛 Bug Fixes
+
+* **build:** stopped committing generated variant configs ([476da55](https://github.com/bauer-group/XPD-RPIImage/commit/476da55fc0b596cc6ada91aec14fcfe2dc39fcbd))
+
 ## [0.3.0](https://github.com/bauer-group/XPD-RPIImage/compare/v0.2.5...v0.3.0) (2026-08-31)
 
 ### 🚀 Features
