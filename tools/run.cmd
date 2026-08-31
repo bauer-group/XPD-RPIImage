@@ -60,8 +60,10 @@ if /i "%BUILD_IMAGE%"=="true" (
 set "RUN_FLAGS=--rm -v "%PROJECT_DIR%:/workspace" -w /workspace"
 rem scripts/build.sh launches a privileged sibling container against the host
 rem daemon. Its --volume source must be a HOST path, not our /workspace.
-if /i "%COMMAND%"=="build" set "RUN_FLAGS=%RUN_FLAGS% -v /var/run/docker.sock:/var/run/docker.sock -e BGRPI_HOST_PROJECT_DIR=%PROJECT_DIR%"
-if /i "%COMMAND%"=="shell" set "RUN_FLAGS=%RUN_FLAGS% -v /var/run/docker.sock:/var/run/docker.sock -e BGRPI_HOST_PROJECT_DIR=%PROJECT_DIR% -it"
+rem The -e flag must stay quoted: PROJECT_DIR routinely contains a space
+rem (C:\Users\First Last\...), and RUN_FLAGS is expanded unquoted at docker run.
+if /i "%COMMAND%"=="build" set "RUN_FLAGS=%RUN_FLAGS% -v /var/run/docker.sock:/var/run/docker.sock -e "BGRPI_HOST_PROJECT_DIR=%PROJECT_DIR%""
+if /i "%COMMAND%"=="shell" set "RUN_FLAGS=%RUN_FLAGS% -v /var/run/docker.sock:/var/run/docker.sock -e "BGRPI_HOST_PROJECT_DIR=%PROJECT_DIR%" -it"
 
 set "PY_ENV_ARGS="
 if defined ENV_FILE (
