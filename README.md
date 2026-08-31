@@ -14,7 +14,7 @@ Supported hardware:
 | Compute Module 5 (CM5) | ✅ |
 | Raspberry Pi Zero 2 W | ❌ not supported — 512 MB RAM is insufficient for Docker CE + Portainer + base services |
 
-Base OS: Raspberry Pi OS arm64 (trixie, 2026-04-13).
+Base OS: Raspberry Pi OS arm64 (trixie, 2026-06-18).
 
 ---
 
