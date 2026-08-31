@@ -4,6 +4,19 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.3.0](https://github.com/bauer-group/XPD-RPIImage/compare/v0.2.5...v0.3.0) (2026-08-31)
+
+### 🚀 Features
+
+* **security:** warned at build time about default credentials ([9d26fd1](https://github.com/bauer-group/XPD-RPIImage/commit/9d26fd169588e2fd45a6ef735022addd6fd60d05))
+
+### 🐛 Bug Fixes
+
+* **build:** corrected make clean target paths ([b04149a](https://github.com/bauer-group/XPD-RPIImage/commit/b04149ac1fadb56617ef1990726616c702af3f60))
+* **build:** verified base image checksum before unpacking ([2df0b4b](https://github.com/bauer-group/XPD-RPIImage/commit/2df0b4b94b162bcb7bb6d5f520e01afc5d5477f2))
+* **ci:** migrated CustomPiOS to 2.0.0 and pinned it by SHA ([b823c54](https://github.com/bauer-group/XPD-RPIImage/commit/b823c54304aab18da14f181cf2a003486d8320d3))
+* **tools:** fixed sibling container mount from tools container ([ee57fae](https://github.com/bauer-group/XPD-RPIImage/commit/ee57fae0e1a9413ce71b9021f091ad6bb968341e))
+
 ## [0.2.5](https://github.com/bauer-group/XPD-RPIImage/compare/v0.2.4...v0.2.5) (2026-08-31)
 
 ### 🐛 Bug Fixes
