@@ -1,3 +1,16 @@
+# Changelog
+
+All notable changes to this project are documented here. This file is maintained
+automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
+on every release to `main`.
+
+## [0.2.4](https://github.com/bauer-group/XPD-RPIImage/compare/v0.2.3...v0.2.4) (2026-08-31)
+
+### 🐛 Bug Fixes
+
+* **base:** update base OS version and image URL to 2026-06-18 ([31d5fcb](https://github.com/bauer-group/XPD-RPIImage/commit/31d5fcb5ad4b1eb9c3fcdb009af9dcf6193d77f9))
+* **ci:** added the missing permissions block ([22f73e6](https://github.com/bauer-group/XPD-RPIImage/commit/22f73e6c62708e968e8cea4a7dfd6178a267704b))
+
 ## [0.2.3](https://github.com/bauer-group/XPD-RPIImage/compare/v0.2.2...v0.2.3) (2026-06-17)
 
 ### 🐛 Bug Fixes
