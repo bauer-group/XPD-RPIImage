@@ -151,7 +151,7 @@
     "enabled": true,
     "edition": "ce",
     "bind": "0.0.0.0",
-    "image": "portainer/portainer-ce:latest",
+    "image": "portainer/portainer-ce:2.45.0",
     "ports": { "edge": 8000, "http": 9000, "https": 9443 },
     "auto_start": true
   },
