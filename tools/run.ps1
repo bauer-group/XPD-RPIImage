@@ -68,6 +68,9 @@ if ($Build -or -not $imageExists) {
 $runArgs = @("--rm", "-v", "${ProjectDir}:/workspace", "-w", "/workspace")
 if ($Command -in @("build", "shell")) {
     $runArgs += @("-v", "/var/run/docker.sock:/var/run/docker.sock")
+    # scripts/build.sh launches a privileged sibling container against the host
+    # daemon. Its --volume source must be a HOST path, not our /workspace.
+    $runArgs += @("-e", "BGRPI_HOST_PROJECT_DIR=$ProjectDir")
 }
 if ($Command -eq "shell") { $runArgs += "-it" }
 

@@ -71,6 +71,9 @@ if [[ -t 0 && -t 1 ]]; then RUN_ARGS+=(-it); fi
 # build/shell need the host docker socket.
 if [[ "$COMMAND" == "build" || "$COMMAND" == "shell" ]]; then
     RUN_ARGS+=(-v "/var/run/docker.sock:/var/run/docker.sock")
+    # scripts/build.sh launches a privileged sibling container against the host
+    # daemon. Its --volume source must be a HOST path, not our /workspace.
+    RUN_ARGS+=(-e "BGRPI_HOST_PROJECT_DIR=$PROJECT_DIR")
 fi
 # env-file propagation (generator reads the same flag).
 PY_ENV_ARGS=()

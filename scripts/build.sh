@@ -148,8 +148,14 @@ else
     # update-custompios-paths must run INSIDE the container so the
     # custompios_path sidecar records /distro/CustomPiOS/src (the bind-mount
     # path) instead of the host's absolute path.
+    # The sibling container is launched against the HOST docker daemon, so the
+    # --volume source must be a path the HOST can see. When we are ourselves
+    # running inside the tools container, $ROOT is /workspace - which does not
+    # exist on the host, so Docker would silently create an empty directory and
+    # mount that. tools/run.* therefore export the real host path here.
+    HOST_ROOT="${BGRPI_HOST_PROJECT_DIR:-$ROOT}"
     docker run --rm --privileged \
-        --volume "$ROOT":/distro \
+        --volume "$HOST_ROOT":/distro \
         --workdir /distro/src \
         "$DOCKER_IMAGE" \
         bash -c "bash /distro/CustomPiOS/src/update-custompios-paths /distro/src \
