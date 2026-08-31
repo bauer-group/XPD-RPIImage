@@ -79,33 +79,63 @@ mkdir -p "$CACHE"
 IMG_XZ="$CACHE/$(basename "$IMAGE_URL")"
 IMG_RAW="${IMG_XZ%.xz}"
 
-if [[ ! -f "$IMG_XZ" && ! -f "$IMG_RAW" ]]; then
-    echo "[build] downloading $IMG_XZ"
-    curl -fSL --retry 3 -o "$IMG_XZ.partial" "$IMAGE_URL"
-    mv "$IMG_XZ.partial" "$IMG_XZ"
-fi
+# The declared base_image.sha256 covers the .img.xz, but the artifact
+# CustomPiOS actually consumes is the extracted .img (see BASE_ZIP_IMG below).
+# `xz -d --keep` leaves both files, so the steady state is a .img sitting
+# next to its .xz - and verifying only the .xz would let a truncated or
+# swapped .img through under a reassuring "verified" log line.
+#
+# So: verify the .xz against the declared hash, extract from the verified
+# .xz, and record the resulting .img's own hash. A warm cache re-checks the
+# .img against that record, which also catches an interrupted extraction
+# (a SIGKILL during xz leaves a short .img beside an intact .xz).
+STAMP="${IMG_RAW}.verified"
 
-# Verify the base image before it is unpacked and baked into a product.
-# config declares base_image.sha256 but nothing used to check it, so a
-# swapped or truncated upstream image would have shipped silently.
-# Runs on cache hits too - the cache dir is not a trust boundary.
-if [[ -n "$IMAGE_SHA256" && -f "$IMG_XZ" ]]; then
-    echo "[build] verifying sha256 of $(basename "$IMG_XZ")"
-    if ! echo "${IMAGE_SHA256}  ${IMG_XZ}" | sha256sum -c - >/dev/null 2>&1; then
-        actual=$(sha256sum "$IMG_XZ" | cut -d' ' -f1)
-        echo "error: base image checksum mismatch - refusing to build" >&2
-        echo "       expected: ${IMAGE_SHA256}" >&2
-        echo "       actual:   ${actual}" >&2
-        echo "       file:     ${IMG_XZ}" >&2
-        exit 1
+img_is_trusted() {
+    [[ -n "$IMAGE_SHA256" && -f "$IMG_RAW" && -f "$STAMP" ]] || return 1
+    local want_xz want_img
+    read -r want_xz want_img < "$STAMP" || return 1
+    # Re-extract when the config now pins a different upstream image.
+    [[ "$want_xz" == "$IMAGE_SHA256" ]] || return 1
+    [[ "$(sha256sum "$IMG_RAW" | cut -d' ' -f1)" == "$want_img" ]]
+}
+
+if img_is_trusted; then
+    echo "[build] base image verified from cache: $(basename "$IMG_RAW")"
+else
+    if [[ ! -f "$IMG_XZ" ]]; then
+        echo "[build] downloading $IMG_XZ"
+        curl -fSL --retry 3 -o "$IMG_XZ.partial" "$IMAGE_URL"
+        mv "$IMG_XZ.partial" "$IMG_XZ"
     fi
-elif [[ -z "$IMAGE_SHA256" ]]; then
-    echo "[build] WARNING: no base_image.sha256 declared - image NOT verified" >&2
-fi
 
-if [[ -f "$IMG_XZ" && ! -f "$IMG_RAW" ]]; then
+    if [[ -n "$IMAGE_SHA256" ]]; then
+        echo "[build] verifying sha256 of $(basename "$IMG_XZ")"
+        if ! echo "${IMAGE_SHA256}  ${IMG_XZ}" | sha256sum -c - >/dev/null 2>&1; then
+            # Computed separately so a missing sha256sum cannot abort us
+            # before the explanation is printed.
+            actual=$(sha256sum "$IMG_XZ" 2>/dev/null | cut -d' ' -f1) \
+                || actual="<could not compute>"
+            echo "error: base image checksum mismatch - refusing to build" >&2
+            echo "       expected: ${IMAGE_SHA256}" >&2
+            echo "       actual:   ${actual}" >&2
+            echo "       file:     ${IMG_XZ}" >&2
+            echo "       if the upstream image was re-released, update" >&2
+            echo "       base_image.sha256 in the variant config; otherwise" >&2
+            echo "       delete the file and let it re-download." >&2
+            exit 1
+        fi
+    else
+        echo "[build] WARNING: no base_image.sha256 declared - image NOT verified" >&2
+    fi
+
     echo "[build] unxz $IMG_XZ"
+    rm -f "$IMG_RAW" "$STAMP"
     xz -d --keep "$IMG_XZ"
+    if [[ -n "$IMAGE_SHA256" ]]; then
+        printf '%s  %s\n' "$IMAGE_SHA256" \
+            "$(sha256sum "$IMG_RAW" | cut -d' ' -f1)" > "$STAMP"
+    fi
 fi
 
 # CustomPiOS's custompios script wipes *.img from BASE_WORKSPACE right at
@@ -154,6 +184,21 @@ else
     # exist on the host, so Docker would silently create an empty directory and
     # mount that. tools/run.* therefore export the real host path here.
     HOST_ROOT="${BGRPI_HOST_PROJECT_DIR:-$ROOT}"
+    # Reject anything the host daemon cannot resolve, instead of letting
+    # Docker silently create an empty directory and mount that.
+    #   C:\foo / C:/foo  - a Windows path handed to a Linux docker client;
+    #                      the bind spec would even split wrong on the colon
+    #   /c/foo           - an MSYS/Git-Bash path, absolute but not host-visible
+    if [[ "$HOST_ROOT" != /* || "$HOST_ROOT" =~ ^/[a-zA-Z]/ ]]; then
+        echo "error: cannot bind-mount '$HOST_ROOT' into the sibling container" >&2
+        echo "       The container is created by the HOST docker daemon, which" >&2
+        echo "       resolves this path itself - a Windows or MSYS path means" >&2
+        echo "       an empty /distro and a confusing failure later." >&2
+        echo "       Run the build from WSL or a Linux host, or set" >&2
+        echo "       BGRPI_HOST_PROJECT_DIR to the daemon-visible path" >&2
+        echo "       (Docker Desktop/WSL2: /run/desktop/mnt/host/c/...)." >&2
+        exit 2
+    fi
     docker run --rm --privileged \
         --volume "$HOST_ROOT":/distro \
         --workdir /distro/src \
