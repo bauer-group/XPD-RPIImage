@@ -37,11 +37,17 @@ build: render bootstrap ## build the image for $(VARIANT) (needs docker + privil
 
 .PHONY: clean
 clean: ## remove generated module files and build workspace
-	@find src/modules -type d -name _generated -exec rm -rf {} + 2>/dev/null || true
-	@rm -rf src/workspace dist
-	@echo "cleaned"
+	@# generate.py renders into filesystem/root/opt/bgrpiimage/<module>, not
+	@# into a _generated/ directory - the old pattern matched nothing.
+	@rm -rf src/modules/*/filesystem/root/opt/bgrpiimage
+	@# build_dist creates workspace-<variant> for every non-default variant;
+	@# plain src/workspace only exists for the "default" variant.
+	@rm -rf src/workspace src/workspace-* dist
+	@# generated at build time by scripts/build.sh / update-custompios-paths
+	@rm -f src/config.local src/custompios_path src/build.log
+	@echo "cleaned (base image cache kept - use distclean to drop it)"
 
 .PHONY: distclean
-distclean: clean ## also remove CustomPiOS checkout
-	@rm -rf CustomPiOS
+distclean: clean ## also remove CustomPiOS checkout and the base image cache
+	@rm -rf CustomPiOS src/image-cache
 	@echo "distcleaned"
