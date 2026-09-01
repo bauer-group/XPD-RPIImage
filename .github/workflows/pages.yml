@@ -83,7 +83,7 @@ jobs:
       tag: ${{ steps.target.outputs.tag }}
     steps:
       - name: 📥 Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: 🎯 Resolve target release
         id: target
