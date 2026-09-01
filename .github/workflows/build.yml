@@ -187,7 +187,7 @@ jobs:
             python3-git python3-yaml
 
       - name: 💾 Cache CustomPiOS checkout
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: CustomPiOS
           # The ref MUST be part of the key, otherwise changing CUSTOMPIOS_REF
