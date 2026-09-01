@@ -4,6 +4,12 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.4.1](https://github.com/bauer-group/XPD-RPIImage/compare/v0.4.0...v0.4.1) (2026-09-01)
+
+### 🐛 Bug Fixes
+
+* **tools:** made the nested Windows build actually work ([90f42be](https://github.com/bauer-group/XPD-RPIImage/commit/90f42beeb9bd00f3b4890e54ea2cabe46f2933e6))
+
 ## [0.4.0](https://github.com/bauer-group/XPD-RPIImage/compare/v0.3.2...v0.4.0) (2026-08-31)
 
 ### 🚀 Features
