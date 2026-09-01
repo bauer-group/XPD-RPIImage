@@ -4,6 +4,12 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.4.4](https://github.com/bauer-group/XPD-RPIImage/compare/v0.4.3...v0.4.4) (2026-09-01)
+
+### 🐛 Bug Fixes
+
+* **build:** stopped losing the inherited base image checksum ([84d1f50](https://github.com/bauer-group/XPD-RPIImage/commit/84d1f506b9b85312bccab154c74535357b08f3d0))
+
 ## [0.4.3](https://github.com/bauer-group/XPD-RPIImage/compare/v0.4.2...v0.4.3) (2026-09-01)
 
 ### 🐛 Bug Fixes
