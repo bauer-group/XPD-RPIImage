@@ -781,6 +781,19 @@ def render_boot(cfg: dict[str, Any]) -> None:
             p: dict[str, Any] = {"gpiopin": fan.get("gpio", 14)}
             if "temp_on" in fan:
                 p["temp"] = fan["temp_on"]
+            # The overlay takes a hysteresis SPAN (hyst), while the config
+            # declares an absolute switch-off temperature - so emit the
+            # difference. Without this, temp_off validated against the schema
+            # and was then silently dropped, leaving the overlay default.
+            if "temp_on" in fan and "temp_off" in fan:
+                hyst = fan["temp_on"] - fan["temp_off"]
+                if hyst > 0:
+                    p["hyst"] = hyst
+                else:
+                    console.print(
+                        f"[yellow]WARNING:[/] fan.temp_off ({fan['temp_off']}) is not "
+                        f"below fan.temp_on ({fan['temp_on']}) - hysteresis not emitted"
+                    )
             fan_body.append(_overlay_line("gpio-fan", p))
         elif mode == "pwm":
             fan_body.append(_overlay_line("pwm-fan"))

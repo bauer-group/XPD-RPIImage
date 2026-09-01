@@ -168,7 +168,9 @@ Three modes:
 
 - **`gpio`** — simple on/off transistor via `dtoverlay=gpio-fan`. `gpio`
   selects the BCM pin (PoE HAT fan is on `14`). `temp_on` is in millidegrees
-  Celsius.
+  Celsius; `temp_off` is the switch-off temperature and is emitted as the
+  overlay's `hyst=` hysteresis span (`temp_on - temp_off`), so it must be
+  lower than `temp_on`.
 - **`pwm`** — PWM-controlled fan via `dtoverlay=pwm-fan`. Needs a dual-FET
   or 4-pin PWM fan on GPIO18/19.
 - **`emc2301`** — Pi5 Active Cooler / CM5 IO-Board cooling HAT. Forces
