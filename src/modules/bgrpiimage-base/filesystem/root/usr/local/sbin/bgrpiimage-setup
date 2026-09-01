@@ -10,9 +10,11 @@
 #   ip IFACE static CIDR [GATEWAY] [DNS]   assign a static IPv4 (CIDR = addr/prefix)
 #   status                                 show current network + identity
 #
-# All changes are applied via systemd-networkd drop-in files so they survive
-# upgrades. Existing files in /etc/systemd/network/ are NOT touched beyond
-# replacing the specific bgrpiimage-managed one for the interface.
+# Network changes are written as a separate .network file that sorts before
+# the image defaults, so they win without those defaults being edited or
+# removed. Existing files in /etc/systemd/network/ are NOT touched beyond
+# replacing the specific bgrpiimage-managed one for the interface; delete
+# that file to fall back to the shipped configuration.
 set -euo pipefail
 
 PROG="${0##*/}"
@@ -86,7 +88,11 @@ cmd_ip() {
     [[ -n "$iface" && -n "$mode" ]] || die "usage: $PROG ip IFACE {dhcp|static CIDR [GW] [DNS]}"
     ip link show "$iface" >/dev/null 2>&1 || die "interface '$iface' does not exist"
 
-    local dropin="/etc/systemd/network/50-bgrpiimage-${iface}.network"
+    # Must sort BEFORE the image defaults (10-eth.network, 20-wlan.network):
+    # systemd-networkd applies only the FIRST .network file whose [Match]
+    # matches, in lexicographic order. A 50- prefix loses to 10-/20- and is
+    # silently ignored for exactly the interfaces this command targets.
+    local dropin="/etc/systemd/network/05-bgrpiimage-${iface}.network"
     case "$mode" in
         dhcp)
             info "Configuring $iface for DHCP"

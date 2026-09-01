@@ -75,9 +75,12 @@ networkctl status wlan0
 
 ## 🌐 IP configuration
 
-All changes land as `/etc/systemd/network/50-bgrpiimage-<iface>.network`.
-The `50-` prefix wins over the image-default `10-*` / `20-*` unit files,
-so changes are non-destructive and trivial to revert (just delete the file).
+All changes land as `/etc/systemd/network/05-bgrpiimage-<iface>.network`.
+The `05-` prefix makes the file sort **before** the image defaults
+`10-eth.network` / `20-wlan.network`, which is what makes it win:
+systemd-networkd applies only the first `.network` file whose `[Match]`
+matches, in lexicographic order. The shipped defaults are left untouched, so
+reverting is just deleting the file.
 
 ### DHCP (the default)
 
@@ -113,7 +116,7 @@ ip -br addr show eth0
 ### Reverting to image defaults
 
 ```bash
-sudo rm /etc/systemd/network/50-bgrpiimage-eth0.network
+sudo rm /etc/systemd/network/05-bgrpiimage-eth0.network
 sudo networkctl reload
 ```
 
@@ -142,7 +145,7 @@ WiFi config path.
 - **Does not manage SSH keys.** Use `ssh-copy-id` from your workstation;
   `.ssh/authorized_keys` for the admin user is mode 700 / 600 already.
 - **Does not configure static IPv6.** Pass `v6` addresses manually by
-  editing the generated `50-bgrpiimage-<iface>.network` drop-in. Open an
+  editing the generated `05-bgrpiimage-<iface>.network` file. Open an
   issue if you want this added as a subcommand.
 
 ---

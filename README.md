@@ -210,9 +210,11 @@ sudo bgrpiimage-setup ip eth0 static 10.0.0.5/24 10.0.0.1 1.1.1.1
 sudo bgrpiimage-setup status                         # overview
 ```
 
-All IP changes land as `/etc/systemd/network/50-bgrpiimage-<iface>.network`
-drop-ins (our file prefix wins over the image-defaults), so they survive
-upgrades and are trivial to revert by deleting the drop-in.
+All IP changes land as `/etc/systemd/network/05-bgrpiimage-<iface>.network`
+— the `05-` prefix sorts before the shipped `10-eth.network` /
+`20-wlan.network`, and systemd-networkd applies only the first matching file,
+so ours wins. The defaults are left in place, so reverting is just deleting
+the file.
 
 See [`docs/post-flash-setup.md`](docs/post-flash-setup.md) for the full
 subcommand reference.

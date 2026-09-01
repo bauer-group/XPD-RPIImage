@@ -13,6 +13,12 @@ install_cleanup_trap
 # their real destinations under /.
 unpack /filesystem/root / root
 
+# The helper must be executable or every `sudo bgrpiimage-setup ...` in the
+# MOTD and in docs/post-flash-setup.md fails with "command not found". It is
+# tracked 0755 in git, but assert it here so the image never depends on how
+# the checkout or unpack preserved the mode bit.
+chmod 0755 /usr/local/sbin/bgrpiimage-setup
+
 GEN=/opt/bgrpiimage/bgrpiimage-base
 
 # --- hostname ---
