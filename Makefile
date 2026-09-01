@@ -5,7 +5,10 @@ SHELL := /usr/bin/env bash
 
 VARIANT ?= canbus-plattform
 CONFIG  := config/variants/$(VARIANT).json
-ENV_FILE ?=
+# Default to ./.env when it exists: README's quick start says to create it,
+# and without this the file is silently ignored and the image is built with
+# the config defaults instead of the credentials the user just set.
+ENV_FILE ?= $(wildcard .env)
 
 PY := python3
 PIP := $(PY) -m pip
@@ -19,7 +22,17 @@ deps: ## install Python dev deps
 	$(PIP) install -r scripts/requirements.txt
 
 .PHONY: validate
-validate: ## validate the JSON variant against the schema (no rendering)
+validate: ## schema-check every variant (no rendering)
+	@# Every other entry point (tools/run.* and the CI validate job) checks all
+	@# variants; checking only $(VARIANT) here made `make validate` pass while
+	@# a sibling variant was broken. Use `make validate-one VARIANT=x` for one.
+	@for f in config/variants/*.json; do \
+		$(PY) scripts/generate.py "$$f" $(if $(ENV_FILE),--env-file $(ENV_FILE),) --dry-run > /dev/null; \
+		echo "ok: $$f valid"; \
+	done
+
+.PHONY: validate-one
+validate-one: ## schema-check a single variant (VARIANT=..., default canbus-plattform)
 	$(PY) scripts/generate.py $(CONFIG) $(if $(ENV_FILE),--env-file $(ENV_FILE),) --dry-run > /dev/null
 	@echo "ok: $(CONFIG) valid"
 

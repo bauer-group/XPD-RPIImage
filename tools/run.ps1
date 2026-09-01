@@ -81,7 +81,13 @@ if ($Command -eq "shell") { $runArgs += "-it" }
 $pyEnvArgs = @()
 if ($EnvFile) {
     if (-not (Test-Path $EnvFile)) { Fail "env file not found: $EnvFile" }
-    Copy-Item -Force $EnvFile "$ProjectDir/.env"
+    # Skip when the source already IS <repo>/.env - the documented flow
+    # (`cp .env.example .env`, then -EnvFile .\.env) would otherwise copy a
+    # file onto itself.
+    $envTarget = Join-Path $ProjectDir ".env"
+    $sameFile = (Test-Path $envTarget) -and
+                ((Get-Item $EnvFile).FullName -eq (Get-Item $envTarget).FullName)
+    if (-not $sameFile) { Copy-Item -Force $EnvFile $envTarget }
     $runArgs += @("--env-file", $EnvFile)
     $pyEnvArgs = @("--env-file", ".env")
 }

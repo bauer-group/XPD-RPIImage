@@ -75,7 +75,10 @@ if defined ENV_FILE (
         echo [ERROR] env file not found: %ENV_FILE%
         exit /b 1
     )
-    copy /Y "%ENV_FILE%" "%PROJECT_DIR%\.env" >nul
+    rem Skip when the source already IS <repo>\.env - copying a file onto
+    rem itself fails and would abort the documented quick start.
+    for %%F in ("%ENV_FILE%") do set "ENV_FILE_ABS=%%~fF"
+    if /i not "!ENV_FILE_ABS!"=="%PROJECT_DIR%\.env" copy /Y "%ENV_FILE%" "%PROJECT_DIR%\.env" >nul
     set "RUN_FLAGS=%RUN_FLAGS% --env-file "%ENV_FILE%""
     set "PY_ENV_ARGS=--env-file .env"
 )

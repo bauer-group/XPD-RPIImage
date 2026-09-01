@@ -86,7 +86,16 @@ if [[ -n "$ENV_FILE" ]]; then
     [[ -f "$ENV_FILE" ]] || die "env file not found: $ENV_FILE"
     RUN_ARGS+=(--env-file "$ENV_FILE")
     PY_ENV_ARGS=(--env-file ".env")
-    cp "$ENV_FILE" "$PROJECT_DIR/.env"
+    # The generator reads ./.env from inside the container, so mirror the
+    # file there - unless it already IS that file, which is what the docs
+    # tell people to do (`cp .env.example .env` then `--env-file ./.env`).
+    # GNU cp refuses "same file" with exit 1 and would abort the whole run.
+    # -ef compares device+inode. String comparison is not enough here: under
+    # MSYS the same file can resolve to both /c/Users/Karl.Bauer/... and the
+    # 8.3 form /c/Users/KARL~1.BAU/..., which never compare equal.
+    if [[ ! -e "$PROJECT_DIR/.env" ]] || ! [[ "$ENV_FILE" -ef "$PROJECT_DIR/.env" ]]; then
+        cp "$ENV_FILE" "$PROJECT_DIR/.env"
+    fi
 fi
 
 case "$COMMAND" in
