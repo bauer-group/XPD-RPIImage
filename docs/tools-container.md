@@ -30,6 +30,29 @@ The tools container itself is **not** privileged. Only the sibling
 `guysoft/custompios` container gets `--privileged`, and only while it is
 mounting / chrooting the base image.
 
+### How the sibling sees the project
+
+The sibling is created by the **host** Docker daemon, so any `--volume` source
+is resolved by the daemon — not by the tools container. Handing it our own
+`/workspace` would be wrong: that path does not exist on the host, and Docker
+would silently create an empty directory and mount that, leaving `/distro`
+empty and the build failing later for no visible reason. Handing it the host
+path instead does not work either on Windows, where a Linux Docker client
+cannot use `C:\...` as a bind source at all.
+
+So the launchers give the tools container a name and pass it through as
+`BGRPI_TOOLS_CONTAINER`, and [`scripts/build.sh`](../scripts/build.sh) starts
+the sibling with `--volumes-from "$BGRPI_TOOLS_CONTAINER"`. The sibling
+inherits exactly the mounts the daemon already created, at the same paths — so
+nothing has to be translated and the behaviour is identical on Windows, macOS
+and Linux.
+
+Outside the tools container (a plain Linux host), `build.sh` bind-mounts the
+project at its own path instead, so the paths it passes are valid either way.
+Running `scripts/build.sh` directly from Git Bash on Windows is refused with an
+explicit message: the daemon cannot resolve an MSYS `/c/...` path, and the
+tools container is the supported route.
+
 ---
 
 ## 🚀 Usage

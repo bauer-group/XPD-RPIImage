@@ -65,15 +65,20 @@ if $BUILD_IMAGE || ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
     docker build -t "$IMAGE_NAME" "$TOOLS_DIR"
 fi
 
-RUN_ARGS=(--rm -v "$PROJECT_DIR:/workspace" -w /workspace)
+# Naming the container lets scripts/build.sh inherit our mounts with
+# --volumes-from, which is what makes the nested build work on Windows and
+# macOS: the daemon resolves those mounts itself, so no host path has to be
+# translated. $$ keeps concurrent runs from colliding on the name.
+TOOLS_CONTAINER="${IMAGE_NAME}-$$"
+RUN_ARGS=(--rm --name "$TOOLS_CONTAINER" -v "$PROJECT_DIR:/workspace" -w /workspace)
 # Interactive only when stdin is a TTY.
 if [[ -t 0 && -t 1 ]]; then RUN_ARGS+=(-it); fi
 # build/shell need the host docker socket.
 if [[ "$COMMAND" == "build" || "$COMMAND" == "shell" ]]; then
     RUN_ARGS+=(-v "/var/run/docker.sock:/var/run/docker.sock")
-    # scripts/build.sh launches a privileged sibling container against the host
-    # daemon. Its --volume source must be a HOST path, not our /workspace.
-    RUN_ARGS+=(-e "BGRPI_HOST_PROJECT_DIR=$PROJECT_DIR")
+    # scripts/build.sh launches a privileged sibling against the host daemon
+    # and inherits these mounts by name via --volumes-from.
+    RUN_ARGS+=(-e "BGRPI_TOOLS_CONTAINER=$TOOLS_CONTAINER")
 fi
 # env-file propagation (generator reads the same flag).
 PY_ENV_ARGS=()

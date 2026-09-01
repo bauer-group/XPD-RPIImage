@@ -175,36 +175,51 @@ else
     # actually executes), but a v2 checkout needs v2's python packages.
     DOCKER_IMAGE="${DOCKER_IMAGE:-ghcr.io/guysoft/custompios:sha-d293309}"
     echo "[build] launching container $DOCKER_IMAGE for variant '$VARIANT'"
-    # update-custompios-paths must run INSIDE the container so the
-    # custompios_path sidecar records /distro/CustomPiOS/src (the bind-mount
-    # path) instead of the host's absolute path.
     # The sibling container is launched against the HOST docker daemon, so the
     # --volume source must be a path the HOST can see. When we are ourselves
     # running inside the tools container, $ROOT is /workspace - which does not
     # exist on the host, so Docker would silently create an empty directory and
     # mount that. tools/run.* therefore export the real host path here.
-    HOST_ROOT="${BGRPI_HOST_PROJECT_DIR:-$ROOT}"
-    # Reject anything the host daemon cannot resolve, instead of letting
-    # Docker silently create an empty directory and mount that.
-    #   C:\foo / C:/foo  - a Windows path handed to a Linux docker client;
-    #                      the bind spec would even split wrong on the colon
-    #   /c/foo           - an MSYS/Git-Bash path, absolute but not host-visible
-    if [[ "$HOST_ROOT" != /* || "$HOST_ROOT" =~ ^/[a-zA-Z]/ ]]; then
-        echo "error: cannot bind-mount '$HOST_ROOT' into the sibling container" >&2
-        echo "       The container is created by the HOST docker daemon, which" >&2
-        echo "       resolves this path itself - a Windows or MSYS path means" >&2
-        echo "       an empty /distro and a confusing failure later." >&2
-        echo "       Run the build from WSL or a Linux host, or set" >&2
-        echo "       BGRPI_HOST_PROJECT_DIR to the daemon-visible path" >&2
-        echo "       (Docker Desktop/WSL2: /run/desktop/mnt/host/c/...)." >&2
-        exit 2
+    # The sibling is created by the HOST docker daemon, so --volume sources are
+    # resolved by the daemon, never by us. Two cases:
+    #
+    #   in the tools container -> inherit our OWN mounts with --volumes-from.
+    #       The daemon already knows them because it created them, so this
+    #       needs no host-path translation at all and behaves identically on
+    #       Windows, macOS and Linux. Bind-mounting $ROOT here instead would
+    #       hand the daemon /workspace, which does not exist on the host - it
+    #       would silently create an empty directory and mount that.
+    #
+    #   on a plain host -> bind the project at its OWN path, so the paths below
+    #       are valid in both cases and the sibling never has to be told where
+    #       the tree moved to.
+    if [[ -n "${BGRPI_TOOLS_CONTAINER:-}" ]]; then
+        echo "[build] inheriting mounts from tools container ${BGRPI_TOOLS_CONTAINER}"
+        MOUNT_ARGS=(--volumes-from "$BGRPI_TOOLS_CONTAINER")
+    else
+        # A Windows (C:\...) or MSYS (/c/...) path means the daemon cannot see
+        # this tree. Fail with a pointer instead of an empty mount.
+        if [[ "$ROOT" != /* || "$ROOT" =~ ^/[a-zA-Z]/ ]]; then
+            echo "error: the docker daemon cannot resolve '$ROOT'" >&2
+            echo "       Run the build through tools/run.sh|ps1|cmd (which makes" >&2
+            echo "       the sibling inherit the right mounts), or from WSL or a" >&2
+            echo "       Linux host." >&2
+            exit 2
+        fi
+        MOUNT_ARGS=(--volume "$ROOT:$ROOT")
     fi
+
+    # update-custompios-paths must run INSIDE the sibling so the custompios_path
+    # sidecar records the path as the sibling sees it.
+    SIBLING_CMD="bash $(printf '%q' "$ROOT/CustomPiOS/src/update-custompios-paths")"
+    SIBLING_CMD+=" $(printf '%q' "$ROOT/src")"
+    SIBLING_CMD+=" && ./build_dist $(printf '%q' "$VARIANT")"
+
     docker run --rm --privileged \
-        --volume "$HOST_ROOT":/distro \
-        --workdir /distro/src \
+        "${MOUNT_ARGS[@]}" \
+        --workdir "$ROOT/src" \
         "$DOCKER_IMAGE" \
-        bash -c "bash /distro/CustomPiOS/src/update-custompios-paths /distro/src \
-                 && ./build_dist ${VARIANT}"
+        bash -c "$SIBLING_CMD"
 fi
 
 # CustomPiOS leaves the image in workspace-<variant> for non-default variants.

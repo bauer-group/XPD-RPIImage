@@ -65,12 +65,16 @@ if ($Build -or -not $imageExists) {
     if ($LASTEXITCODE -ne 0) { Fail "failed to build tools image" }
 }
 
-$runArgs = @("--rm", "-v", "${ProjectDir}:/workspace", "-w", "/workspace")
+# Naming the container lets scripts/build.sh inherit our mounts with
+# --volumes-from - the daemon resolves them itself, so a Windows host path
+# never has to be translated for the nested build. $PID avoids collisions.
+$toolsContainer = "$ImageName-$PID"
+$runArgs = @("--rm", "--name", $toolsContainer, "-v", "${ProjectDir}:/workspace", "-w", "/workspace")
 if ($Command -in @("build", "shell")) {
     $runArgs += @("-v", "/var/run/docker.sock:/var/run/docker.sock")
-    # scripts/build.sh launches a privileged sibling container against the host
-    # daemon. Its --volume source must be a HOST path, not our /workspace.
-    $runArgs += @("-e", "BGRPI_HOST_PROJECT_DIR=$ProjectDir")
+    # scripts/build.sh launches a privileged sibling against the host daemon
+    # and inherits these mounts by name via --volumes-from.
+    $runArgs += @("-e", "BGRPI_TOOLS_CONTAINER=$toolsContainer")
 }
 if ($Command -eq "shell") { $runArgs += "-it" }
 

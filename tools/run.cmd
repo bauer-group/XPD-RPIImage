@@ -57,13 +57,17 @@ if /i "%BUILD_IMAGE%"=="true" (
     )
 )
 
-set "RUN_FLAGS=--rm -v "%PROJECT_DIR%:/workspace" -w /workspace"
-rem scripts/build.sh launches a privileged sibling container against the host
-rem daemon. Its --volume source must be a HOST path, not our /workspace.
-rem The -e flag must stay quoted: PROJECT_DIR routinely contains a space
-rem (C:\Users\First Last\...), and RUN_FLAGS is expanded unquoted at docker run.
-if /i "%COMMAND%"=="build" set "RUN_FLAGS=%RUN_FLAGS% -v /var/run/docker.sock:/var/run/docker.sock -e "BGRPI_HOST_PROJECT_DIR=%PROJECT_DIR%""
-if /i "%COMMAND%"=="shell" set "RUN_FLAGS=%RUN_FLAGS% -v /var/run/docker.sock:/var/run/docker.sock -e "BGRPI_HOST_PROJECT_DIR=%PROJECT_DIR%" -it"
+rem Naming the container lets scripts/build.sh inherit our mounts with
+rem --volumes-from - the daemon resolves them itself, so a Windows host path
+rem never has to be translated for the nested build.
+set "TOOLS_CONTAINER=%IMAGE_NAME%-%RANDOM%"
+set "RUN_FLAGS=--rm --name "%TOOLS_CONTAINER%" -v "%PROJECT_DIR%:/workspace" -w /workspace"
+rem scripts/build.sh launches a privileged sibling against the host daemon and
+rem inherits these mounts by name via --volumes-from.
+rem Flags carrying a value must stay quoted: PROJECT_DIR routinely contains a
+rem space (C:\Users\First Last\...) and RUN_FLAGS is expanded unquoted below.
+if /i "%COMMAND%"=="build" set "RUN_FLAGS=%RUN_FLAGS% -v /var/run/docker.sock:/var/run/docker.sock -e "BGRPI_TOOLS_CONTAINER=%TOOLS_CONTAINER%""
+if /i "%COMMAND%"=="shell" set "RUN_FLAGS=%RUN_FLAGS% -v /var/run/docker.sock:/var/run/docker.sock -e "BGRPI_TOOLS_CONTAINER=%TOOLS_CONTAINER%" -it"
 
 set "PY_ENV_ARGS="
 if defined ENV_FILE (
