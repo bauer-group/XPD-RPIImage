@@ -4,6 +4,13 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.4.3](https://github.com/bauer-group/XPD-RPIImage/compare/v0.4.2...v0.4.3) (2026-09-01)
+
+### 🐛 Bug Fixes
+
+* **build:** made the documented .env and validate flows work ([b9891a3](https://github.com/bauer-group/XPD-RPIImage/commit/b9891a3e0b576728945988863e7287c092140718))
+* **hw:** emitted fan hysteresis instead of dropping it ([891b775](https://github.com/bauer-group/XPD-RPIImage/commit/891b7758b6b76f5be60ef5620f15251386d22374))
+
 ## [0.4.2](https://github.com/bauer-group/XPD-RPIImage/compare/v0.4.1...v0.4.2) (2026-09-01)
 
 ### 🐛 Bug Fixes
