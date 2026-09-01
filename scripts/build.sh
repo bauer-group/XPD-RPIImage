@@ -53,23 +53,18 @@ mkdir -p dist
 # intact because it wipes `*.img` only from BASE_WORKSPACE.
 # ---------------------------------------------------------------------------
 echo "[build] preparing base image for '$VARIANT'"
-IMAGE_META=$(python3 - <<PY
-import json
-from pathlib import Path
-cfg_path = Path("$CONFIG_JSON").resolve()
-cfg = json.load(open(cfg_path))
-seen = set()
-while "extends" in cfg and cfg_path not in seen:
-    seen.add(cfg_path)
-    parent_rel = cfg.pop("extends")
-    cfg_path = (cfg_path.parent / parent_rel).resolve()
-    parent = json.load(open(cfg_path))
-    parent.update({k: v for k, v in cfg.items() if v is not None})
-    cfg = parent
-print(cfg["base_image"]["url"])
-print(cfg["base_image"].get("sha256", ""))
-PY
-)
+# Resolve through generate.py rather than re-implementing the extends merge.
+# The previous inline version merged with a shallow dict.update(), so a child
+# variant that overrode only base_image.url replaced the whole base_image
+# object and silently lost the inherited sha256 - which downgraded the
+# integrity check below to a warning on exactly the variants most likely to
+# point at a different image. generate.py deep-merges, and is the same
+# resolver the build and CI already trust.
+IMAGE_META=$(python3 scripts/generate.py "${PY_ARGS[@]}" --json | python3 -c '
+import json, sys
+img = json.load(sys.stdin)["base_image"]
+print(img["url"])
+print(img.get("sha256", ""))')
 IMAGE_URL=$(sed -n '1p' <<<"$IMAGE_META")
 IMAGE_SHA256=$(sed -n '2p' <<<"$IMAGE_META")
 echo "[build] URL: $IMAGE_URL"
