@@ -115,10 +115,13 @@ Push to `main` or open a PR → automatic build with SHA-stamped artifact
 (see [`docs/ci-cd.md`](docs/ci-cd.md)).
 
 A conventional commit on `main` → semantic-release cuts `vX.Y.Z` and the
-GitHub Release. The **image assets are not attached automatically**: those tags
-are pushed with `GITHUB_TOKEN`, and GitHub does not trigger workflows from
-`GITHUB_TOKEN` events, so `build.yml`'s tag trigger never fires. Attach them
-with one manual dispatch:
+GitHub Release, then dispatches the image build on that tag so the `.img.xz`,
+`.sha256` and `.manifest.json` assets are attached automatically.
+
+The dispatch is a separate job using a PAT: the tag itself is pushed with
+`GITHUB_TOKEN`, and GitHub never triggers a workflow from a `GITHUB_TOKEN`
+event, so `build.yml`'s tag trigger alone would never fire. If the PAT is ever
+missing, the release job fails loudly and the assets can be attached by hand:
 
 ```bash
 gh workflow run build.yml --ref vX.Y.Z

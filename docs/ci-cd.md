@@ -12,25 +12,34 @@ validation, parallel matrix builds, and tagged releases.
 | --- | --- | --- |
 | Push to `main` | ✅ (outside `paths-ignore`) | — |
 | Push tag `v*.*.*` (manual or PAT) | ✅ | ✅ attaches images |
-| Tag from semantic-release | ⚠️ **no** — see note | release only, **no images** |
+| Tag from semantic-release | ✅ via dispatch — see note | ✅ attaches images |
 | Pull request to `main` | ✅ | — |
 | `workflow_dispatch` (manual) | ✅ (`skip_build` toggle available) | — |
 
-> ⚠️ **Release images require a manual build dispatch.** semantic-release
+> ℹ️ **How release images get attached.** semantic-release
 > ([`release.yml`](../.github/workflows/release.yml)) creates the tag and the
 > GitHub Release using the workflow's `GITHUB_TOKEN`. GitHub deliberately does
 > **not** fire other workflows from `GITHUB_TOKEN` events (recursion
 > prevention), so `build.yml`'s `tags: ["v*.*.*"]` trigger never runs on a
-> released tag — the release is published **without** image assets. To attach
-> them, dispatch the build on the tag by hand:
+> released tag. `release.yml`'s `attach-images` job therefore dispatches the
+> build itself, authenticated with the `PAT_READWRITE_ORGANISATION` org secret
+> — a `workflow_dispatch` made with a PAT is attributed to that token's user,
+> not to `GITHUB_TOKEN`, so it starts a real run. On a `refs/tags/v*` ref the
+> `🚀 Release` job then attaches the `.img.xz` + `.sha256` +
+> `.manifest.json` to the existing release.
+>
+> The PAT is applied in this repo rather than passed into the shared
+> semantic-release template, because that template hardcodes `GITHUB_TOKEN`
+> and exposes no token input.
+>
+> If the secret is ever missing the job fails loudly rather than silently
+> publishing an empty release. Recover with:
 >
 > ```bash
-> gh workflow run build.yml --ref v<version>   # e.g. v0.2.3
+> gh workflow run build.yml --ref v<version>   # e.g. v0.4.3
 > ```
 >
-> The dispatch uses your own credentials (not `GITHUB_TOKEN`), so it triggers
-> normally; on a `refs/tags/v*` ref the `🚀 Release` job attaches the
-> `.img.xz` + `.sha256` + `.manifest.json` to the existing release.
+> Releases v0.2.4 through v0.4.2 predate this job and have no image assets.
 
 ### `paths-ignore`
 

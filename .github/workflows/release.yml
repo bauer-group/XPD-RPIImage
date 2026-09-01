@@ -11,11 +11,9 @@
 #   * create tag `vX.Y.Z` and a GitHub release with auto-generated notes
 #
 # Image artifacts (.img.xz + .sha256 + .manifest.json) are attached to the
-# release by build.yml's `release` job. NOTE: the tag is pushed here with
-# GITHUB_TOKEN, and GitHub does not trigger other workflows from
-# GITHUB_TOKEN events, so build.yml does NOT fire automatically on the tag.
-# Dispatch it by hand to populate the assets:
-#   gh workflow run build.yml --ref v<version>
+# release by build.yml's `release` job. The tag here is pushed with
+# GITHUB_TOKEN, which never triggers another workflow, so the `attach-images`
+# job below dispatches build.yml on the tag using a PAT instead.
 # (see docs/ci-cd.md -> "When it triggers" for the full rationale)
 # =============================================================================
 
@@ -59,3 +57,40 @@ jobs:
       force-release: ${{ inputs.force-release || false }}
       extra-plugins: '@google/semantic-release-replace-plugin'
     secrets: inherit
+
+  # ============================================
+  # Attach image assets to the fresh release
+  # ============================================
+  # The tag above is pushed with GITHUB_TOKEN, and GitHub never triggers a
+  # workflow from a GITHUB_TOKEN event - so build.yml's `tags: ["v*.*.*"]`
+  # trigger does not fire and the release would stay empty. Every release
+  # from v0.2.4 to v0.4.2 shipped without images for exactly this reason.
+  #
+  # A workflow_dispatch made with a PAT is attributed to that token's user,
+  # not to GITHUB_TOKEN, so it starts a real run. The shared semantic-release
+  # template hardcodes GITHUB_TOKEN and accepts no token input, which is why
+  # the PAT is applied here rather than passed into it.
+  attach-images:
+    name: 🖼️ Dispatch image build for the tag
+    needs: release
+    if: needs.release.outputs.release-created == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: 🚀 Trigger build on the release tag
+        env:
+          GH_TOKEN: ${{ secrets.PAT_READWRITE_ORGANISATION }}
+          TAG: ${{ needs.release.outputs.tag-name }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${GH_TOKEN}" ]]; then
+              echo "::error::PAT_READWRITE_ORGANISATION is empty - the release" \
+                   "will have no image assets. Attach them by hand:" \
+                   "gh workflow run build.yml --ref ${TAG}"
+              exit 1
+          fi
+          echo "dispatching build.yml on ${TAG}"
+          gh workflow run build.yml --repo "${GITHUB_REPOSITORY}" --ref "${TAG}"
+          echo "### 🖼️ Image build dispatched on \`${TAG}\`" >> "$GITHUB_STEP_SUMMARY"
