@@ -452,12 +452,17 @@ def render_users(cfg: dict[str, Any]) -> None:
 
     for user in users:
         name = user["name"]
-        pw = user["password"]
+        pw_hash = user["password"]
+        if not re.match(r"^\$[0-9a-zA-Z]+\$", str(pw_hash)):
+            fail(
+                f"user '{name}' password must be a pre-hashed crypt value (for example '$6$...'); "
+                "refusing to store plaintext passwords in generated artifacts."
+            )
         shell = user.get("shell", "/bin/bash")
         groups = ",".join(user.get("groups", []))
         script.append(f"# === user: {name} ===")
         script.append(f"if ! id -u {shlex.quote(name)} >/dev/null 2>&1; then")
-        script.append(f"  useradd -m -s {shlex.quote(shell)} {shlex.quote(name)}")
+            script.append(f"  useradd -m -s {shlex.quote(shell)} {shlex.quote(name)}")
         script.append("fi")
         if groups:
             # `usermod -aG` fails hard on any non-existent group. Pre-create
@@ -469,15 +474,9 @@ def render_users(cfg: dict[str, Any]) -> None:
                     f"getent group {shlex.quote(g)} >/dev/null || groupadd {shlex.quote(g)}"
                 )
             script.append(f"usermod -aG {shlex.quote(groups)} {shlex.quote(name)}")
-        # chpasswd via stdin keeps the password out of argv / process lists.
-        script.append(f"echo {shlex.quote(f'{name}:{pw}')} | chpasswd")
-        if pw in _KNOWN_DEMO_PASSWORDS:
-            # These are PUBLIC images, so the default credential stays
-            # documented and discoverable - that is what keeps onboarding
-            # fast. Expiring it only means the operator is prompted to set a
-            # new password at the first login they were going to do anyway;
-            # login(1) on the console and sshd (UsePAM yes) both enforce it.
-            script.append(f"chage -d 0 {shlex.quote(name)}")
+        # chpasswd via stdin keeps credentials out of argv/process lists.
+        # Use -e so config provides a pre-hashed password, never plaintext.
+        script.append(f"echo {shlex.quote(f'{name}:{pw_hash}')} | chpasswd -e")
         if user.get("sudo_nopasswd"):
             sudoers_line = f"{name} ALL=(ALL) NOPASSWD:ALL"
             script.append(
