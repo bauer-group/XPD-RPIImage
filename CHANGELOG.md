@@ -4,6 +4,16 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.5.0](https://github.com/bauer-group/XPD-RPIImage/compare/v0.4.4...v0.5.0) (2026-09-01)
+
+### 🚀 Features
+
+* **base:** switched the base image to Raspberry Pi OS Lite ([ac24cb2](https://github.com/bauer-group/XPD-RPIImage/commit/ac24cb2770adca2ff348d9d175fcf249c9252cd9))
+
+### 🐛 Bug Fixes
+
+* **config:** revert DIST_VERSION to 0.0.0 ([d562cc3](https://github.com/bauer-group/XPD-RPIImage/commit/d562cc3fa4df8b6233c10634950ee493a36f3b85))
+
 ## [0.4.4](https://github.com/bauer-group/XPD-RPIImage/compare/v0.4.3...v0.4.4) (2026-09-01)
 
 ### 🐛 Bug Fixes
