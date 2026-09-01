@@ -142,8 +142,10 @@ WiFi config path.
   delete the drop-in file.
 - **Does not configure CAN, Docker, Portainer or unattended-upgrades** —
   those are variant-level concerns, change them in the JSON and rebuild.
-- **Does not manage SSH keys.** Use `ssh-copy-id` from your workstation;
-  `.ssh/authorized_keys` for the admin user is mode 700 / 600 already.
+- **Does not manage SSH keys.** `ssh-copy-id` from your workstation creates
+  `~/.ssh` for you — the image ships no `authorized_keys` for `admin`. To bake
+  keys in at build time instead, set `users[].ssh_authorized_keys` in the
+  variant JSON (installed as a 700 directory with a 600 file).
 - **Does not configure static IPv6.** Pass `v6` addresses manually by
   editing the generated `05-bgrpiimage-<iface>.network` file. Open an
   issue if you want this added as a subcommand.

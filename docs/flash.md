@@ -55,8 +55,10 @@ the catalog pre-loaded and a security-confirmation dialog.
 4. Close the dialog. Imager resets the current session and reloads the OS
    list automatically — **no manual restart needed**.
 
-Our variants appear under **CHOOSE OS → BAUER GROUP** whenever you pick
-a compatible target device.
+Our variants appear in **CHOOSE OS** as top-level entries named
+`BAUER GROUP RPIImage - <variant> <version>`, filtered to the device you
+picked under CHOOSE DEVICE. The catalog is a flat list, so there is no
+"BAUER GROUP" submenu to open.
 
 > **Why not "restart Imager"?** Earlier versions of these docs said to
 > restart. That advice was wrong on Imager 2.0+ (the URL change auto-reloads)
@@ -71,7 +73,9 @@ our images — pick **"NO"** when asked whether to apply customization.
 
 Our images bake all of that in at build time from
 [`config/variants/<name>.json`](../config/variants/): the `admin` user
-already exists (the stock `pi` user is removed), hostname is `bg-rpi`, WiFi
+already exists (the stock `pi` user is removed), the hostname is per-variant
+(`bg-rpi` for `base`, `bg-canbus` for `canbus-plattform` — see the `hostname`
+key in the variant JSON), WiFi
 and locale are pre-set, SSH is enabled. Imager's customization writes a
 `custom.toml` / `firstrun.sh` that the stock raspios firstboot service runs
 on first boot — and that service was designed to *rename* `pi`, which we
@@ -93,7 +97,7 @@ fleet-wide customization the source of truth lives in
 ### Flashing an SD card / USB SSD
 
 1. Pick your device under **CHOOSE DEVICE** (Pi 4, Pi 5, etc.).
-2. **CHOOSE OS → BAUER GROUP → `<variant>`**.
+2. **CHOOSE OS** → pick `BAUER GROUP RPIImage - <variant> <version>`.
 3. **CHOOSE STORAGE → your SD card / SSD**.
 4. Click **NEXT**, confirm, wait for verify.
 

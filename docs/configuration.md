@@ -100,7 +100,15 @@ as env vars; they override the `${VAR:-default}` fallback when set.
 - `sudo_nopasswd: true` writes `/etc/sudoers.d/010-bgrpiimage-<name>` with
   `NOPASSWD:ALL`.
 - `ssh_authorized_keys` is optional; listed keys go into
-  `/home/<name>/.ssh/authorized_keys` with mode 600.
+  `/home/<name>/.ssh/authorized_keys` with mode 600. Without it the image
+  ships no `~/.ssh` at all.
+- If the resolved password is a known default (`12345678`), the account is
+  created with `chage -d 0` — it ships **expired**, and the first console or
+  SSH login forces a change before granting a session. The build also writes
+  `/etc/bgrpiimage-default-password-active` (read by the MOTD, and
+  self-clearing once the password is rotated) and prints a `SECURITY:` warning
+  at render time. Set `ADMIN_PASSWORD` to ship a real credential with no
+  forced rotation.
 
 ---
 

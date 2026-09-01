@@ -347,9 +347,16 @@ Three things enforce the pin, and all three are load-bearing:
 > a fresh clone jumped straight from v1.5.0 to v2.0.0 and the build broke on a
 > missing `GitPython` — on a commit that had nothing to do with the cause.
 
-**To move the pin:** update `CUSTOMPIOS_REF` in `.github/workflows/build.yml`
-(and the default in `scripts/bootstrap.sh`), check whether the new revision
-adds host dependencies, and let CI prove it green before relying on it.
+**To move the pin:** three files must change together, or a local docker
+build silently runs a different toolchain than CI:
+
+1. `CUSTOMPIOS_REF` in `.github/workflows/build.yml`
+2. the `CUSTOMPIOS_REF` default in `scripts/bootstrap.sh`
+3. the `DOCKER_IMAGE` default in `scripts/build.sh` — the sibling container
+   `ghcr.io/guysoft/custompios:sha-<short>` must be built from the same commit
+
+Then check whether the new revision adds host dependencies, and let CI prove
+it green before relying on it.
 
 ## 📈 Performance knobs
 

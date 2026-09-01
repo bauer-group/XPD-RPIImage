@@ -100,8 +100,11 @@ cp .env.example .env
 # edit .env - set ADMIN_PASSWORD and WIFI_PSK
 
 make deps                                  # pip install requirements
-make validate                              # schema-check all variants
+make validate                              # schema-check every variant
 make build VARIANT=canbus-plattform        # build the image
+
+# .env is picked up automatically when it sits at the repo root.
+# From elsewhere, pass it explicitly: make build ENV_FILE=path/to/.env
 ```
 
 Output lands in `dist/bgrpiimage-<variant>-v<version>.img.xz`.
@@ -109,8 +112,17 @@ Output lands in `dist/bgrpiimage-<variant>-v<version>.img.xz`.
 ### Option 3 — GitHub Actions
 
 Push to `main` or open a PR → automatic build with SHA-stamped artifact
-(see [`docs/ci-cd.md`](docs/ci-cd.md)). Tag with `v*.*.*` → automatic release
-with permanent download assets.
+(see [`docs/ci-cd.md`](docs/ci-cd.md)).
+
+A conventional commit on `main` → semantic-release cuts `vX.Y.Z` and the
+GitHub Release. The **image assets are not attached automatically**: those tags
+are pushed with `GITHUB_TOKEN`, and GitHub does not trigger workflows from
+`GITHUB_TOKEN` events, so `build.yml`'s tag trigger never fires. Attach them
+with one manual dispatch:
+
+```bash
+gh workflow run build.yml --ref vX.Y.Z
+```
 
 ---
 
@@ -130,9 +142,9 @@ Adding a new variant is a 10-line JSON file — see
 
 ```text
   ┌─────────────────────┐     ┌───────────────────┐     ┌────────────────────┐
-  │ config/variants/*.json │──▶│ scripts/generate.py │──▶│ src/modules/*/files/  │
-  │  (declarative, JSON)  │     │  (validate + merge │     │  _generated/ (inputs │
-  └─────────────────────┘     │   + env resolve)   │     │   for CustomPiOS)    │
+  │ config/variants/*.json │──▶│ scripts/generate.py │──▶│ src/modules/*/filesystem/ │
+  │  (declarative, JSON)  │     │  (validate + merge │     │  root/opt/bgrpiimage/    │
+  └─────────────────────┘     │   + env resolve)   │     │   (inputs for CustomPiOS)│
                               └───────────────────┘     └────────────┬───────┘
                                                                       │
                                                                       ▼
@@ -237,9 +249,8 @@ subcommand reference.
 │   └── requirements.txt
 ├── src/                                   # CustomPiOS distro
 │   ├── config                             # distro-level config
-│   ├── image/config                       # image-level (base URL etc.)
 │   ├── modules/                           # bgrpiimage-{base,users,network,boot,
-│   │                                      #              can,docker,portainer,
+│   │                                      #              hardware,can,docker,portainer,
 │   │                                      #              unattended-upgrades}
 │   └── variants/                          # per-variant shell config (generated)
 ├── tools/                                 # portable dev/build runtime

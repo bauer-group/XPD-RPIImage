@@ -60,6 +60,7 @@ Output breakdown:
 | `bgrpiimage-users` | `create-users.sh`, `pam_su` |
 | `bgrpiimage-network` | `systemd-networkd/10-eth.network`, `20-wlan.network`, `wpa_supplicant/wpa_supplicant-wlan0.conf` |
 | `bgrpiimage-boot` | `config-bgrpiimage.txt` (dtparam + dtoverlay snippet) |
+| `bgrpiimage-hardware` | `hardware.env`, `packages.list`, `eeprom.env`, EEPROM apply script + oneshot unit — only when RTC, watchdog, bootloader or a non-`auto` audio sink is configured |
 | `bgrpiimage-can` | `systemd-networkd/40-can0.network`, `40-can1.network`, `packages.list` |
 | `bgrpiimage-docker` | `daemon.json`, `98-docker.conf` (sysctl), `docker-support.service`, `create-networks.sh` |
 | `bgrpiimage-portainer` | `docker-compose.yml`, `bgrpiimage-portainer-install.service` (oneshot), `portainer.env` |
@@ -85,13 +86,22 @@ matches and fails the build if it does not. Current pin: CustomPiOS 2.0.0
   runs directly, needs `qemu-user-static` + `kpartx` + `xz-utils` +
   `python3-git` + `python3-yaml` on the host.
 - **Dockerised** (macOS/Windows dev): `ghcr.io/guysoft/custompios:sha-d293309`
-  as a privileged sibling container, mounted with `/distro` → the repo.
+  as a privileged sibling container. The repo reaches it at a path the daemon
+  can resolve — inherited from the tools container via
+  `--volumes-from $BGRPI_TOOLS_CONTAINER`, or bind-mounted at its own path when
+  `scripts/build.sh` runs directly on a Linux host.
   (Upstream moved off Docker Hub; `guysoft/custompios` there is unmaintained.)
   Only the bind-mounted checkout executes — the container supplies OS deps.
 
-Either way CustomPiOS:
+First `scripts/build.sh` fetches the base `.img.xz` into `src/image-cache/`,
+verifies it against `base_image.sha256` from the variant JSON (a mismatch
+aborts the build), extracts the `.img` and records its hash in a `.verified`
+stamp that is re-checked on every warm-cache run. CustomPiOS is handed the
+ready `.img` via `BASE_ZIP_IMG` — it never downloads anything itself.
 
-1. Downloads the base arm64 Raspberry Pi OS image.
+Then CustomPiOS:
+
+1. Copies the prepared image into the workspace.
 2. Mounts it via `kpartx` + loop device, resizes root filesystem.
 3. Binds our `src/` tree into the chroot.
 4. For each module in `MODULES=…` (disabled modules are already absent
@@ -107,7 +117,9 @@ The interesting logic is in the generator.
 
 ### 4. Delivery
 
-Local: `dist/bgrpiimage-<variant>-v<version>.img.xz` + `.sha256`.
+Local: `dist/bgrpiimage-<variant>-v<version>.img.xz`. The `.sha256` and
+`.manifest.json` sidecars are produced by CI, not by `scripts/build.sh` — run
+`sha256sum` yourself if you need one locally.
 
 CI: see [`ci-cd.md`](ci-cd.md). In short:
 
@@ -149,9 +161,13 @@ done by the generator.
 1. Add an optional section to [`config/schema.json`](../config/schema.json).
 2. Add a `render_wireguard()` function to [`scripts/generate.py`](../scripts/generate.py).
 3. Append the module name to `ACTIVE_MODULES` + update `_module_enabled()`.
-4. Create `src/modules/bgrpiimage-wireguard/` with `config` and
+4. Register the renderer in the `steps` list in `main()` — `ACTIVE_MODULES`
+   only controls the generated `MODULES=` list; `steps` is what actually calls
+   `render_wireguard()`. A module in one but not the other silently renders
+   nothing.
+5. Create `src/modules/bgrpiimage-wireguard/` with `config` and
    `start_chroot_script`.
-5. Set defaults in `config/variants/base.json`.
+6. Set defaults in `config/variants/base.json`.
 
 The existing modules are the template. No framework indirection.
 
