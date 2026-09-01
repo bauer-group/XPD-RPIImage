@@ -25,10 +25,27 @@
       "type": "object",
       "required": ["url", "arch"],
       "additionalProperties": false,
+      "description": "Upstream image the build starts from. Must be a Raspberry Pi OS *Lite* image: this is a headless appliance (no GUI is configured anywhere), and the Desktop edition costs ~3 GiB of rootfs, which pushes the produced image past the ~7.28 GiB usable on a nominally 8 GB CM4 eMMC.",
       "properties": {
-        "url": { "type": "string", "format": "uri" },
+        "url": {
+          "type": "string",
+          "pattern": "^https://",
+          "description": "Direct .img.xz URL. `format: uri` is not enforced (generate.py validates without a format_checker), so the scheme is asserted with a pattern instead."
+        },
         "sha256": { "type": "string", "pattern": "^[a-fA-F0-9]{64}$|^$" },
         "arch": { "type": "string", "enum": ["arm64", "armhf"] }
+      },
+      "if": {
+        "properties": { "url": { "pattern": "^https://downloads\\.raspberrypi\\.com/" } },
+        "required": ["url"]
+      },
+      "then": {
+        "properties": {
+          "url": {
+            "pattern": "/raspios_lite_",
+            "description": "Raspberry Pi OS downloads must come from a raspios_lite_* directory. The Desktop (stage4) and Full (stage5) trees differ from Lite by one path segment, which is exactly how the oversized image shipped through v0.4.4."
+          }
+        }
       }
     },
     "targets": {

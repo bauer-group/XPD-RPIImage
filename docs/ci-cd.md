@@ -165,7 +165,7 @@ and "we hit the 2 GB Free-tier cap".
 | **Release assets** | ❌ **not counted, no quota** | Single-file cap 2 GB, soft cap 10 GB per release |
 
 This is why this repo's release strategy works on the Free tier despite
-shipping ~1.6 GB images per variant: every tag attaches its `.img.xz`
+shipping ~0.9 GB images per variant: every tag attaches its `.img.xz`
 to a GitHub Release, and Release storage is free for public **and**
 private repos.
 
@@ -184,7 +184,7 @@ with `split -b 1900M` or chunk into multi-part `.img.xz.{001,002}`.
 ### Operational guidance
 
 - **Never lengthen the Actions artifact retention casually.** Each
-  variant is ~1.5 GB; 14 days × N variants × M builds/week adds up
+  variant is ~0.9 GB; 14 days × N variants × M builds/week adds up
   fast and crowds out other repos sharing the org quota.
 - **Old releases are the only thing that grow Release storage.** It
   is free, but if you ever need to clean up (e.g. retired variants),

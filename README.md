@@ -14,7 +14,11 @@ Supported hardware:
 | Compute Module 5 (CM5) | ✅ |
 | Raspberry Pi Zero 2 W | ❌ not supported — 512 MB RAM is insufficient for Docker CE + Portainer + base services |
 
-Base OS: Raspberry Pi OS arm64 (trixie, 2026-06-18).
+Base OS: Raspberry Pi OS **Lite** arm64 (trixie, 2026-06-18) — headless, no
+desktop. These are appliance images: SSH, Docker CE and Portainer, no GUI.
+The Desktop edition is not interchangeable here — it adds ~3 GiB of rootfs and
+pushes the image past what a nominally 8 GB CM4 eMMC can hold (see
+[docs/flash.md](docs/flash.md#storage-requirements)).
 
 ---
 

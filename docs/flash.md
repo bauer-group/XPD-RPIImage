@@ -10,6 +10,43 @@ All three verify against the same SHA-256 checksums published alongside every re
 
 ---
 
+## Storage requirements
+
+Check the **uncompressed** size, not the download. Flashing tools compare the
+extracted image against the raw capacity of the target device, and a card or
+eMMC that is nominally "8 GB" holds noticeably less.
+
+| Source of truth | Where |
+| --- | --- |
+| Uncompressed size | `extract_size` in the release's `*.manifest.json`, and the "Extracted size" column on the [landing page](https://bauer-group.github.io/XPD-RPIImage/) |
+| Locally | `xz -l --robot foo.img.xz \| awk '/^file/{print $5}'` |
+
+Rules of thumb for the current images:
+
+- **SD card / USB SSD** — 8 GB nominal is enough, 16 GB recommended so Docker
+  images and volumes have room after the first-boot rootfs expansion.
+- **CM4 / CM5 eMMC** — a nominal 8 GB module exposes roughly **7.6–7.82 GB**
+  (7.09–7.28 GiB) of user area; the exact figure varies by eMMC vendor by up to
+  ~200 MB. Measure it rather than assuming:
+
+  ```bash
+  # with the CM in USB mass-storage mode via rpiboot
+  sudo blockdev --getsize64 /dev/sdX     # bytes, compare against extract_size
+  ```
+
+> **Note on units.** Raspberry Pi Imager labels its figures "GB" but computes
+> them in **GiB** (1024³). So an Imager message like "requires 7.6 GB" and a
+> module it reports as "7.3 GB" are both GiB — the comparison is consistent, and
+> the image simply does not fit. Do not convert only one side of it.
+
+Both variants are built on Raspberry Pi OS **Lite**, specifically so they clear
+this ceiling with room to spare. If you fork this repo and repoint
+`base_image.url` at the Desktop edition, the produced image will no longer fit a
+CM4 eMMC — [`config/schema.json`](../config/schema.json) rejects that URL for
+exactly this reason.
+
+---
+
 ## 🌐 Catalog URL
 
 ```text

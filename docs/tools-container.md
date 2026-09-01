@@ -117,7 +117,11 @@ All commands take:
 | macOS | Docker Desktop 4.x with VirtioFS and Rosetta for arm64 images. |
 | Windows 11 | Docker Desktop WSL2 backend. |
 
-**Disk**: plan ~8 GB free during a build (base image + chroot rootfs + compressed output).
+**Disk**: plan ~15 GB free during a build. `src/image-cache/` keeps both the
+`.img.xz` and the extracted `.img` (~3.5 GB), the CustomPiOS workspace holds a
+copy grown by `BASE_IMAGE_ENLARGEROOT` (~5 GB), and `dist/` briefly holds the
+finished `.img` alongside its `.xz` (~6 GB). Only `make distclean` frees the
+cache — `make clean` deliberately keeps it.
 
 ---
 

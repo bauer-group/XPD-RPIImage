@@ -13,7 +13,7 @@ with defaults and examples. Source of truth is always the schema.
 | `$schema` | string | optional | IDE hint — stripped before validation. |
 | `extends` | string | optional | Relative path to parent variant JSON. See [`variants.md`](variants.md). |
 | `variant` | object | ✅ | Variant metadata (name, description, version). |
-| `base_image` | object | ✅ | Upstream `.img.xz` URL + SHA-256 + arch. |
+| `base_image` | object | ✅ | Upstream `.img.xz` URL + SHA-256 + arch. **Must be a Raspberry Pi OS Lite image** — the schema rejects a `raspios_arm64` / `raspios_full_arm64` URL, because the Desktop edition costs ~3 GiB of rootfs and overflows an 8 GB CM4 eMMC. Bump `url` and `sha256` together or the build aborts on the checksum check. |
 | `targets` | array[enum] | ✅ | Hardware targets: `rpi4`, `rpi5`, `cm4`, `cm5`. (Pi Zero 2 W dropped — 512 MB RAM is insufficient for Docker + Portainer.) |
 | `hostname` | string | ✅ | DNS-compatible hostname (lowercase, `[a-z0-9-]`). |
 | `locale` | object | — | Timezone, keyboard, locale. |

@@ -1,6 +1,7 @@
 # 🧱 Architecture
 
-How XPD-RPIImage turns a ~1 KB JSON into a bootable ~650 MB `.img.xz`.
+How XPD-RPIImage turns a ~1 KB JSON into a bootable `.img.xz` of roughly 0.9 GB
+(~5 GB uncompressed), starting from Raspberry Pi OS Lite arm64.
 
 ---
 
