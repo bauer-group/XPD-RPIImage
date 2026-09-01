@@ -3,7 +3,7 @@
 
 # Distro identity (variant config may refine DIST_NAME / VERSION).
 export DIST_NAME="bgrpiimage"
-export DIST_VERSION="0.1.0"
+export DIST_VERSION="0.0.0"
 
 # BASE_BOARD -> key into CustomPiOS/src/images.yml. All current variants use
 # arm64 on Raspberry Pi hardware (Pi 4, Pi 5, Pi Zero 2W, CM4, CM5).
