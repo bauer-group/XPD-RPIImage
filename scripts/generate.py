@@ -472,11 +472,11 @@ def render_users(cfg: dict[str, Any]) -> None:
         # chpasswd via stdin keeps the password out of argv / process lists.
         script.append(f"echo {shlex.quote(f'{name}:{pw}')} | chpasswd")
         if pw in _KNOWN_DEMO_PASSWORDS:
-            # These are PUBLIC images: a documented default credential is what
-            # makes them usable by anyone at all, so the answer is not to hide
-            # it but to make sure it cannot survive first contact. Expiring the
-            # password forces a change before a session is granted - login(1)
-            # on the console and sshd (UsePAM yes) both enforce it.
+            # These are PUBLIC images, so the default credential stays
+            # documented and discoverable - that is what keeps onboarding
+            # fast. Expiring it only means the operator is prompted to set a
+            # new password at the first login they were going to do anyway;
+            # login(1) on the console and sshd (UsePAM yes) both enforce it.
             script.append(f"chage -d 0 {shlex.quote(name)}")
         if user.get("sudo_nopasswd"):
             sudoers_line = f"{name} ALL=(ALL) NOPASSWD:ALL"
