@@ -110,10 +110,10 @@ our images — pick **"NO"** when asked whether to apply customization.
 
 Our images bake all of that in at build time from
 [`config/variants/<name>.json`](../config/variants/): the `admin` user
-already exists (the stock `pi` user is removed), the hostname is per-variant
-(`bg-rpi` for `base`, `bg-canbus` for `canbus-plattform` — see the `hostname`
-key in the variant JSON), WiFi
-and locale are pre-set, SSH is enabled. Imager's customization writes a
+already exists (the stock `pi` user is removed first, so `admin` gets UID
+1000), the hostname is per-variant (`bg-rpi` for `base`, `bg-canbus` for
+`canbus-plattform` — see the `hostname` key in the variant JSON), locale is
+pre-set, SSH is enabled and WiFi is deliberately off. Imager's customization writes a
 `custom.toml` / `firstrun.sh` that the stock raspios firstboot service runs
 on first boot — and that service was designed to *rename* `pi`, which we
 deleted. Effects when enabled anyway:
@@ -123,11 +123,11 @@ deleted. Effects when enabled anyway:
 | Hostname / locale / timezone | Overrides our defaults — usually harmless. |
 | SSH `authorized_keys` | Appended to the existing `admin` user — works. |
 | Username + password | Fragile. Tries to rename a `pi` user that doesn't exist; may silently fail or create a duplicate user beside `admin`. |
-| WiFi SSID/PSK | Writes a second network config alongside ours — both get tried, messy. |
+| WiFi SSID/PSK | Writes an `nmconnection` for NetworkManager, which this image masks in favour of systemd-networkd — it is simply ignored. Use `bgrpiimage-setup wifi enable` instead. |
 
 For per-device tuning either rebuild with an edited variant JSON, or after
 flashing SSH in as `admin` / `12345678` (you will be prompted to set a new
-password immediately) and change what you need. For
+password immediately) and change what you need with `bgrpiimage-setup`. For
 fleet-wide customization the source of truth lives in
 [`config/variants/`](../config/variants/) — that's the audit trail.
 
@@ -246,15 +246,14 @@ sha256sum -c bgrpiimage-*.img.xz.sha256
 
 ## 🚨 Default credentials
 
-> The images ship with **published default credentials** — deliberately, so a
-> public image is usable. The admin password is expired at build time and must
-> be changed at first login; the WiFi PSK is not, so treat an untouched image
-> as lab-only until you rotate it.
+> The images ship with a **published default credential** — deliberately, so a
+> public image is usable. It is expired at build time and must be changed at
+> the first login, console or SSH.
 >
 > - `admin` → `12345678`
-> - WiFi PSK (`IOT @ BAUER-GROUP`) → `12345678`
+>
+> WiFi ships **disabled** and no image carries a PSK.
 
-The admin password change is enforced at first login. Rotate the PSK too, or
-bake real values at build time via
-`.env` → see [post-flash-setup.md](post-flash-setup.md) and the security
-section of the main [README](../README.md).
+Bake a real password at build time via `.env`, or rotate it on the device →
+see [post-flash-setup.md](post-flash-setup.md) and the security section of the
+main [README](../README.md).

@@ -108,14 +108,14 @@
 
     <section class="security">
       <h2>🔐 Default credentials</h2>
-      <p>These images ship with <strong>demo credentials</strong> - safe only on an isolated lab network:</p>
+      <p>These images ship with a <strong>demo credential</strong> - safe only on an isolated lab network:</p>
       <ul>
-        <li><code>admin</code> password → <code>12345678</code></li>
-        <li>WiFi PSK for <code>IOT @ BAUER-GROUP</code> → <code>12345678</code></li>
+        <li><code>admin</code> password → <code>12345678</code>, shipped expired: the first login forces a change</li>
       </ul>
-      <p>Bake real values at build time via <code>.env</code>, or change them post-flash with:</p>
+      <p>WiFi ships <strong>disabled</strong> and no image carries a PSK. Bake a real password at build time via <code>.env</code>, or change things post-flash with:</p>
       <pre><code>sudo bgrpiimage-setup password
-sudo bgrpiimage-setup wifi "MyNet" "s3cret" DE
+sudo bgrpiimage-setup wifi enable "MyNet" "s3cret"
+sudo bgrpiimage-setup can status
 sudo bgrpiimage-setup ip eth0 static 10.0.0.5/24 10.0.0.1 1.1.1.1</code></pre>
     </section>
 

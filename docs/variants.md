@@ -80,9 +80,10 @@ Create `config/variants/gps-tracker.json`:
   "packages": ["gpsd", "gpsd-clients"],
 
   "boot_config": {
-    "enable_uart": true,
-    "disable_bluetooth": true
-  }
+    "enable_uart": true
+  },
+
+  "bluetooth": { "enabled": false }
 }
 ```
 

@@ -19,8 +19,8 @@
   "boot_config": {
     "enable_spi": true,
     "dtoverlays": [
-      { "name": "mcp2515-can0", "params": { "oscillator": "16000000", "interrupt": "25" } },
-      { "name": "mcp2515-can1", "params": { "oscillator": "16000000", "interrupt": "26" } }
+      { "name": "mcp2515-can0", "params": { "oscillator": "16000000", "interrupt": "23" } },
+      { "name": "mcp2515-can1", "params": { "oscillator": "16000000", "interrupt": "25" } }
     ]
   },
   "can": {

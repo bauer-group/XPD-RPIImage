@@ -189,19 +189,23 @@ More detail: [`docs/architecture.md`](docs/architecture.md).
 
 ## 🔐 Secrets & defaults
 
-> ⚠️ **Default credentials shipped by this image:**
+> ⚠️ **Default credential shipped by this image:** `admin` → `12345678`
 >
-> - `admin` user password → `12345678`
-> - WiFi PSK for `IOT @ BAUER-GROUP` → `12345678`
+> This is a **published default**, on purpose: the images are public, so a
+> discoverable credential is what makes them usable at all. It ships
+> **expired** (`chage -d 0`) — the first login, console or SSH, forces you to
+> set a new one before you get a session, so it cannot silently stay in place,
+> and the MOTD keeps reminding you until it has actually been rotated.
 >
-> These are **published defaults**, on purpose: the images are public, so a
-> discoverable credential is what makes them usable at all. The admin password
-> is shipped **expired** — the first login (console or SSH) forces you to set a
-> new one before you get a session, so it cannot silently stay in place.
-> The WiFi PSK is *not* protected that way: treat an untouched image as safe
-> only on an isolated lab network until you have rotated it.
-> On first boot the login banner screams about it and the MOTD keeps
-> reminding you until you rotate the admin password.
+> **No WiFi PSK ships any more.** WiFi is disabled by default; enable it per
+> device with `bgrpiimage-setup wifi enable`, or bake a network into the
+> variant JSON.
+
+> ⚠️ **Upgrading the `canbus-plattform` variant from v0.5.0 or older:** which
+> physical CAN connector is `can0` changes. `can0` is now the CS0 chip (screw
+> terminal CAN0); probe order previously gave that name to the CS1 chip.
+> Details and the migration check in
+> [`docs/hardware.md`](docs/hardware.md#-can-waveshare-17912-dual-mcp2515).
 
 ### Change credentials at build time (preferred for production)
 
@@ -222,8 +226,11 @@ for the routine post-flash changes:
 ```bash
 sudo bgrpiimage-setup password                       # rotate admin pw
 sudo bgrpiimage-setup password alice                 # rotate another user
-sudo bgrpiimage-setup wifi "MyNet" "s3cret" DE       # join a WiFi
-sudo bgrpiimage-setup wifi --disable                 # tear down wlan0
+sudo bgrpiimage-setup wifi enable "MyNet" "s3cret"   # unblock radio + join
+sudo bgrpiimage-setup wifi status                    # rfkill / regdom / link
+sudo bgrpiimage-setup wifi disable                   # tear down, drop the PSK
+sudo bgrpiimage-setup can status                     # chip select, IRQ, bitrate
+sudo bgrpiimage-setup can bitrate can0 250000        # change a CAN bitrate
 sudo bgrpiimage-setup ip eth0 dhcp                   # back to DHCP
 sudo bgrpiimage-setup ip eth0 static 10.0.0.5/24 10.0.0.1 1.1.1.1
 sudo bgrpiimage-setup status                         # overview

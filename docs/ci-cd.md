@@ -290,7 +290,7 @@ Set in _Repository Settings → Secrets and variables → Actions_:
 | Name | Purpose | If unset |
 | --- | --- | --- |
 | `ADMIN_PASSWORD` | Bakes into `users[].password` | the variant default (`12345678`), shipped **expired** |
-| `WIFI_PSK` | Bakes into `network.wifi.networks[].psk` | the variant default (`12345678`) |
+| `WIFI_PSK` | Bakes into `network.wifi.networks[].psk` — **unused by the shipped variants**, which have WiFi disabled and declare no networks | nothing changes |
 
 Both are optional by design. These images are **public**, so a secret admin
 password would make a published release asset unusable to everyone who
@@ -308,8 +308,9 @@ variant config — so what ships matches what the docs promise.
 The protection is not secrecy but expiry: any account left on a known default
 password is created with `chage -d 0`, so console login and sshd (`UsePAM
 yes`) both force a change before granting a session. Set `ADMIN_PASSWORD` when
-you want a private image with no forced rotation; the WiFi PSK has no
-equivalent guard.
+you want a private image with no forced rotation. There is no WiFi PSK
+to guard any more: WiFi ships disabled and the shipped variants declare no
+networks.
 
 ---
 

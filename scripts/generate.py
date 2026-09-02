@@ -236,7 +236,14 @@ def render_base(cfg: dict[str, Any]) -> None:
         shell_var("BGRPIIMAGE_KEYBOARD", locale.get("keyboard", "us")),
     ]
     write(gen / "locale.env", "".join(lines))
-    packages = cfg.get("packages", [])
+    packages = list(cfg.get("packages", []))
+    bluetooth = cfg.get("bluetooth") or {}
+    if bluetooth.get("enabled", True) and "bluez" not in packages:
+        # Raspberry Pi OS Lite already ships bluez (pi-gen
+        # stage2/01-sys-tweaks/00-packages), so this is a no-op install - but it
+        # turns an inherited dependency into a declared one, and the image no
+        # longer silently loses Bluetooth if the base image drops it.
+        packages.append("bluez")
     write(gen / "packages.list", "\n".join(packages) + ("\n" if packages else ""))
 
     # /etc/bgrpiimage-release - sourced by the MOTD banner and any ops tooling.
@@ -251,6 +258,11 @@ def render_base(cfg: dict[str, Any]) -> None:
 
     ssh = cfg.get("ssh") or {}
     write(gen / "ssh.env", shell_var("BGRPIIMAGE_SSH_ENABLED", bool(ssh.get("enabled", True))))
+
+    write(
+        gen / "bluetooth.env",
+        shell_var("BGRPIIMAGE_BLUETOOTH_ENABLED", bool(bluetooth.get("enabled", True))),
+    )
 
     banner = cfg.get("banner") or {}
     if banner.get("enabled", True):
@@ -270,15 +282,19 @@ def _render_banner(gen: Path, cfg: dict[str, Any], banner: dict[str, Any]) -> No
         f"  {variant.get('description', '')}\n"
     ).rstrip() + "\n"
 
-    # /etc/issue: getty expands \n \4 \6 \s \r \m at display time.
+    # /etc/issue is deliberately STATIC and short.
+    #
+    # agetty redraws the whole issue file whenever anything calls
+    # `agetty --reload` (it watches /run/agetty.reload via inotify) - which
+    # happens on network events and on every cloud-init boot stage. A ten
+    # line issue with per-interface escapes therefore repaints half the
+    # console several times during boot, which reads as a bug.
+    #
+    # Dynamic state belongs in the MOTD, which renders once per login and
+    # can run real commands. The hostname is not lost: agetty already
+    # prefixes the prompt with it ("bg-canbus login:").
     issue = (
         f"{header}"
-        "--------------------------------------------------------------------\n"
-        "  \\s \\r \\m    \\d \\t\n"
-        "  host:  \\n\n"
-        "  tty:   \\l\n"
-        "  eth0:  \\4{eth0}    \\6{eth0}\n"
-        "  wlan0: \\4{wlan0}   \\6{wlan0}\n"
         "--------------------------------------------------------------------\n"
     )
     if note:
@@ -375,12 +391,14 @@ echo "${CY}${sep}${NC}"
 ssh_s=$(systemctl is-active ssh 2>/dev/null || echo "?")
 dk_s=$(systemctl is-active docker 2>/dev/null || echo "?")
 uu_s=$(systemctl is-active unattended-upgrades 2>/dev/null || echo "?")
+bt_s=$(systemctl is-active bluetooth 2>/dev/null || echo "?")
 printf "  ${DIM}ssh:${NC} $(active_color "$ssh_s")%s${NC}" "$ssh_s"
 printf "   ${DIM}docker:${NC} $(active_color "$dk_s")%s${NC}" "$dk_s"
 if [ "$dk_s" = "active" ]; then
     n=$(docker ps -q 2>/dev/null | wc -l)
     printf " ${DIM}(%d running)${NC}" "$n"
 fi
+printf "   ${DIM}bt:${NC} $(active_color "$bt_s")%s${NC}" "$bt_s"
 printf "   ${DIM}unattended-upgrades:${NC} $(active_color "$uu_s")%s${NC}\n" "$uu_s"
 
 if [ -f /var/run/reboot-required ]; then
@@ -389,21 +407,31 @@ if [ -f /var/run/reboot-required ]; then
     printf "  ${YE}reboot pending${NC} %s\n" "${pkgs:+(triggered by: ${pkgs})}"
 fi
 
-# Warn loudly if the shipped demo credentials were never changed. The shadow
-# hash of "12345678" with the salt that chpasswd picks is predictable enough
-# that we can detect it cheaply: compare the first 10 chars of the hash to a
-# known-unchanged marker stored at image-build time.
-if [ -f /etc/bgrpiimage-default-password-active ] && [ -r /etc/shadow ]; then
+# Warn while a shipped demo password is still in place.
+#
+# The marker records user:<first 12 chars of the crypt hash> at build time;
+# a still-matching hash means the credential was never rotated. The previous
+# test compared sp_lstchg against 0, which can never be true here: PAM's
+# account phase forces the expired password to be changed before the session
+# phase ever runs pam_motd, so the field is always rewritten first.
+#
+# Bare-username lines (markers written by images <= 0.5.0) fall back to the
+# old test so already-flashed devices keep working.
+if [ -f /etc/bgrpiimage-default-password-active ]; then
     _stale=""
-    while read -r _u; do
+    while IFS=: read -r _u _h; do
         [ -n "$_u" ] || continue
-        [ "$(awk -F: -v u="$_u" '$1==u{print $3}' /etc/shadow)" = "0" ] \
-            && _stale="${_stale} ${_u}"
+        if [ -n "$_h" ]; then
+            _cur=$(awk -F: -v u="$_u" '$1==u{print substr($2,1,12)}' /etc/shadow 2>/dev/null)
+            [ -n "$_cur" ] && [ "$_cur" = "$_h" ] && _stale="${_stale} ${_u}"
+        else
+            [ "$(awk -F: -v u="$_u" '$1==u{print $3}' /etc/shadow 2>/dev/null)" = "0" ] \
+                && _stale="${_stale} ${_u}"
+        fi
     done < /etc/bgrpiimage-default-password-active
     if [ -n "$_stale" ]; then
         printf "  ${RD}SECURITY:${NC} default password still unchanged for:%s\n" "$_stale"
-        printf "           it must be changed at the next login\n"
-        printf "           (also review: ${YE}sudo bgrpiimage-setup status${NC})\n"
+        printf "           rotate it now: ${YE}sudo bgrpiimage-setup password${NC}\n"
     fi
 fi
 echo "${CY}${sep}${NC}"
@@ -426,25 +454,25 @@ def render_users(cfg: dict[str, Any]) -> None:
     root = cfg.get("root", {})
     script = ["#!/bin/bash", "# Auto-generated by scripts/generate.py", "set -euo pipefail", ""]
 
-    # Drop a marker file when at least one user still carries a ship-default
-    # demo password after env resolution. The MOTD reads this marker and
-    # prompts the operator to rotate the credential.
+    # Remove the stock accounts FIRST. `useradd` hands out the lowest free
+    # UID, so creating admin while `pi` still holds 1000 pushed admin to 1001
+    # and left the image with no UID-1000 user at all - which breaks
+    # raspi-config's UID-1000 fallback and gives the raspios first-boot
+    # wizard a reason to ask which account to rename.
+    for victim in remove_users:
+        script.append(f"if id -u {shlex.quote(victim)} >/dev/null 2>&1; then")
+        script.append(f"  deluser --remove-home {shlex.quote(victim)} || true")
+        script.append(f"  delgroup {shlex.quote(victim)} 2>/dev/null || true")
+        script.append("fi")
+    if remove_users:
+        script.append("")
+
+    # Build side: shout when a ship-default password survived env resolution.
+    # Without this the only signal is on the device itself, so an image can be
+    # built, published and flashed before anyone learns it carries a known
+    # credential (e.g. when ADMIN_PASSWORD is dropped by sudo's env_reset in CI).
     weak = [u["name"] for u in users if u.get("password") in _KNOWN_DEMO_PASSWORDS]
     if weak:
-        # Runtime side: the MOTD reads this marker and prompts for rotation.
-        # Record WHICH accounts, so the MOTD check can clear itself once the
-        # password is actually rotated instead of nagging forever.
-        script.append(
-            "printf '%s\\n' "
-            + " ".join(shlex.quote(u) for u in weak)
-            + " > /etc/bgrpiimage-default-password-active"
-        )
-        script.append("chmod 644 /etc/bgrpiimage-default-password-active")
-        script.append("")
-        # Build side: say so in the build log too. Without this the only
-        # signal is on the device itself, so an image can be built, published
-        # and flashed before anyone learns it carries a ship-default password
-        # (e.g. when ADMIN_PASSWORD is dropped by sudo's env_reset in CI).
         console.print(
             f"[bold red]SECURITY:[/] user(s) {', '.join(weak)} carry a known "
             f"default password - set ADMIN_PASSWORD to build a hardened image"
@@ -495,11 +523,25 @@ def render_users(cfg: dict[str, Any]) -> None:
             script.append(f"chmod 600 {authfile}")
         script.append("")
 
-    for victim in remove_users:
-        script.append(f"if id -u {shlex.quote(victim)} >/dev/null 2>&1; then")
-        script.append(f"  deluser --remove-home {shlex.quote(victim)} || true")
-        script.append(f"  delgroup {shlex.quote(victim)} 2>/dev/null || true")
-        script.append("fi")
+    if weak:
+        # Runtime side: record user:<first 12 chars of the crypt hash>, and do
+        # it AFTER the accounts exist so the hash is real. The MOTD compares the
+        # live hash against this instead of testing sp_lstchg==0, which can
+        # never be true by the time pam_motd runs - PAM's account phase has
+        # already forced the expired password to be changed.
+        script.append("# --- default-password marker (read by the MOTD) ---")
+        script.append(": > /etc/bgrpiimage-default-password-active")
+        for u in weak:
+            q = shlex.quote(u)
+            awk = (
+                "awk -F: -v u=" + q + " '$1==u{print substr($2,1,12)}' /etc/shadow"
+            )
+            script.append(
+                "printf '%s:%s\\n' " + q + ' "$(' + awk + ')"'
+                " >> /etc/bgrpiimage-default-password-active"
+            )
+        script.append("chmod 644 /etc/bgrpiimage-default-password-active")
+        script.append("")
 
     # su without password for listed users -> pam_wheel.so group trust.
     su_users = root.get("su_nopasswd_users") or []
@@ -577,6 +619,17 @@ def render_network(cfg: dict[str, Any]) -> None:
                     lines.append(f"Address={addr6}/{prefix6}")
                 if gw6:
                     lines.append(f"Gateway={gw6}")
+        # RequiredForOnline gates systemd-networkd-wait-online, which
+        # `systemctl enable systemd-networkd` pulls in through the Also= in its
+        # [Install] section. A managed link defaults to "yes", so a wlan0 that
+        # never associates (no AP, or rfkill-blocked) holds up
+        # network-online.target - and docker.service Wants=/After= that target,
+        # so Docker and the Portainer first-boot install queue behind it.
+        # Wireless is therefore never required. Ethernet keeps systemd's own
+        # default of "degraded"; "routable" would be STRICTER than today and
+        # would stall for 120 s on a LAN with no DHCP.
+        required = "no" if match.startswith("wlan") else "degraded"
+        lines += ["", "[Link]", f"RequiredForOnline={required}"]
         return "\n".join(lines) + "\n"
 
     eth = net.get("ethernet")
@@ -610,6 +663,38 @@ def render_network(cfg: dict[str, Any]) -> None:
         iface_name = wifi.get("interface", "wlan0")
         write(wpa_dir / f"wpa_supplicant-{iface_name}.conf", "\n".join(wpa))
 
+    # raspberrypi-sys-mods ships /etc/modprobe.d/rfkill_default.conf containing
+    # `options rfkill default_state=0`. Because CONFIG_RFKILL=m on Pi that takes
+    # effect at module init, where net/rfkill/core.c calls
+    # rfkill_update_global_state(RFKILL_TYPE_ALL, ...): EVERY radio type is
+    # soft-blocked before any switch registers. It exists to stop a device
+    # radiating before a WLAN regulatory domain is known, and it is what prints
+    # "Wi-Fi is currently blocked by rfkill" on every login. It blocks Bluetooth
+    # too - that only works today because pi-gen whitelists a handful of known
+    # BT device ids under /var/lib/systemd/rfkill, and only if one of them
+    # happens to match the board.
+    #
+    # We pin the domain ourselves, so restore the kernel default. Emitted
+    # regardless of wifi.mode: an image shipped with WiFi off still needs a
+    # working Bluetooth radio, and would otherwise keep showing a nag pointing
+    # at raspi-config, which this image does not use.
+    #
+    # modprobe concatenates /etc/modprobe.d/*.conf in lexicographic order and
+    # the kernel's parse_args takes the LAST occurrence of an option - hence the
+    # zz- prefix. The vendor file is a dpkg conffile of raspberrypi-sys-mods and
+    # is deliberately left untouched so upgrades never hit a conffile prompt.
+    regdom = (net.get("wifi") or {}).get("country", "DE")
+    modprobe_dir = gen / "modprobe.d"
+    modprobe_dir.mkdir(parents=True, exist_ok=True)
+    write(
+        modprobe_dir / "zz-bgrpiimage-rfkill.conf",
+        "# bgRPIImage - overrides raspberrypi-sys-mods' rfkill_default.conf.\n"
+        "# That file is a dpkg conffile; editing it turns every upgrade into a\n"
+        "# conffile conflict, so we win on load order instead.\n"
+        "options rfkill default_state=1\n"
+        f"options cfg80211 ieee80211_regdom={regdom}\n",
+    )
+
 
 def _overlay_line(name: str, params: dict[str, Any] | None = None) -> str:
     """Render a `dtoverlay=...` line with optional comma-joined params."""
@@ -618,6 +703,50 @@ def _overlay_line(name: str, params: dict[str, Any] | None = None) -> str:
         return f"dtoverlay={name}"
     parts = [name] + [f"{k}={v}" for k, v in params.items()]
     return "dtoverlay=" + ",".join(parts)
+
+
+_MCP2515_OVERLAY_RE = re.compile(r"^mcp2515-can(\d+)$")
+
+
+def _dtoverlay_lines(overlays: list[dict[str, Any]]) -> list[str]:
+    """Render `dtoverlay=` lines, forcing a canonical order for MCP2515 CAN.
+
+    The netdev name is NOT chosen by the overlay name: mcp251x calls
+    alloc_candev(..., "can%d") and the index is handed out by dev_alloc_name()
+    at register_netdevice() time, i.e. in probe order. Probe order follows the
+    device-tree child order of &spi0, and the firmware merges each dtoverlay
+    with libfdt's fdt_add_subnode(), which inserts the new node *before* the
+    target's existing children. Net effect: the overlay applied LAST probes
+    FIRST and takes "can0".
+
+    So to make can0 the CS0 chip - which is what every label, doc and .network
+    file assumes - the highest chip-select must be emitted first. Waveshare's
+    own config.txt for the 2-CH CAN HAT does exactly this (mcp2515-can1 before
+    mcp2515-can0); shipping them in the "natural" order silently swaps the two
+    physical connectors.
+
+    Sorting here rather than in the variant JSON keeps the JSON readable and
+    means a later tidy-up of that array cannot re-introduce the swap.
+    """
+    mcp: list[tuple[int, dict[str, Any]]] = []
+    rest: list[dict[str, Any]] = []
+    for ovl in overlays:
+        m = _MCP2515_OVERLAY_RE.match(ovl["name"])
+        if m:
+            mcp.append((int(m.group(1)), ovl))
+        else:
+            rest.append(ovl)
+
+    out = [_overlay_line(o["name"], o.get("params")) for o in rest]
+    if mcp:
+        if len(mcp) > 1:
+            out.append(
+                "# order is load-bearing: the LAST mcp2515 overlay probes FIRST "
+                "and takes can0"
+            )
+        mcp.sort(key=lambda item: item[0], reverse=True)
+        out.extend(_overlay_line(o["name"], o.get("params")) for _, o in mcp)
+    return out
 
 
 def _emit_boot_section(lines: list[str], heading: str, body: list[str]) -> None:
@@ -654,12 +783,14 @@ def render_boot(cfg: dict[str, Any]) -> None:
         core.append("dtparam=i2s=on")
     if boot.get("enable_uart"):
         core.append("enable_uart=1")
-    if boot.get("disable_bluetooth"):
+    # `bluetooth.enabled` is the single source of truth for the radio; the old
+    # boot_config.disable_bluetooth toggle described the same thing from the
+    # other side and nothing kept the two in sync.
+    if not (cfg.get("bluetooth") or {}).get("enabled", True):
         core.append("dtoverlay=disable-bt")
     if boot.get("disable_wifi"):
         core.append("dtoverlay=disable-wifi")
-    for ovl in boot.get("dtoverlays", []):
-        core.append(_overlay_line(ovl["name"], ovl.get("params")))
+    core.extend(_dtoverlay_lines(boot.get("dtoverlays", [])))
     _emit_boot_section(lines, "core", core)
 
     # --- camera ---------------------------------------------------------------
@@ -1123,16 +1254,23 @@ def render_portainer(cfg: dict[str, Any]) -> None:
 
     # First-boot oneshot. After it runs once, the Docker daemon itself
     # keeps the container alive via the compose file's restart policy.
+    #
+    # Type=oneshot disables TimeoutStartSec by default, so a registry pull
+    # that stalls would hold multi-user.target open indefinitely (targets get
+    # an implicit After= on what they Want). Bound it, and wait for the
+    # network first so the pull does not race DNS coming up.
     install_unit = (
         "[Unit]\n"
         "Description=bgRPIImage Portainer bootstrap (first boot only)\n"
         "Requires=docker.service\n"
-        "After=docker.service docker-support.service bgrpiimage-docker-networks.service\n"
+        "Wants=network-online.target\n"
+        "After=docker.service docker-support.service bgrpiimage-docker-networks.service network-online.target\n"
         "ConditionPathExists=!/var/lib/bgrpiimage/portainer.installed\n"
         "\n"
         "[Service]\n"
         "Type=oneshot\n"
         "RemainAfterExit=yes\n"
+        "TimeoutStartSec=600\n"
         "WorkingDirectory=/etc/bgrpiimage/portainer\n"
         "ExecStart=/usr/bin/docker compose up -d\n"
         "ExecStartPost=/bin/sh -c \"mkdir -p /var/lib/bgrpiimage && touch /var/lib/bgrpiimage/portainer.installed\"\n"
@@ -1332,6 +1470,61 @@ def _semantic_validate(cfg: dict[str, Any]) -> None:
     rtc = cfg.get("rtc") or {}
     if rtc.get("enabled") and not rtc.get("model"):
         raise ValueError("rtc.enabled=true requires rtc.model")
+
+    boot = cfg.get("boot_config") or {}
+    overlays = boot.get("dtoverlays") or []
+
+    # boot_config.dtoverlays and can.interfaces describe the same hardware but
+    # are rendered by two functions that never look at each other. That gap is
+    # exactly how the canbus-plattform variant shipped an interface bound to a
+    # GPIO the HAT does not connect, and nothing complained.
+    mcp: dict[str, dict[str, Any]] = {}
+    for ovl in overlays:
+        m = _MCP2515_OVERLAY_RE.match(ovl["name"])
+        if m:
+            mcp[ovl["name"]] = ovl.get("params") or {}
+
+    if mcp:
+        wanted = [i["name"] for i in (cfg.get("can") or {}).get("interfaces", [])]
+        missing = [n for n in wanted if f"mcp2515-{n}" not in mcp]
+        if missing:
+            raise ValueError(
+                f"can.interfaces {missing} have no matching mcp2515-<name> entry in "
+                f"boot_config.dtoverlays (present: {sorted(mcp)}) - the interface "
+                "would never be created"
+            )
+
+        # Both upstream overlays default to interrupt=25. Two chips sharing one
+        # GPIO produce a pinctrl conflict at boot, not a readable error, and a
+        # chip pointed at an unconnected GPIO comes up clean and passes no
+        # traffic - mcp251x requests its IRQ in ndo_open, so probe still logs
+        # "MCP2515 successfully initialized".
+        seen: dict[str, str] = {}
+        for name, params in sorted(mcp.items()):
+            pin = params.get("interrupt")
+            if pin is None:
+                raise ValueError(
+                    f"boot_config.dtoverlays: {name} must set params.interrupt - "
+                    "every mcp2515 overlay defaults to GPIO 25, so leaving it out "
+                    "collides with the other channel"
+                )
+            if str(pin) in seen:
+                raise ValueError(
+                    f"boot_config.dtoverlays: {name} and {seen[str(pin)]} both use "
+                    f"interrupt={pin}; each MCP2515 needs its own INT GPIO"
+                )
+            seen[str(pin)] = name
+
+    # bluetooth.enabled is the single source of truth; a hand-written
+    # disable-bt in extra_lines would silently win over it at boot.
+    bt_enabled = (cfg.get("bluetooth") or {}).get("enabled", True)
+    if bt_enabled and any(
+        "disable-bt" in line for line in boot.get("extra_lines", [])
+    ):
+        raise ValueError(
+            "bluetooth.enabled=true conflicts with a manual dtoverlay=disable-bt in "
+            "boot_config.extra_lines - set bluetooth.enabled=false instead"
+        )
 
 
 def _window_minutes(start_hhmm: str, end_hhmm: str) -> int:

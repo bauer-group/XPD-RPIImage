@@ -21,7 +21,9 @@ Two output paths exist:
 
 | Block | Scope | Pi4 | Pi5 | CM4 | CM5 |
 | --- | --- | --- | --- | --- | --- |
-| `boot_config` | I2C/SPI/I2S/UART, BT/WiFi off, raw `dtoverlays`, `extra_lines` | ✅ | ✅ | ✅ | ✅ |
+| `boot_config` | I2C/SPI/I2S/UART, WiFi off, raw `dtoverlays`, `extra_lines` | ✅ | ✅ | ✅ | ✅ |
+| `bluetooth` | Onboard BT radio: bluez + `bluetooth.service`, or `disable-bt` | ✅ | ✅ | ✅ | ✅ |
+| `can` | MCP2515 CAN HAT: overlay order, INT GPIOs, bitrate | ✅ | ✅ | ✅ | ✅ |
 | `camera` | CSI autodetect + explicit sensor overlays | ✅ | ✅ | ✅ | ✅ |
 | `hdmi` | Per-output group/mode/audio/rotation/boost | ✅ | ✅ | ✅ | ✅ |
 | `display` | fbcon rotation, DSI LCD rotation | ✅ | ✅ | ✅ | ✅ |
@@ -316,6 +318,139 @@ Raspberry Pi OS kernel and systemd.
 
 ---
 
+## 📶 `bluetooth`
+
+```json
+"bluetooth": { "enabled": true }
+```
+
+Default **on**. This is the single source of truth for the radio - the old
+`boot_config.disable_bluetooth` toggle described the same thing from the other
+side and nothing kept the two in sync.
+
+| Value | Emitted |
+| --- | --- |
+| `enabled: true` | `bluez` added to the package list, `bluetooth.service` unmasked + enabled |
+| `enabled: false` | `dtoverlay=disable-bt`, `bluetooth.service` disabled + masked |
+
+Two things that are easy to get wrong here:
+
+- **`hciuart.service` does not exist on trixie.** `pi-bluetooth` is gone from
+  the package set and the UART attach is handled by the device tree plus
+  `bluez`. Enabling it fails with *Unit hciuart.service does not exist*.
+- **The radio is rfkill-blocked by default.** `raspberrypi-sys-mods` ships
+  `/etc/modprobe.d/rfkill_default.conf` with `options rfkill default_state=0`,
+  which soft-blocks *every* radio type at rfkill module init - Bluetooth
+  included. It only works on a stock image because pi-gen whitelists a handful
+  of known BT device ids under `/var/lib/systemd/rfkill`. We ship
+  `/etc/modprobe.d/zz-bgrpiimage-rfkill.conf` with `default_state=1` instead,
+  so Bluetooth no longer depends on that whitelist matching the board.
+
+> ⚠️ Lifting the block also lifts it for WLAN, which is the guard rail
+> Raspberry Pi added in October 2024 against radiating before a regulatory
+> domain is known. That is only defensible because the same file pins
+> `ieee80211_regdom` from `network.wifi.country`. **An image rolled out outside
+> that domain without changing `country` is a regulatory problem, not a
+> technical one.**
+>
+> Never widen the cleanup glob to `/var/lib/systemd/rfkill/*` - the
+> `*:bluetooth` entries are pi-gen's whitelist and deleting them soft-blocks
+> Bluetooth on CM4 (`platform-fe215040.serial:bluetooth`).
+
+---
+
+## 🚌 `can` (Waveshare 17912 dual MCP2515)
+
+> ### \u26a0\ufe0f Upgrading a fleet from v0.5.0 or older
+>
+> **Which physical connector is `can0` changes.** Up to v0.5.0 the CS1 chip
+> won the name `can0` through probe order, so the interface named `can0` was
+> the screw terminal labelled **CAN1**. From v0.6.0 the mapping is the
+> documented one: `can0` = `spi0.0` = terminal **CAN0**.
+>
+> Before rolling this out, re-check anything keyed to the interface names -
+> application configuration, DBC bindings, routing rules and cable labelling.
+> It was invisible until now because both generated `.network` files carry the
+> same bitrate; the first asymmetric configuration would have applied the wrong
+> rate to the wrong bus.
+
+```json
+"boot_config": {
+  "enable_spi": true,
+  "dtoverlays": [
+    { "name": "mcp2515-can0", "params": { "oscillator": "16000000", "interrupt": "23" } },
+    { "name": "mcp2515-can1", "params": { "oscillator": "16000000", "interrupt": "25" } }
+  ]
+},
+"can": {
+  "interfaces": [
+    { "name": "can0", "bitrate": 500000, "auto_up": true, "txqueuelen": 65535 }
+  ]
+}
+```
+
+### Interrupt GPIOs
+
+The upstream overlays hard-wire the chip select - `mcp2515-can0` is `spi0.0`
+(CE0), `mcp2515-can1` is `spi0.1` (CE1) - but **both default to GPIO 25**, so
+`params.interrupt` is mandatory on each. From the Waveshare schematic:
+
+| Screw terminal | Chip | Chip select | INT net | Solder default | Alternative |
+| --- | --- | --- | --- | --- | --- |
+| CAN0 | U1 | `SPI0_CE0` → `spi0.0` | `CAN0_INT` | R14 → **BCM 23** | R15 → BCM 22 |
+| CAN1 | U3 | `SPI0_CE1` → `spi0.1` | `CAN1_INT` | R17 → **BCM 25** | R16 → BCM 24 |
+
+Waveshare's "PIN23"/"PIN25" are BCM numbers, not header positions. GPIO 26 is
+on neither INT net.
+
+A wrong pin fails **silently**: `mcp251x` requests its IRQ in `ndo_open`, not in
+probe, so `dmesg` still logs *MCP2515 successfully initialized* and the
+interface comes up - it just never receives. Worse, the overlays hard-code
+`IRQ_TYPE_LEVEL_LOW`, and an unconnected GPIO sits at the SoC pull-down, i.e.
+permanently asserted: that chip then runs a continuous interrupt storm whose
+handler drains its own controller, so the channel *looks* like it works while
+the correctly wired one starves.
+
+### Overlay order is load-bearing
+
+`mcp251x` names netdevs with `alloc_candev(..., "can%d")` and the index is
+handed out by `dev_alloc_name()` at `register_netdevice()` time - in **probe
+order**. Probe order follows the device-tree child order of `&spi0`, and the
+firmware merges each `dtoverlay=` with libfdt's `fdt_add_subnode()`, which
+inserts the new node *before* the target's existing children. So the overlay
+applied **last probes first** and takes `can0`.
+
+`render_boot()` therefore emits `mcp2515-can<N>` sorted by **descending N**,
+which is exactly what Waveshare's own `config.txt` does. Keep the variant JSON
+in natural order; the generator handles the ordering and writes a comment into
+`config-bgrpiimage.txt` saying so.
+
+Renaming afterwards is **not** a workaround: systemd has no temporary-name
+scheme for swapping two interface names (`set_link_name()` is a single
+`RTM_SETLINK` with no retry, and systemd#16665 is closed as not-a-bug), so a
+udev rule either fails mutually with `File exists` or wins a race and produces
+a different mapping per boot.
+
+### On-device diagnosis
+
+```bash
+sudo bgrpiimage-setup can status
+```
+
+Note that `grep -i mcp /proc/interrupts` is **not** a valid check: the IRQ is
+registered under `dev_name(&spi->dev)`, i.e. `spi0.0` / `spi0.1`, so that grep
+is empty on a perfectly healthy system. Use:
+
+```bash
+grep -E 'spi0\.[01]' /proc/interrupts
+```
+
+An idle counter that keeps climbing means the overlay points at a GPIO the HAT
+does not drive; a counter stuck at 0 while traffic flows means it points at the
+other chip.
+
+---
+
 ## 🚨 Cross-field validation
 
 Enforced in [`scripts/generate.py`](../scripts/generate.py) `_semantic_validate()`:
@@ -325,6 +460,9 @@ Enforced in [`scripts/generate.py`](../scripts/generate.py) `_semantic_validate(
 | `overclock.enabled` ⇒ `overclock.accept_warranty_void` | Overclocking flips the OTP warranty bit. |
 | `fan.enabled` ⇒ `fan.mode ∈ {gpio,pwm,emc2301}` | `gpio-fan`/`pwm-fan`/`rpi-fan` pick different overlays. |
 | `rtc.enabled` ⇒ `rtc.model` | Each chip has its own `i2c-rtc` overlay param. |
+| every `can.interfaces[].name` ⇒ a matching `mcp2515-<name>` overlay | The two blocks describe one piece of hardware and were rendered independently. |
+| each `mcp2515-*` overlay ⇒ its own `params.interrupt` | Both overlays default to GPIO 25; two chips on one line is a pinctrl conflict, not an error message. |
+| `bluetooth.enabled` ⇒ no manual `disable-bt` in `extra_lines` | A hand-written overlay would silently win over the block. |
 
 ---
 

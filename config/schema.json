@@ -139,7 +139,6 @@
         "enable_spi": { "type": "boolean" },
         "enable_i2s": { "type": "boolean" },
         "enable_uart": { "type": "boolean" },
-        "disable_bluetooth": { "type": "boolean" },
         "disable_wifi": { "type": "boolean" },
         "dtoverlays": {
           "type": "array",
@@ -157,6 +156,14 @@
           }
         },
         "extra_lines": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "bluetooth": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Onboard Bluetooth radio. Enabled installs bluez and enables bluetooth.service; disabled adds dtoverlay=disable-bt and masks the service. Note that hciuart.service no longer exists on trixie - the UART attach is handled by the device tree and bluez.",
+      "properties": {
+        "enabled": { "type": "boolean", "description": "Default true. false emits dtoverlay=disable-bt, which frees the PL011 UART for GPIO serial." }
       }
     },
     "camera": {

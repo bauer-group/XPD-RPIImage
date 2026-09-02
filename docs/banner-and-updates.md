@@ -11,7 +11,7 @@ Three distinct surfaces, three mechanisms:
 
 | Surface | File | Rendered by | Content |
 | --- | --- | --- | --- |
-| Console (HDMI / tty) **pre-login** | `/etc/issue` | getty (expands `\n`, `\4`, `\6`, `\s`, `\r`, `\m`) | Variant, version, live hostname, IPv4/IPv6 of `eth0` + `wlan0` |
+| Console (HDMI / tty) **pre-login** | `/etc/issue` | getty | Variant, version, legal note - **static only** |
 | SSH **pre-login** | `/etc/issue.net` + `sshd_config.d` `Banner` directive | sshd (reads raw, no escape expansion) | Variant, version, description, legal note |
 | All sessions **post-login** | `/etc/update-motd.d/10-bgrpiimage` (executable) | `pam_motd.so` on login | Fully dynamic — see below |
 
@@ -31,7 +31,7 @@ Three distinct surfaces, three mechanisms:
   can0    UP     500 kbit/s
   can1    UP     500 kbit/s
 ====================================================================
-  ssh: active   docker: active (7 running)   unattended-upgrades: active
+  ssh: active   docker: active (7 running)   bt: active   unattended-upgrades: active
   reboot pending (triggered by: linux-image-6.6.x libc6)    ← only if pending
 ====================================================================
 ```
@@ -41,13 +41,19 @@ Source: [`scripts/generate.py`](../scripts/generate.py) → `_MOTD_SCRIPT`.
 ### Why three different layers?
 
 - **Console**: getty is the only thing running before login on a physical
-  monitor. It expands `\n`, `\4`, `\6` itself — no need for our code to
-  re-render issue on boot.
+  monitor. The file is deliberately static: agetty redraws the whole issue
+  whenever anything calls `agetty --reload` (it watches `/run/agetty.reload`
+  via inotify), which happens on every network event. A long issue with
+  per-interface escapes therefore repaints half the console several times
+  during boot. Dynamic state belongs in the MOTD. The hostname is not lost -
+  agetty already prefixes the prompt with it ("bg-canbus login:").
 - **SSH pre-login**: sshd reads `/etc/issue.net` raw; no escape expansion.
   Anything dynamic would require a sshd `ForceCommand` trick, which we
   deliberately avoid.
 - **MOTD**: fires after auth, so it can run arbitrary commands (`ip`,
   `systemctl`, `docker ps`). Always fresh, always accurate.
+
+---
 
 ### Release metadata sourced by the MOTD
 

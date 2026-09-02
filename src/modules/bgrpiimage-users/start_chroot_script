@@ -22,3 +22,24 @@ fi
 
 bash "$GEN/create-users.sh"
 rm -f /tmp/_bgrpiimage_su_pam
+
+# --- stock raspios first-boot user wizard ---
+# pi-gen runs `rename-user -f -s` at image export
+# (RPi-Distro/pi-gen export-image/01-user-rename/01-run.sh). That enables
+# userconfig.service, DISABLES getty@tty1 and drops an sshd banner drop-in, so
+# the physical console gets a whiptail rename+password wizard on tty8 instead
+# of a login prompt. The unit is Type=oneshot (no start timeout) and ordered
+# Before=getty.target, so it blocks the boot until a human answers it.
+#
+# We provision our own accounts, so it must not run. Mask rather than
+# `apt-get purge userconf-pi`: purging would also take rename-user and
+# cancel-rename, which stay useful as manual tools.
+systemctl disable userconfig.service 2>/dev/null || true
+systemctl mask    userconfig.service 2>/dev/null || true
+# getty@tty1 is disabled (not masked) by rename-user - enable, do not unmask.
+systemctl enable  getty@tty1.service 2>/dev/null || true
+rm -f  /etc/ssh/sshd_config.d/rename_user.conf
+rm -f  /etc/xdg/autostart/piwiz.desktop
+rm -f  /etc/sudoers.d/010_pi-nopasswd
+rm -rf /var/lib/userconf-pi
+rm -f  /boot/firmware/userconf /boot/firmware/userconf.txt

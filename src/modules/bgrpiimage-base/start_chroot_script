@@ -95,4 +95,35 @@ if [[ -f "$GEN/motd-banner.sh" ]]; then
     install -D -m 755 "$GEN/motd-banner.sh"   /etc/update-motd.d/10-bgrpiimage
 fi
 
+# --- Bluetooth ---
+# Only bluetooth.service: hciuart.service no longer exists on trixie (the
+# pi-bluetooth package is gone and the UART attach is handled by the device
+# tree plus bluez), so enabling it would fail with "Unit does not exist".
+# The rfkill soft block that would otherwise keep the radio down is lifted by
+# bgrpiimage-network's /etc/modprobe.d/zz-bgrpiimage-rfkill.conf.
+if [[ -f "$GEN/bluetooth.env" ]]; then
+    # shellcheck disable=SC1090
+    source "$GEN/bluetooth.env"
+    if [[ "${BGRPIIMAGE_BLUETOOTH_ENABLED:-yes}" == "yes" ]]; then
+        systemctl unmask bluetooth.service 2>/dev/null || true
+        systemctl enable bluetooth.service
+    else
+        systemctl disable bluetooth.service 2>/dev/null || true
+        systemctl mask bluetooth.service 2>/dev/null || true
+    fi
+fi
+
+# --- cloud-init ---
+# Raspberry Pi OS trixie ships cloud-init installed and enabled. This image
+# provisions its own users, network and boot config, so cloud-init is pure boot
+# time plus risk: the trixie build runs first-boot-only modules on EVERY boot
+# (raspberrypi/trixie-feedback#26) and can rewrite hostname, users and network
+# behind systemd-networkd's back. Its units are Type=oneshot, i.e. unbounded.
+#
+# Deliberately NOT purging cloud-initramfs-growroot - rootfs expansion on this
+# image comes from the `resize` entry pi-gen puts on the kernel cmdline, and
+# removing the wrong package leaves the filesystem at its build size.
+apt-get purge -y cloud-init 2>/dev/null || true
+rm -rf /etc/cloud /var/lib/cloud
+
 apt-get clean

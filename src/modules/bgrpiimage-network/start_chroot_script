@@ -23,7 +23,8 @@ apt-get install -y --no-install-recommends \
     systemd-resolved \
     wpasupplicant \
     wireless-regdb \
-    iw
+    iw \
+    rfkill
 
 # systemd-networkd takes ownership of eth0/wlan0
 systemctl enable systemd-networkd
@@ -33,6 +34,11 @@ systemctl enable systemd-resolved
 systemctl disable NetworkManager 2>/dev/null || true
 systemctl disable dhcpcd 2>/dev/null || true
 systemctl mask NetworkManager 2>/dev/null || true
+# Masking NetworkManager.service alone leaves NetworkManager-wait-online.service
+# symlinked into network-online.target.wants. It fails fast today because its
+# Requires= is masked, but it is a second 60 s wait waiting to happen.
+systemctl disable NetworkManager-wait-online.service 2>/dev/null || true
+systemctl mask NetworkManager-wait-online.service NetworkManager-dispatcher.service 2>/dev/null || true
 
 mkdir -p /etc/systemd/network
 if [[ -d "$GEN/systemd-networkd" ]]; then
@@ -54,3 +60,19 @@ if [[ -d "$GEN/wpa_supplicant" ]]; then
         systemctl enable "wpa_supplicant@${iface}.service"
     done
 fi
+
+# --- rfkill: lift the vendor soft block ---
+# raspberrypi-sys-mods ships /etc/modprobe.d/rfkill_default.conf with
+# `options rfkill default_state=0`, which soft-blocks EVERY radio type at
+# module init. We ship a zz- prefixed override instead of editing that file:
+# it is a dpkg conffile, so editing it turns every upgrade into a conflict.
+if [[ -d "$GEN/modprobe.d" ]]; then
+    install -d /etc/modprobe.d
+    cp -a "$GEN/modprobe.d/." /etc/modprobe.d/
+fi
+
+# A saved WLAN block would be restored by systemd-rfkill on the next boot even
+# with default_state=1. NEVER widen this glob to '*': the *:bluetooth entries
+# are pi-gen's Bluetooth whitelist against default_state=0 and deleting them
+# soft-blocks Bluetooth on CM4 (platform-fe215040.serial:bluetooth).
+rm -f /var/lib/systemd/rfkill/*:wlan

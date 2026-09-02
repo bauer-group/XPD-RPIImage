@@ -104,11 +104,19 @@ as env vars; they override the `${VAR:-default}` fallback when set.
   ships no `~/.ssh` at all.
 - If the resolved password is a known default (`12345678`), the account is
   created with `chage -d 0` — it ships **expired**, and the first console or
-  SSH login forces a change before granting a session. The build also writes
-  `/etc/bgrpiimage-default-password-active` (read by the MOTD, and
-  self-clearing once the password is rotated) and prints a `SECURITY:` warning
-  at render time. Set `ADMIN_PASSWORD` to ship a real credential with no
-  forced rotation.
+  SSH login forces a change before granting a session. Raspberry Pi OS's own
+  first-boot wizard is disabled at build time, so the console really does show
+  a login prompt and this is the only thing that asks for a new password.
+- The build also writes `/etc/bgrpiimage-default-password-active`, recording
+  `<user>:<first 12 chars of the crypt hash>` **after** the accounts are
+  created. The MOTD compares the live hash against it, so the warning clears
+  itself the moment the credential is actually rotated. (It used to test
+  `sp_lstchg == 0`, which could never be true by the time `pam_motd` runs —
+  PAM's account phase has already forced the change.)
+- `generate.py` also prints a `SECURITY:` warning at render time. Set
+  `ADMIN_PASSWORD` to ship a real credential with no forced rotation.
+- `remove_users` accounts are deleted **before** the new ones are created, so
+  the first declared user takes UID 1000 rather than 1001.
 
 ---
 
@@ -151,14 +159,31 @@ Each interface entry:
 {
   "country": "DE",
   "networks": [
-    { "ssid": "IOT @ BAUER-GROUP", "psk": "${WIFI_PSK:-12345678}",
+    { "ssid": "MyNetwork", "psk": "${WIFI_PSK}",
       "priority": 10, "hidden": false }
   ]
 }
 ```
 
+> **WiFi ships disabled** (`network.wifi.mode: "disabled"`), and no image
+> carries a default PSK. With `mode: "disabled"` neither `20-wlan.network` nor
+> a `wpa_supplicant` config is generated, so `wlan0` stays **unmanaged** by
+> networkd and cannot hold up `systemd-networkd-wait-online`. Set `mode` to
+> `dhcp`/`static` and add `networks[]` to bake WiFi into an image, or enable it
+> per device with `sudo bgrpiimage-setup wifi enable <SSID>`.
+>
+> `country` is still used even when WiFi is off: it becomes the
+> `ieee80211_regdom` pinned in `/etc/modprobe.d/zz-bgrpiimage-rfkill.conf`.
+
 `systemd-networkd` replaces `NetworkManager` / `dhcpcd` at build time — one
-unit per interface. `wpa_supplicant@wlan0` is enabled automatically.
+unit per interface. `wpa_supplicant@<iface>` is enabled for each generated
+config.
+
+Every generated `.network` also gets a `[Link] RequiredForOnline=` — `no` for
+wireless, `degraded` (systemd's own default) for everything else. There is no
+config key for it: a wireless link that cannot associate must never gate
+`network-online.target`, because `docker.service` waits on that target and the
+Portainer first-boot install waits on Docker.
 
 ---
 
@@ -171,7 +196,8 @@ Everything written ends up between fenced markers in
 # >>> bgrpiimage AUTO-GENERATED >>>
 
 dtparam=spi=on
-dtoverlay=mcp2515-can0,oscillator=16000000,interrupt=25
+dtoverlay=mcp2515-can1,oscillator=16000000,interrupt=25
+dtoverlay=mcp2515-can0,oscillator=16000000,interrupt=23
 
 # <<< bgrpiimage AUTO-GENERATED <<<
 ```
@@ -182,7 +208,6 @@ dtoverlay=mcp2515-can0,oscillator=16000000,interrupt=25
 | `enable_spi: true` | `dtparam=spi=on` |
 | `enable_i2s: true` | `dtparam=i2s=on` |
 | `enable_uart: true` | `enable_uart=1` |
-| `disable_bluetooth` | `dtoverlay=disable-bt` |
 | `disable_wifi` | `dtoverlay=disable-wifi` |
 | `dtoverlays[]` | `dtoverlay=<name>[,k=v,k=v]` per entry |
 | `extra_lines[]` | Raw lines appended verbatim |
@@ -205,6 +230,12 @@ when a child variant extends a parent.
 
 Writes `/etc/systemd/network/40-can<N>.network`. `can-utils` is added to the
 package list automatically.
+
+The renderer cross-checks this block against `boot_config.dtoverlays`: every
+`can<N>` needs a matching `mcp2515-can<N>` overlay, and each overlay needs its
+own `params.interrupt`. Both defaults would otherwise land on GPIO 25. See
+[`hardware.md`](hardware.md#-can-waveshare-17912-dual-mcp2515) for why the
+emitted overlay order is reversed.
 
 ---
 

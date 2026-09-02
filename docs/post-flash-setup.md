@@ -3,16 +3,21 @@
 How to rotate credentials, change WiFi, switch between DHCP and static IP
 **on the device** after flashing — without rebuilding the image.
 
-> ⚠️ **Default credentials shipped by every image:**
+> ⚠️ **Default credential shipped by every image:** `admin` → `12345678`
 >
-> - `admin` user password → `12345678`
-> - WiFi PSK for `IOT @ BAUER-GROUP` → `12345678`
+> It ships **expired** (`chage -d 0`), so the first login — console or SSH —
+> forces a change before a session is granted. The MOTD keeps warning until
+> the account has actually been rotated, and stops on its own once it has.
 >
-> The admin password ships **expired**: your first login forces a change
-> before a session is granted, so it cannot be left as-is. The MOTD keeps
-> warning until every listed account has actually been rotated, and stops
-> on its own once they have. The WiFi PSK has no such guard — rotate it
-> yourself.
+> Images no longer carry a WiFi PSK: WiFi ships **disabled**. Enable it per
+> device with `bgrpiimage-setup wifi enable`, or bake a network into the
+> variant JSON.
+>
+> The console shows a normal login prompt. Raspberry Pi OS's own first-boot
+> wizard (`userconfig.service`, which asked for an optional rename and its own
+> password on `tty8`) is disabled at build time — it is `Type=oneshot` and
+> ordered `Before=getty.target`, so it blocked the boot until somebody
+> answered it.
 
 ---
 
@@ -50,26 +55,85 @@ about default credentials on the next login.
 
 ## 📡 WiFi
 
+WiFi is **off** in every shipped image: no `20-wlan.network`, no
+`wpa_supplicant` config, no stored PSK. `wlan0` therefore stays *unmanaged* by
+`systemd-networkd` and cannot hold up `systemd-networkd-wait-online`.
+
 ```bash
 # join a network (prompts for the PSK if omitted)
 
-sudo bgrpiimage-setup wifi "MyNetwork"
-sudo bgrpiimage-setup wifi "MyNetwork" "s3cret-pass"
-sudo bgrpiimage-setup wifi "MyNetwork" "s3cret-pass" AT    # override country
+sudo bgrpiimage-setup wifi enable "MyNetwork"
+sudo bgrpiimage-setup wifi enable "MyNetwork" "s3cret-pass"
+sudo bgrpiimage-setup wifi enable "MyNetwork" "s3cret-pass" AT   # override country
 
-# tear down WiFi entirely
+# radio, regulatory domain and link state
 
-sudo bgrpiimage-setup wifi --disable
+sudo bgrpiimage-setup wifi status
+
+# tear it down again (also removes the stored PSK)
+
+sudo bgrpiimage-setup wifi disable
 ```
 
-The PSK is hashed via `wpa_passphrase` before being written to
-`/etc/wpa_supplicant/wpa_supplicant-wlan0.conf`, then
-`wpa_supplicant@wlan0.service` is reloaded. Connection picks up within
-a few seconds:
+`wifi enable` does three things that a hand-written `wpa_supplicant.conf`
+cannot:
+
+1. **Lifts the rfkill soft block.** Raspberry Pi OS soft-blocks every radio at
+   `rfkill` module init via `/etc/modprobe.d/rfkill_default.conf`
+   (`options rfkill default_state=0`) until a regulatory domain is set. A
+   `country=` line inside `wpa_supplicant.conf` cannot help — `ip link set
+   wlan0 up` returns `-ERFKILL` before wpa_supplicant ever runs. The command
+   writes `/etc/modprobe.d/zz-bgrpiimage-rfkill.conf`, unblocks the running
+   system, and clears any saved WLAN block under `/var/lib/systemd/rfkill`
+   (which `systemd-rfkill` would otherwise restore on the next boot).
+2. **Hashes the PSK** with `wpa_passphrase`, so the plaintext never lands on
+   disk.
+3. **Writes `/etc/systemd/network/05-bgrpiimage-wlan0.network` with
+   `RequiredForOnline=no`.** Without that line, an AP that is out of range puts
+   a ~2 minute `wait-online` stall back into every boot, and Docker plus the
+   Portainer first-boot install queue behind `network-online.target`.
+
+Bluetooth is unaffected by all of this — it is enabled by the image itself.
 
 ```bash
 networkctl status wlan0
 ```
+
+---
+
+## 🚌 CAN
+
+```bash
+# chip select, IRQ line + count, bitrate and link state per interface
+
+sudo bgrpiimage-setup can status
+
+# change a bitrate persistently
+
+sudo bgrpiimage-setup can bitrate can0 250000
+```
+
+`can status` is the diagnosis to run first when a channel is silent. Expected
+mapping is `can0` → `spi0.0` and `can1` → `spi0.1`; anything else means the
+overlay order in `/boot/firmware/config.txt` is wrong.
+
+> ⚠️ **Coming from v0.5.0 or older:** that mapping is new. Probe order used
+> to give the name `can0` to the CS1 chip, i.e. to the terminal labelled CAN1.
+> Re-check application config, DBC bindings and cable labelling after
+> reflashing — see [`hardware.md`](hardware.md#-can-waveshare-17912-dual-mcp2515).
+
+Read the IRQ counters at idle:
+
+| Symptom | Meaning |
+| --- | --- |
+| Counter climbing with no bus traffic | The overlay points at a GPIO the HAT does not drive. The pin floats at the SoC pull-down and, because the overlay hard-codes `IRQ_TYPE_LEVEL_LOW`, reads as permanently asserted. |
+| Counter stuck at 0 while traffic flows | The overlay points at the *other* chip's INT line. |
+
+`can bitrate` writes `/etc/systemd/network/05-bgrpiimage-<iface>.network`,
+which sorts before the shipped `40-can<N>.network`. Delete it to go back to
+the image default. Bitrate and wiring live in the variant JSON — see
+[`hardware.md`](hardware.md) for the INT GPIO map and why the overlay order
+matters.
 
 ---
 
@@ -140,8 +204,11 @@ WiFi config path.
 
 - **Does not modify the underlying image.** Changes persist until you
   delete the drop-in file.
-- **Does not configure CAN, Docker, Portainer or unattended-upgrades** —
-  those are variant-level concerns, change them in the JSON and rebuild.
+- **Does not configure Docker, Portainer or unattended-upgrades** — those are
+  variant-level concerns, change them in the JSON and rebuild. For CAN it
+  covers diagnosis and bitrate only; wiring, INT GPIOs and interface count stay
+  build-time settings.
+- **Does not update the platform.** See below.
 - **Does not manage SSH keys.** `ssh-copy-id` from your workstation creates
   `~/.ssh` for you — the image ships no `authorized_keys` for `admin`. To bake
   keys in at build time instead, set `users[].ssh_authorized_keys` in the
@@ -152,13 +219,30 @@ WiFi config path.
 
 ---
 
+## 🔄 Updating an installed system
+
+Be clear about what can and cannot be updated in place:
+
+| What | How |
+| --- | --- |
+| Debian and Raspberry Pi packages, including security fixes | Automatic, via `unattended-upgrades` inside the configured maintenance window — see [`banner-and-updates.md`](banner-and-updates.md). |
+| Portainer | `docker compose -f /etc/bgrpiimage/portainer/docker-compose.yml pull && ... up -d` |
+| Everything bgRPIImage itself generates — `config.txt` overlays, systemd units, the MOTD, `bgrpiimage-setup`, network and CAN configuration | **Reflash.** There is no in-place update mechanism, and nothing on the device knows about releases. |
+
+So a device picks up OS security updates on its own, but a fix to the platform
+(a corrected CAN interrupt pin, say) needs a new image. Grab it from
+[Releases](https://github.com/bauer-group/XPD-RPIImage/releases) and reflash
+per [`flash.md`](flash.md).
+
+---
+
 ## 🚚 Build-time alternative (for fleets)
 
 If you manage many devices, bake credentials into the image instead:
 
 ```bash
 cp .env.example .env
-vim .env                         # set ADMIN_PASSWORD, WIFI_PSK
+vim .env                         # set ADMIN_PASSWORD (and WIFI_PSK if used)
 ./tools/run.sh build canbus-plattform --env-file ./.env
 ```
 

@@ -65,22 +65,18 @@
     },
     "wifi": {
       "interface": "wlan0",
-      "mode": "dhcp",
+      "mode": "disabled",
       "ipv6": true,
-      "country": "DE",
-      "networks": [
-        {
-          "ssid": "IOT @ BAUER-GROUP",
-          "psk": "${WIFI_PSK:-12345678}",
-          "priority": 10
-        }
-      ]
+      "country": "DE"
     }
   },
   "boot_config": {
     "enable_i2c": false,
     "enable_spi": false,
     "dtoverlays": []
+  },
+  "bluetooth": {
+    "enabled": true
   },
   "camera": {
     "enabled": false,
