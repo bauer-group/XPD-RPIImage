@@ -4,6 +4,12 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.6.0](https://github.com/bauer-group/XPD-RPIImage/compare/v0.5.0...v0.6.0) (2026-09-03)
+
+### 🚀 Features
+
+* **image:** reworked CAN mapping, radios and the first boot ([5794e7c](https://github.com/bauer-group/XPD-RPIImage/commit/5794e7cee20e9348b2cd8fd4a412cfdb7e7236f5)), references [raspberrypi/trixie-feedback#26](https://github.com/raspberrypi/trixie-feedback/issues/26)
+
 ## [0.5.0](https://github.com/bauer-group/XPD-RPIImage/compare/v0.4.4...v0.5.0) (2026-09-01)
 
 ### 🚀 Features
