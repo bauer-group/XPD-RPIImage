@@ -237,6 +237,15 @@ sudo bgrpiimage-setup ip eth0 static 10.0.0.5/24 10.0.0.1 1.1.1.1
 sudo bgrpiimage-setup status                         # overview
 ```
 
+> The helper ships **inside the image**, so its subcommands are those of the
+> version you flashed — `can` needs v0.6.0, `can txqueuelen` v0.6.1. An
+> `unknown command` here means the image predates the docs, not a broken
+> install; `sudo bgrpiimage-setup status` prints the version. See
+> [`post-flash-setup.md`](docs/post-flash-setup.md#-the-bgrpiimage-setup-helper).
+
+Interactive shells get the usual list shortcuts (`ll`, `la`, `l`) for every
+account including `root`, from `/etc/profile.d/50-bgrpiimage-shell.sh`.
+
 All IP changes land as `/etc/systemd/network/05-bgrpiimage-<iface>.network`
 — the `05-` prefix sorts before the shipped `10-eth.network` /
 `20-wlan.network`, and systemd-networkd applies only the first matching file,

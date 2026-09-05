@@ -23,15 +23,36 @@ How to rotate credentials, change WiFi, switch between DHCP and static IP
 
 ## 🛠️ The `bgrpiimage-setup` helper
 
-Every image installs `/usr/local/sbin/bgrpiimage-setup`. It covers the three
+Every image installs `/usr/local/sbin/bgrpiimage-setup`. It covers the
 post-flash changes that otherwise require hand-editing `wpa_supplicant.conf`,
-`systemd-networkd` drop-ins and `passwd`.
+`systemd-networkd` drop-ins, CAN `.link` files and `passwd`.
 
 Always run it as root (`sudo`).
 
 ```bash
 sudo bgrpiimage-setup help
 ```
+
+> ⚠️ **Subcommands belong to the image, not to this page.** These docs track
+> `main`; a flashed device is frozen at the version it was built from and
+> nothing on it ever updates the helper. If a command below is rejected with
+> `unknown command`, your image simply predates it — the docs are not wrong.
+>
+> Check what you are running — the first line of `status` is
+> `bgRPIImage <variant> v<version>`:
+>
+> ```bash
+> sudo bgrpiimage-setup status
+> ```
+>
+> | Subcommand | Requires image |
+> | --- | --- |
+> | `password`, `ip`, `status` | any |
+> | `wifi enable` / `wifi disable` / `wifi status` | v0.6.0 (v0.5.0 used bare `wifi SSID [PSK]` and `wifi --disable`) |
+> | `can status`, `can bitrate` | v0.6.0 |
+> | `can txqueuelen` | v0.6.1 |
+>
+> There is no in-place update path for the helper — **reflash** to move up.
 
 ---
 
@@ -205,6 +226,32 @@ sudo networkctl reload
 ```
 
 The image-default drop-in takes over again.
+
+---
+
+## ⌨️ Shell aliases
+
+Images ship the usual list shortcuts, for every account including `root`
+(Debian leaves these commented out in `/etc/skel/.bashrc` and Raspberry Pi OS
+does not uncomment them, so stock images have no `ll`):
+
+```bash
+ll      # ls -la
+la      # ls -A
+l       # ls -CF
+```
+
+They are defined in `/etc/profile.d/50-bgrpiimage-shell.sh` and reach every
+interactive shell: SSH, the serial console, `sudo -i`, `su -`, `sudo su -`,
+plus `sudo su`, `sudo -s` and a bare `bash` via a hook in `/etc/bash.bashrc`.
+
+> Aliases are an interactive convenience only. `sudo <cmd>` execs the binary
+> directly and bash never expands aliases in a non-interactive shell, so
+> `sudo ll` cannot work — use `sudo ls -la`. The same applies to scripts and
+> to `ssh host '<cmd>'`.
+
+Override or extend them per account in `~/.bashrc` or `~/.bash_aliases`; both
+are read after the system defaults and win.
 
 ---
 
