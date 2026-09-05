@@ -376,10 +376,11 @@ Two things that are easy to get wrong here:
 
 ```json
 "boot_config": {
+  "core_freq_min": 500,
   "enable_spi": true,
   "dtoverlays": [
-    { "name": "mcp2515-can0", "params": { "oscillator": "16000000", "interrupt": "23" } },
-    { "name": "mcp2515-can1", "params": { "oscillator": "16000000", "interrupt": "25" } }
+    { "name": "mcp2515-can0", "params": { "oscillator": "16000000", "interrupt": "23", "spimaxfrequency": "8000000" } },
+    { "name": "mcp2515-can1", "params": { "oscillator": "16000000", "interrupt": "25", "spimaxfrequency": "8000000" } }
   ]
 },
 "can": {
@@ -388,6 +389,43 @@ Two things that are easy to get wrong here:
   ]
 }
 ```
+
+### SPI clock (`spimaxfrequency` + `core_freq_min`)
+
+> **`spimaxfrequency=8000000` is a stability de-rate, not a speed-up.** Do not
+> "optimise" it upward — there is nothing above it to win.
+
+The overlays already default to `spi-max-frequency = <10000000>`, and 10 MHz is
+the MCP2515's absolute ceiling (datasheet DS20001801J, Table 13-6: `FCLK` max
+10 MHz). So the default is *already at spec maximum* and every value of
+`spimaxfrequency` can only ever reduce it. We set 8 MHz on purpose:
+
+| | Clock high/low time | Margin over the 45 ns minimum |
+| --- | --- | --- |
+| 10 MHz default | 50 ns / 50 ns | 5 ns (11%) |
+| 8 MHz (this image) | 64 ns / 64 ns | 19 ns (42%) |
+
+On the 17912 the `SCK`/`MOSI` net fans out to **two** MCP2515 loads with stubs,
+so the extra setup/hold margin is worth having. The cost is negligible: draining
+one RX frame takes ~20 µs at 8 MHz versus ~16 µs at 10 MHz, against a 222 µs
+wire time for an 8-byte frame at 500 kbit/s — about 3% of the budget. SPI clock
+is not the bottleneck on this bus; interrupt handling and `txqueuelen` are.
+
+Note you do not get exactly 8 MHz. `spi-bcm2835` quantises to an even divider of
+the core clock (`cdiv = DIV_ROUND_UP(clk_hz, spi_hz)`, rounded up to even), so on
+a CM4 at 500 MHz a request for 8 MHz yields `cdiv = 64` → **7.8125 MHz**.
+
+`core_freq_min=500` exists for a related and more dangerous reason. `spi-bcm2835`
+calls `clk_get_rate()` **once**, in probe, and registers no clock notifier — the
+divisor is computed against whatever the core was running at that instant and is
+never recalculated. A CM4 core scales 200–500 MHz, so probing at the low end and
+boosting afterwards multiplies the real `SCK` by up to 2.5×, which pushes the
+MCP2515 well past its 10 MHz ceiling. The symptom is not obvious: probe failures
+(`MCP251x didn't enter in conf mode after reset`, `Cannot initialize MCP%x. Wrong
+wiring?`) or intermittent frame corruption that reads as a wiring fault. Pinning
+the floor to the stock ceiling makes the divisor honest. It is not overclocking,
+which is why it sits in `boot_config` rather than the warranty-gated `overclock`
+block.
 
 ### Interrupt GPIOs
 

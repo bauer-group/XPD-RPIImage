@@ -135,7 +135,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "enable_i2c": { "type": "boolean" },
+        "core_freq_min": { "type": "integer", "minimum": 100, "maximum": 1200, "description": "Emits core_freq_min=<n> (MHz). Pins the VPU/core clock floor so the SPI divisor, which spi-bcm2835 computes once at probe and never revisits, cannot drift when the core scales. Set to the board stock core_freq (CM4/Pi4: 500) when driving SPI peripherals with a hard clock ceiling such as the MCP2515. Not overclocking." },        "enable_i2c": { "type": "boolean" },
         "enable_spi": { "type": "boolean" },
         "enable_i2s": { "type": "boolean" },
         "enable_uart": { "type": "boolean" },

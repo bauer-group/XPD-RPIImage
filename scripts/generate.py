@@ -783,6 +783,18 @@ def render_boot(cfg: dict[str, Any]) -> None:
 
     # --- boot_config (the original toggles) -----------------------------------
     core: list[str] = []
+    # Pin the VPU/core clock floor. spi-bcm2835 reads the core rate ONCE, in
+    # probe (clk_get_rate), and registers no clock notifier - so the SPI
+    # divisor is computed against whatever the core happened to be running
+    # at that moment and is never recomputed. A CM4 core scales 200-500 MHz,
+    # so probing at the low end and boosting later silently multiplies the
+    # real SCK by up to 2.5x - enough to shove an MCP2515 past its 10 MHz
+    # FCLK ceiling, which shows up as probe failures or frame corruption
+    # that look like a wiring fault. Setting the floor to the stock ceiling
+    # makes the divisor honest; it is NOT overclocking, which is why this
+    # does not live under the warranty-gated `overclock` block.
+    if boot.get("core_freq_min"):
+        core.append(f"core_freq_min={boot['core_freq_min']}")
     if boot.get("enable_i2c"):
         core.append("dtparam=i2c_arm=on")
     if boot.get("enable_spi"):
