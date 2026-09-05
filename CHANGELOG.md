@@ -4,6 +4,12 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.6.2](https://github.com/bauer-group/XPD-RPIImage/compare/v0.6.1...v0.6.2) (2026-09-05)
+
+### 🐛 Bug Fixes
+
+* **can:** pinned the MCP2515 SPI clock and the core clock floor ([86ab931](https://github.com/bauer-group/XPD-RPIImage/commit/86ab9314c22f7070437fb20b915b37d9044aa3d0))
+
 ## [0.6.1](https://github.com/bauer-group/XPD-RPIImage/compare/v0.6.0...v0.6.1) (2026-09-05)
 
 ### 🐛 Bug Fixes
