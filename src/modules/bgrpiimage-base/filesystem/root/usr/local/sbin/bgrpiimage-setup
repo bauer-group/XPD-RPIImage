@@ -201,7 +201,15 @@ can_status() {
         else
             gpio="-"; trig="-"; count="-"
         fi
-        rate=$(ip -details link show "$iface" 2>/dev/null | grep -oE 'bitrate [0-9]+' | awk '{print $2}')
+        # `|| true` is load bearing. grep exits 1 when the link carries no
+        # bittiming - a STOPPED interface, or one systemd-networkd never
+        # applied 40-<iface>.network to. `set -o pipefail` promotes that to
+        # the pipeline status, and because `rate` is declared by the `local`
+        # above this is a plain assignment, so the status is the assignment's
+        # and `set -e` kills the whole process. The result was that `can
+        # status` printed NOTHING and exited 1 in precisely the situation it
+        # exists to diagnose, which made the "(down)" branch below dead code.
+        rate=$(ip -details link show "$iface" 2>/dev/null | grep -oE 'bitrate [0-9]+' | awk '{print $2}' || true)
         if [[ -n "$rate" ]]; then rate="$((rate / 1000)) kbit/s"; else rate="(down)"; fi
         state=$(ip -br link show "$iface" 2>/dev/null | awk '{print $2}')
         qlen=$(cat "/sys/class/net/$iface/tx_queue_len" 2>/dev/null || echo "?")
@@ -388,5 +396,10 @@ case "${1:-}" in
     ip|network)       shift; cmd_ip "$@" ;;
     status|info)      shift; cmd_status "$@" ;;
     -h|--help|help|"") usage 0 ;;
-    *)                usage 2 ;;
+    # Name the offending word before dumping help. Printing bare usage made an
+    # unknown subcommand indistinguishable from `--help`, so a user on an older
+    # image reads "can" missing from the list as the docs being wrong rather
+    # than their image being older. $1 is safe under `set -u`: the empty case
+    # is caught by the arm above.
+    *)                echo "$PROG: unknown command '$1'" >&2; usage 2 ;;
 esac
