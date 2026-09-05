@@ -4,6 +4,12 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.6.3](https://github.com/bauer-group/XPD-RPIImage/compare/v0.6.2...v0.6.3) (2026-09-05)
+
+### 🐛 Bug Fixes
+
+* **boot:** replaced core_freq_min with core_freq_fixed ([5c79296](https://github.com/bauer-group/XPD-RPIImage/commit/5c79296782ae74fae3daba64c1328242f1d42c8a))
+
 ## [0.6.2](https://github.com/bauer-group/XPD-RPIImage/compare/v0.6.1...v0.6.2) (2026-09-05)
 
 ### 🐛 Bug Fixes
