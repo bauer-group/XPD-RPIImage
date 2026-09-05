@@ -376,7 +376,7 @@ Two things that are easy to get wrong here:
 
 ```json
 "boot_config": {
-  "core_freq_min": 500,
+  "core_freq_fixed": true,
   "enable_spi": true,
   "dtoverlays": [
     { "name": "mcp2515-can0", "params": { "oscillator": "16000000", "interrupt": "23", "spimaxfrequency": "8000000" } },
@@ -390,7 +390,7 @@ Two things that are easy to get wrong here:
 }
 ```
 
-### SPI clock (`spimaxfrequency` + `core_freq_min`)
+### SPI clock (`spimaxfrequency` + `core_freq_fixed`)
 
 > **`spimaxfrequency=8000000` is a stability de-rate, not a speed-up.** Do not
 > "optimise" it upward — there is nothing above it to win.
@@ -415,17 +415,37 @@ Note you do not get exactly 8 MHz. `spi-bcm2835` quantises to an even divider of
 the core clock (`cdiv = DIV_ROUND_UP(clk_hz, spi_hz)`, rounded up to even), so on
 a CM4 at 500 MHz a request for 8 MHz yields `cdiv = 64` → **7.8125 MHz**.
 
-`core_freq_min=500` exists for a related and more dangerous reason. `spi-bcm2835`
+`core_freq_fixed=1` exists for a related and more dangerous reason. `spi-bcm2835`
 calls `clk_get_rate()` **once**, in probe, and registers no clock notifier — the
 divisor is computed against whatever the core was running at that instant and is
 never recalculated. A CM4 core scales 200–500 MHz, so probing at the low end and
 boosting afterwards multiplies the real `SCK` by up to 2.5×, which pushes the
 MCP2515 well past its 10 MHz ceiling. The symptom is not obvious: probe failures
 (`MCP251x didn't enter in conf mode after reset`, `Cannot initialize MCP%x. Wrong
-wiring?`) or intermittent frame corruption that reads as a wiring fault. Pinning
-the floor to the stock ceiling makes the divisor honest. It is not overclocking,
-which is why it sits in `boot_config` rather than the warranty-gated `overclock`
-block.
+wiring?`) or intermittent frame corruption that reads as a wiring fault.
+
+It is deliberately **not** a per-model `core_freq_min`. The firmware docs say of
+`core_freq_fixed`: *"disables active scaling of the core clock frequency and
+ensures that any peripherals that use the core clock will maintain a consistent
+speed. The fixed clock speed is the higher/turbo frequency for the platform in
+use. Use this in preference to setting specific core_clock frequencies as it
+provides portability of config files between platforms."* One line is therefore
+correct on Pi 4, CM4, Pi 5 and CM5 alike, and no `[pi4]`/`[cm4]`/`[pi5]` sections
+are needed. A hardcoded `core_freq_min=500` would have been wrong per board: it
+pins a CM4 (stock `core_freq` 500) but is merely the *stock minimum* on a Pi 5,
+whose core runs at 910 — a silent no-op exactly where it was meant to help.
+It is not overclocking, which is why it sits in `boot_config` rather than the
+warranty-gated `overclock` block.
+
+### Why the block opens with `[all]`
+
+The generated fragment is appended to the **end** of `config.txt`, and conditional
+filters are sticky — everything after a `[cm4]`/`[pi5]` header applies only to that
+board until the next filter. Stock Raspberry Pi OS happens to end its `config.txt`
+with `[all]` (after `[cm4]`, `[cm5]` and `[pi5]` sections), but nothing guarantees
+that for a hand-edited or Imager-customised file. Opening our block with `[all]`
+resets any inherited scope, which is the reset the firmware docs prescribe for
+exactly this case.
 
 ### Interrupt GPIOs
 

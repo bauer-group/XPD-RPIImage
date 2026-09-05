@@ -779,22 +779,41 @@ def render_boot(cfg: dict[str, Any]) -> None:
     gen = clean_generated("bgrpiimage-boot")
     boot = cfg.get("boot_config") or {}
 
-    lines = ["# === BAUER GROUP auto-generated boot config ===", ""]
+    # This fragment is APPENDED to the end of config.txt, and conditional
+    # filters are sticky: everything after a [cm4]/[pi5]/... header applies
+    # only to that board until the next filter. Stock Raspberry Pi OS happens
+    # to end its config.txt with [all], but nothing guarantees that a
+    # hand-edited or Imager-customised file does. Opening with [all] resets
+    # any inherited scope so our settings really do apply to all hardware -
+    # the reset the firmware docs prescribe for exactly this case.
+    lines = [
+        "# === BAUER GROUP auto-generated boot config ===",
+        "",
+        "[all]",
+        "",
+    ]
 
     # --- boot_config (the original toggles) -----------------------------------
     core: list[str] = []
-    # Pin the VPU/core clock floor. spi-bcm2835 reads the core rate ONCE, in
+    # Stop the core clock scaling. spi-bcm2835 reads the core rate ONCE, in
     # probe (clk_get_rate), and registers no clock notifier - so the SPI
     # divisor is computed against whatever the core happened to be running
     # at that moment and is never recomputed. A CM4 core scales 200-500 MHz,
     # so probing at the low end and boosting later silently multiplies the
     # real SCK by up to 2.5x - enough to shove an MCP2515 past its 10 MHz
     # FCLK ceiling, which shows up as probe failures or frame corruption
-    # that look like a wiring fault. Setting the floor to the stock ceiling
-    # makes the divisor honest; it is NOT overclocking, which is why this
-    # does not live under the warranty-gated `overclock` block.
-    if boot.get("core_freq_min"):
-        core.append(f"core_freq_min={boot['core_freq_min']}")
+    # that look like a wiring fault.
+    # core_freq_fixed=1 rather than a per-model core_freq_min: upstream says
+    # "Use this in preference to setting specific core_clock frequencies as
+    # it provides portability of config files between platforms" - it pins
+    # to each board's own turbo frequency, so one line is correct on Pi 4,
+    # CM4, Pi 5 and CM5 alike and no [pi4]/[cm4]/[pi5] sections are needed.
+    # A fixed core_freq_min would have been wrong per board: 500 pins a CM4
+    # (core_freq 500) but is merely the stock minimum on a Pi 5, whose core
+    # runs at 910 - i.e. a silent no-op exactly where it was meant to help.
+    # Not overclocking, hence not under the warranty-gated `overclock` block.
+    if boot.get("core_freq_fixed"):
+        core.append("core_freq_fixed=1")
     if boot.get("enable_i2c"):
         core.append("dtparam=i2c_arm=on")
     if boot.get("enable_spi"):

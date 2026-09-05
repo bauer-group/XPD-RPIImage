@@ -195,7 +195,9 @@ Everything written ends up between fenced markers in
 ```text
 # >>> bgrpiimage AUTO-GENERATED >>>
 
-core_freq_min=500
+[all]
+
+core_freq_fixed=1
 dtparam=spi=on
 dtoverlay=mcp2515-can1,oscillator=16000000,interrupt=25,spimaxfrequency=8000000
 dtoverlay=mcp2515-can0,oscillator=16000000,interrupt=23,spimaxfrequency=8000000
@@ -205,7 +207,7 @@ dtoverlay=mcp2515-can0,oscillator=16000000,interrupt=23,spimaxfrequency=8000000
 
 | Key | Effect |
 | --- | --- |
-| `core_freq_min: 500` | `core_freq_min=500` — pins the VPU clock floor (see below) |
+| `core_freq_fixed: true` | `core_freq_fixed=1` — stops the core clock scaling (see below) |
 | `enable_i2c: true` | `dtparam=i2c_arm=on` |
 | `enable_spi: true` | `dtparam=spi=on` |
 | `enable_i2s: true` | `dtparam=i2s=on` |

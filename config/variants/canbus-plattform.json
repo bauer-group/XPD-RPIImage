@@ -17,7 +17,7 @@
   ],
   "packages": ["can-utils"],
   "boot_config": {
-    "core_freq_min": 500,
+    "core_freq_fixed": true,
     "enable_spi": true,
     "dtoverlays": [
       { "name": "mcp2515-can0", "params": { "oscillator": "16000000", "interrupt": "23", "spimaxfrequency": "8000000" } },

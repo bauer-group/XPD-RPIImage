@@ -135,7 +135,8 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "core_freq_min": { "type": "integer", "minimum": 100, "maximum": 1200, "description": "Emits core_freq_min=<n> (MHz). Pins the VPU/core clock floor so the SPI divisor, which spi-bcm2835 computes once at probe and never revisits, cannot drift when the core scales. Set to the board stock core_freq (CM4/Pi4: 500) when driving SPI peripherals with a hard clock ceiling such as the MCP2515. Not overclocking." },        "enable_i2c": { "type": "boolean" },
+        "core_freq_fixed": { "type": "boolean", "description": "Emits core_freq_fixed=1, which disables active scaling of the core clock and pins it to the board's own turbo frequency. Upstream recommends this over per-model core_freq/core_freq_min because it is portable across Pi 4, CM4, Pi 5 and CM5. Needed when driving SPI peripherals with a hard clock ceiling (e.g. MCP2515): spi-bcm2835 computes its divisor once at probe and never revisits it, so a scaling core silently changes the real SCK. Not overclocking." },
+        "enable_i2c": { "type": "boolean" },
         "enable_spi": { "type": "boolean" },
         "enable_i2s": { "type": "boolean" },
         "enable_uart": { "type": "boolean" },
