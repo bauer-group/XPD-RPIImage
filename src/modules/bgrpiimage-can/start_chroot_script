@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
-# bgrpiimage-can: install can-utils and drop systemd-networkd configs for can0/can1.
-# systemd-networkd handles both link setup (TransmitQueueLength) and the
-# [CAN] block (bitrate). Alternative would be /etc/network/interfaces.d -
-# but we already standardize on networkd, so we stay consistent.
+# bgrpiimage-can: install can-utils and drop the systemd configs for can0/can1.
+# Two file types land in the same directory on purpose, because systemd splits
+# ownership between two daemons: 40-canN.network carries the [CAN] bitrate and
+# is read by systemd-networkd, while 70-canN.link carries TransmitQueueLength
+# and is read by systemd-udevd. Both have a section called [Link] with
+# disjoint key sets, so a misplaced key is silently discarded rather than
+# rejected. Alternative would be /etc/network/interfaces.d - but we already
+# standardize on networkd, so we stay consistent.
 set -x
 set -e
 export LC_ALL=C

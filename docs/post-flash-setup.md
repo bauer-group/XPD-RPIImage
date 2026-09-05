@@ -111,6 +111,10 @@ sudo bgrpiimage-setup can status
 # change a bitrate persistently
 
 sudo bgrpiimage-setup can bitrate can0 250000
+
+# change the tx queue length persistently (applies immediately too)
+
+sudo bgrpiimage-setup can txqueuelen can0 1024
 ```
 
 `can status` is the diagnosis to run first when a channel is silent. Expected
@@ -130,10 +134,26 @@ Read the IRQ counters at idle:
 | Counter stuck at 0 while traffic flows | The overlay points at the *other* chip's INT line. |
 
 `can bitrate` writes `/etc/systemd/network/05-bgrpiimage-<iface>.network`,
-which sorts before the shipped `40-can<N>.network`. Delete it to go back to
-the image default. Bitrate and wiring live in the variant JSON — see
+which sorts before the shipped `40-can<N>.network`. `can txqueuelen` writes
+`/etc/systemd/network/05-bgrpiimage-<iface>.link`, which sorts before the
+shipped `70-can<N>.link`. Delete either to go back to the image default.
+Bitrate and wiring live in the variant JSON — see
 [`hardware.md`](hardware.md) for the INT GPIO map and why the overlay order
 matters.
+
+The two file *types* are not interchangeable. `systemd-networkd` reads
+`.network` and owns `[CAN] BitRate=`; `systemd-udevd` reads `.link` and owns
+`[Link] TransmitQueueLength=`. Both file types contain a section named
+`[Link]`, but with disjoint key sets, so a key placed in the wrong one is
+logged as unknown and discarded — the rest of the file still applies, which
+makes the mistake invisible. The `[Match]` keys differ as well: `.network`
+matches on `Name=`, `.link` has no `Name=` and spells it `OriginalName=`.
+
+udev only reads `.link` files on a netdev *add* event, so restarting
+`systemd-networkd` will never pick up a change — reboot, or use
+`can txqueuelen`, which writes the file *and* sets the live link. The `txq`
+column in `can status` shows what is actually in effect; a `txq` of `10` is
+the CAN core default, meaning no `.link` file reached udev.
 
 ---
 

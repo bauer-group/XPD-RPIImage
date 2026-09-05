@@ -231,6 +231,7 @@ sudo bgrpiimage-setup wifi status                    # rfkill / regdom / link
 sudo bgrpiimage-setup wifi disable                   # tear down, drop the PSK
 sudo bgrpiimage-setup can status                     # chip select, IRQ, bitrate
 sudo bgrpiimage-setup can bitrate can0 250000        # change a CAN bitrate
+sudo bgrpiimage-setup can txqueuelen can0 1024       # change a CAN tx queue
 sudo bgrpiimage-setup ip eth0 dhcp                   # back to DHCP
 sudo bgrpiimage-setup ip eth0 static 10.0.0.5/24 10.0.0.1 1.1.1.1
 sudo bgrpiimage-setup status                         # overview

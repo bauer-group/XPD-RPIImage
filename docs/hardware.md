@@ -384,7 +384,7 @@ Two things that are easy to get wrong here:
 },
 "can": {
   "interfaces": [
-    { "name": "can0", "bitrate": 500000, "auto_up": true, "txqueuelen": 65535 }
+    { "name": "can0", "bitrate": 500000, "auto_up": true, "txqueuelen": 1024 }
   ]
 }
 ```

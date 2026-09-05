@@ -222,14 +222,33 @@ when a child variant extends a parent.
 ```json
 {
   "interfaces": [
-    { "name": "can0", "bitrate": 500000, "auto_up": true, "txqueuelen": 65535 },
-    { "name": "can1", "bitrate": 500000, "auto_up": true, "txqueuelen": 65535 }
+    { "name": "can0", "bitrate": 500000, "auto_up": true, "txqueuelen": 1024 },
+    { "name": "can1", "bitrate": 500000, "auto_up": true, "txqueuelen": 1024 }
   ]
 }
 ```
 
-Writes `/etc/systemd/network/40-can<N>.network`. `can-utils` is added to the
-package list automatically.
+Writes two files per interface, because systemd splits ownership of them:
+
+| File | Read by | Carries |
+| ---- | ------- | ------- |
+| `/etc/systemd/network/40-can<N>.network` | `systemd-networkd` | `[CAN] BitRate=`, `SamplePoint=`, `RequiredForOnline=` |
+| `/etc/systemd/network/70-can<N>.link` | `systemd-udevd` | `[Link] TransmitQueueLength=` |
+
+`can-utils` is added to the package list automatically.
+
+> **`TransmitQueueLength` is not a `.network` key.** Both file types have a
+> section literally named `[Link]`, but with disjoint key sets — networkd parses
+> the key, logs it as unknown, discards it and carries on, so the interface
+> keeps the CAN core default of `10` while everything else in the file works.
+> The `[Match]` keys differ too: `.network` matches on `Name=`, `.link` has no
+> `Name=` and spells it `OriginalName=`.
+>
+> udev applies `.link` files only on a netdev *add* event, so `systemctl restart
+> systemd-networkd` will not pick up a change — reboot, or use
+> `bgrpiimage-setup can txqueuelen can0 <N>`, which writes the file *and* sets
+> the live link. Check the result with `bgrpiimage-setup can status` (the `txq`
+> column) or `ip -d link show can0`.
 
 The renderer cross-checks this block against `boot_config.dtoverlays`: every
 `can<N>` needs a matching `mcp2515-can<N>` overlay, and each overlay needs its

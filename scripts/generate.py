@@ -60,6 +60,14 @@ MODULES_DIR = SRC_DIR / "modules"
 VARIANTS_DIR = SRC_DIR / "variants"
 SCHEMA_PATH = CONFIG_DIR / "schema.json"
 
+# systemd leaves tx_queue_len to the driver when unset, and the CAN core
+# (can_setup() in drivers/net/can/dev/dev.c) picks 10 - far too small to
+# absorb a burst. 1024 is the house value across every CAN interface.
+# Sizing note: a classic 8-byte frame is ~111 bits on the wire, so at
+# 500 kbit/s a full queue is ~227 ms of backlog. The previous 65535 was
+# ~14.5 s - latency no control bus can use, and it never applied anyway.
+CAN_TXQUEUELEN_DEFAULT = 1024
+
 # -----------------------------------------------------------------------------
 # Env var resolution
 # -----------------------------------------------------------------------------
@@ -1115,7 +1123,7 @@ def render_can(cfg: dict[str, Any]) -> None:
     for iface in ifaces:
         name = iface["name"]
         bitrate = iface["bitrate"]
-        txqlen = iface.get("txqueuelen", 1000)
+        txqlen = iface.get("txqueuelen", CAN_TXQUEUELEN_DEFAULT)
         auto_up = iface.get("auto_up", True)
         content = [
             "[Match]",
@@ -1126,13 +1134,39 @@ def render_can(cfg: dict[str, Any]) -> None:
         ]
         if "sample_point" in iface:
             content.append(f"SamplePoint={iface['sample_point']}")
-        content.append("")
-        content.append("[Link]")
-        content.append(f"TransmitQueueLength={txqlen}")
-        if auto_up:
-            content.append("RequiredForOnline=no")
+        # [Link] is emitted unconditionally, and RequiredForOnline=no is never
+        # optional: it defaults to YES, and a CAN link never becomes routable,
+        # so omitting it lets systemd-networkd-wait-online hold
+        # network-online.target until it times out - with docker.service and
+        # the Portainer first-boot install queued behind that target.
+        # auto_up is not expressed by dropping the section either: under the
+        # default ActivationPolicy=up networkd brings the link up regardless.
+        # ActivationPolicy is the key that actually governs activation.
+        content += ["", "[Link]", "RequiredForOnline=no"]
+        if not auto_up:
+            content.append("ActivationPolicy=manual")
         content.append("")
         write(nwd / f"40-{name}.network", "\n".join(content))
+
+        # TransmitQueueLength is NOT a .network key - it belongs to a .link
+        # file, which systemd-udevd (not networkd) applies when the netdev
+        # appears. Both file types carry a section literally named [Link] with
+        # disjoint key sets, so networkd accepted the file, logged the key as
+        # unknown, dropped it, and left the CAN core default of 10 in place -
+        # silently, because [CAN] BitRate= in the same file kept working.
+        # The [Match] keys differ too: .network matches on Name=, .link has no
+        # Name= at all and spells it OriginalName=.
+        # 70- sorts ahead of /usr/lib/systemd/network/99-default.link, and the
+        # FIRST matching .link file wins - so this one decides.
+        link = [
+            "[Match]",
+            f"OriginalName={name}",
+            "",
+            "[Link]",
+            f"TransmitQueueLength={txqlen}",
+            "",
+        ]
+        write(nwd / f"70-{name}.link", "\n".join(link))
 
 
 def render_docker(cfg: dict[str, Any]) -> None:
