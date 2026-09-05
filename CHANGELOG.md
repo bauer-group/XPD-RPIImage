@@ -4,6 +4,12 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.6.1](https://github.com/bauer-group/XPD-RPIImage/compare/v0.6.0...v0.6.1) (2026-09-05)
+
+### 🐛 Bug Fixes
+
+* **can:** moved TransmitQueueLength into a .link file ([f9d075f](https://github.com/bauer-group/XPD-RPIImage/commit/f9d075fb836f0ef9b5f8afd12cc5dbee18030e97))
+
 ## [0.6.0](https://github.com/bauer-group/XPD-RPIImage/compare/v0.5.0...v0.6.0) (2026-09-03)
 
 ### 🚀 Features
