@@ -184,6 +184,32 @@ cmd_wifi() {
 # does, and can0 must resolve to spi0.0. The IRQ is registered under
 # dev_name(&spi->dev), i.e. "spi0.0", never "mcp251x", and only from ndo_open,
 # so a link that is down shows no IRQ line at all.
+# ARPHRD_CAN is 280 (include/uapi/linux/if_arp.h). Every `ip link show IFACE`
+# existence check below passes just as happily for eth0 as for can0, and each of
+# these commands then writes a 05- file that REPLACES the image default for that
+# interface rather than amending it. So `can bitrate eth0` swapped eth0's DHCP
+# config for an inert [CAN] section - taking the operator's own SSH session with
+# it and still exiting 0 - and `ip can0 dhcp` did the mirror image, dropping
+# BitRate= and RestartSec= and leaving the bus dead at the next reboot. Match on
+# the netdev type rather than the name: the name comes from probe order and an
+# operator can rename either one.
+is_can_iface() {
+    [[ "$(cat "/sys/class/net/${1}/type" 2>/dev/null)" == "280" ]]
+}
+
+# wlan0 must carry RequiredForOnline=no or a radio that cannot associate holds
+# network-online.target until it times out, with docker.service and the
+# Portainer first-boot install queued behind it (see wifi_enable). Wired links
+# keep the shipped 10-eth.network value of "degraded" instead, so a cable that
+# is up but has no lease still satisfies the target.
+required_for_online() {
+    if [[ -e "/sys/class/net/${1}/phy80211" || -d "/sys/class/net/${1}/wireless" ]]; then
+        echo no
+    else
+        echo degraded
+    fi
+}
+
 can_status() {
     local iface cs irq_line gpio trig count rate state qlen found=0
     for iface in $(ls /sys/class/net 2>/dev/null | grep '^can[0-9]' | sort); do
@@ -241,6 +267,7 @@ can_bitrate() {
     [[ -n "$iface" && -n "$bps" ]] || die "usage: $PROG can bitrate IFACE BPS"
     [[ "$bps" =~ ^[0-9]+$ ]] || die "bitrate must be bit/s as a number, e.g. 250000"
     ip link show "$iface" >/dev/null 2>&1 || die "interface '$iface' does not exist"
+    is_can_iface "$iface" || die "'$iface' is not a CAN interface - this would replace its network config (try: $PROG can status)"
 
     # Queue length is deliberately NOT written here. It is a .link key owned
     # by udev (see can_txqueuelen); this used to read the live tx_queue_len
@@ -293,6 +320,7 @@ can_txqueuelen() {
     [[ "$len" =~ ^[0-9]+$ && ${#len} -le 10 ]] && (( len <= 4294967294 )) \
         || die "txqueuelen must be an integer in 0-4294967294"
     ip link show "$iface" >/dev/null 2>&1 || die "interface '$iface' does not exist"
+    is_can_iface "$iface" || die "'$iface' is not a CAN interface - this would shadow its .link defaults (try: $PROG can status)"
 
     local dropin="/etc/systemd/network/05-bgrpiimage-${iface}.link"
     info "Writing $dropin"
@@ -329,12 +357,20 @@ cmd_ip() {
     local iface="${1:-}" mode="${2:-}"
     [[ -n "$iface" && -n "$mode" ]] || die "usage: $PROG ip IFACE {dhcp|static CIDR [GW] [DNS]}"
     ip link show "$iface" >/dev/null 2>&1 || die "interface '$iface' does not exist"
+    ! is_can_iface "$iface" || die "'$iface' is a CAN interface and carries no IP - use '$PROG can bitrate' (this would drop its BitRate and RestartSec)"
 
     # Must sort BEFORE the image defaults (10-eth.network, 20-wlan.network):
     # systemd-networkd applies only the FIRST .network file whose [Match]
     # matches, in lexicographic order. A 50- prefix loses to 10-/20- and is
     # silently ignored for exactly the interfaces this command targets.
     local dropin="/etc/systemd/network/05-bgrpiimage-${iface}.network"
+    # This file REPLACES whatever matched before it, so it has to carry every
+    # key that file carried. wifi_enable writes the same path for wlan0, and
+    # omitting [Link] here silently dropped its RequiredForOnline=no - after
+    # which a radio that could not associate held network-online.target until
+    # timeout on every boot, with docker and Portainer queued behind it.
+    local rfo
+    rfo="$(required_for_online "$iface")"
     case "$mode" in
         dhcp)
             info "Configuring $iface for DHCP"
@@ -347,6 +383,9 @@ Name=$iface
 DHCP=ipv4
 IPv6AcceptRA=yes
 LinkLocalAddressing=ipv6
+
+[Link]
+RequiredForOnline=$rfo
 EOF
             ;;
         static)
@@ -364,6 +403,9 @@ EOF
                 [[ -n "$gw" ]] && echo "Gateway=$gw"
                 echo "DNS=$dns"
                 echo "IPv6AcceptRA=yes"
+                echo
+                echo "[Link]"
+                echo "RequiredForOnline=$rfo"
             } > "$dropin"
             ;;
         *)
