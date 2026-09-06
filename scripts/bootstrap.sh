@@ -29,6 +29,25 @@ is_sha() { [[ "$1" =~ ^[0-9a-fA-F]{40}$ ]]; }
 # otherwise an uppercase pin would fail the drift check against itself.
 REF_LC="$(printf '%s' "$CUSTOMPIOS_REF" | tr '[:upper:]' '[:lower:]')"
 
+# CustomPiOS ships no .gitattributes, so a host with a global
+# core.autocrlf=true (every default Git for Windows install) checks out
+# src/common.sh and src/custompios with CRLF. Both are sourced inside the
+# build container, where a trailing  is not whitespace - `unpack` and the
+# module scripts then fail in ways that look like anything but line endings.
+# Pin the setting on this repo instead of trusting the host's global config.
+if [[ -d "$CUSTOMPIOS_DIR/.git" ]]; then
+    git -C "$CUSTOMPIOS_DIR" config core.autocrlf false
+    git -C "$CUSTOMPIOS_DIR" config core.eol lf
+    # A tree checked out before that setting existed is still CRLF on disk.
+    # With autocrlf off those files no longer match their blobs, so a forced
+    # checkout restores them. Without this the cache-hit path below would
+    # short-circuit on a corrupted tree forever - it never re-checks out.
+    if [[ -n "$(git -C "$CUSTOMPIOS_DIR" status --porcelain 2>/dev/null)" ]]; then
+        echo "[bootstrap] normalising CustomPiOS line endings"
+        git -C "$CUSTOMPIOS_DIR" checkout -q -f -- .
+    fi
+fi
+
 # Already at the requested revision? Nothing to do. This is the cache-hit
 # path and must stay cheap - no network round-trip.
 if [[ -d "$CUSTOMPIOS_DIR/.git" ]] \
@@ -42,6 +61,9 @@ if [[ ! -d "$CUSTOMPIOS_DIR/.git" ]]; then
     echo "[bootstrap] initialising CustomPiOS from $CUSTOMPIOS_URL"
     rm -rf "$CUSTOMPIOS_DIR"
     git init -q "$CUSTOMPIOS_DIR"
+    # Before the first fetch, so the initial checkout is LF on every host.
+    git -C "$CUSTOMPIOS_DIR" config core.autocrlf false
+    git -C "$CUSTOMPIOS_DIR" config core.eol lf
     git -C "$CUSTOMPIOS_DIR" remote add origin "$CUSTOMPIOS_URL"
 fi
 
