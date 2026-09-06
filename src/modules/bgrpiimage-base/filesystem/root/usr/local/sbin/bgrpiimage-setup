@@ -57,8 +57,17 @@ usage() {
 
 # --------------------------------------------------------------------------
 cmd_password() {
-    local user="${1:-admin}"
-    id -u "$user" >/dev/null 2>&1 || die "user '$user' does not exist"
+    local user="${1:-admin}" entry
+    # `id -u` resolves a UID just as happily as a name, so `password 1000` sailed
+    # past this guard and then hit shadow's own "Unknown user name '1000'" -
+    # passwd takes a NAME only. Compare against the login name in the passwd
+    # entry instead, which rejects a UID here and can name the account the
+    # operator actually meant. A genuinely numeric login name still passes,
+    # because getent resolves a name before a UID and the field then matches.
+    entry="$(getent passwd "$user" || true)"
+    [[ -n "$entry" ]] || die "user '$user' does not exist"
+    [[ "${entry%%:*}" == "$user" ]] \
+        || die "'$user' is a UID, not a name - use: $PROG password ${entry%%:*}"
     info "Changing password for '$user'"
     passwd "$user"
     # Clear only THIS user's marker line. Removing the whole file silenced the
