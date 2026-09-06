@@ -4,6 +4,12 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.7.1](https://github.com/bauer-group/XPD-RPIImage/compare/v0.7.0...v0.7.1) (2026-09-06)
+
+### 🐛 Bug Fixes
+
+* **build:** pinned LF for the CustomPiOS checkout ([3977a97](https://github.com/bauer-group/XPD-RPIImage/commit/3977a97dc900397d0ffb89697ced710c28fbc414))
+
 ## [0.7.0](https://github.com/bauer-group/XPD-RPIImage/compare/v0.6.3...v0.7.0) (2026-09-05)
 
 ### 🚀 Features
