@@ -933,14 +933,20 @@ def render_boot(cfg: dict[str, Any]) -> None:
     # --- RTC (dt overlay; userspace side is bgrpiimage-hardware) --------------
     rtc = cfg.get("rtc") or {}
     if rtc.get("enabled"):
-        params: dict[str, Any] = {}
         model = rtc.get("model")
         if model:
-            params[model] = ""
-        # dtoverlay=i2c-rtc,<model> needs the bare param, not key=value.
-        # Re-render manually so we don't emit `ds3231=` with a trailing eq.
-        if model:
-            _emit_boot_section(lines, "rtc", [f"dtoverlay=i2c-rtc,{model}"])
+            # dtoverlay=i2c-rtc,<model> needs the bare param, not key=value -
+            # rendered by hand so we do not emit `ds3231=` with a trailing eq.
+            overlay = f"dtoverlay=i2c-rtc,{model}"
+            # Bus selection comes from i2c-buses.dtsi, which i2c-rtc includes:
+            # it exposes i2c0..i2c6 as bare flags, with i2c1 the default target.
+            # So only a non-default bus needs a flag. rtc.i2c_bus used to be
+            # schema-validated and shown in the docs while never reaching
+            # config.txt - a non-default bus was silently ignored.
+            bus = rtc.get("i2c_bus", 1)
+            if bus != 1:
+                overlay += f",i2c{bus}"
+            _emit_boot_section(lines, "rtc", [overlay])
 
     # --- Fan (dtoverlay for gpio-fan / rpi-fan / emc2301) ---------------------
     fan = cfg.get("fan") or {}
@@ -1039,8 +1045,13 @@ def render_hardware(cfg: dict[str, Any]) -> None:
     env_chunks.append(shell_var("BGRPIIMAGE_RTC_ENABLED", "yes" if rtc.get("enabled") else "no"))
     if rtc.get("enabled"):
         packages.add("util-linux")  # hwclock lives in util-linux on Debian
-        if rtc.get("fake_hwclock"):
-            packages.add("fake-hwclock")
+    # NOT nested under rtc.enabled. fake-hwclock is the fallback for boards
+    # with NO RTC HAT - it persists time across reboots by stamping a file on
+    # shutdown. Gating it on rtc.enabled meant the documented "works even
+    # without a HAT" case (enabled=false, fake_hwclock=true) installed nothing
+    # at all, which is the one configuration it exists for.
+    if rtc.get("fake_hwclock"):
+        packages.add("fake-hwclock")
     env_chunks.append(shell_var(
         "BGRPIIMAGE_RTC_FAKE_HWCLOCK", "yes" if rtc.get("fake_hwclock") else "no"
     ))
