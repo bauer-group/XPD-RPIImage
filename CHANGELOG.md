@@ -4,6 +4,12 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.7.3](https://github.com/bauer-group/XPD-RPIImage/compare/v0.7.2...v0.7.3) (2026-09-06)
+
+### 🐛 Bug Fixes
+
+* **can:** enabled bus-off auto-recovery via RestartSec ([e03c991](https://github.com/bauer-group/XPD-RPIImage/commit/e03c991a828af2959509b1430b23338610064a7e))
+
 ## [0.7.2](https://github.com/bauer-group/XPD-RPIImage/compare/v0.7.1...v0.7.2) (2026-09-06)
 
 ### 🐛 Bug Fixes
