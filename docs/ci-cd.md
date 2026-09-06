@@ -248,7 +248,7 @@ visible in the Actions UI sidebar:
 
 | 🔒 SSH | ✅ | password auth, no root |
 | 🐳 Docker | ✅ | CE + compose plugin, IPv6 NAT |
-| 🚌 CAN | ✅ | can0 @ 500 kbit/s (txq=1024), can1 @ 500 kbit/s (txq=1024) |
+| 🚌 CAN | ✅ | can0 @ 500 kbit/s (txq=1024, restart=100ms), can1 @ 500 kbit/s (txq=1024, restart=100ms) |
 | 🔄 Unattended upgrades | ✅ | window 02:00-04:00, reboot 03:00-05:00 |
 
 ## 🧩 Contents

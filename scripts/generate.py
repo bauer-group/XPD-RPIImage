@@ -68,6 +68,23 @@ SCHEMA_PATH = CONFIG_DIR / "schema.json"
 # ~14.5 s - latency no control bus can use, and it never applied anyway.
 CAN_TXQUEUELEN_DEFAULT = 1024
 
+# A bus-off controller does not come back on its own. can_bus_off() in
+# drivers/net/can/dev/dev.c only queues the recovery work "if
+# (priv->restart_ms)", and both the kernel and systemd default that to 0 -
+# so the shipped image had no auto-recovery at all and `ip -details link
+# show` read "can state ERROR-ACTIVE restart-ms 0". On the MCP2515 the miss
+# is worse than a slow recovery: mcp251x.c takes the restart_ms == 0 branch
+# to set force_quit and call mcp251x_hw_sleep(), i.e. it puts the chip to
+# SLEEP and kills its own ISR loop, defeating the controller's own hardware
+# bus-off recovery. Nothing short of an ip link down/up revives it - which
+# is exactly why the field report needed an on-site engineer.
+# 100 ms is the kernel documentation's own example value. On mcp251x the
+# number is effectively a boolean (any non-zero value just declines the
+# sleep path and lets the chip self-recover in ~2.8 ms of bus time at
+# 500 kbit/s); it only becomes load bearing if the fleet moves to a
+# controller that uses the generic restart timer.
+CAN_RESTART_MS_DEFAULT = 100
+
 # -----------------------------------------------------------------------------
 # Env var resolution
 # -----------------------------------------------------------------------------
@@ -1167,6 +1184,7 @@ def render_can(cfg: dict[str, Any]) -> None:
         bitrate = iface["bitrate"]
         txqlen = iface.get("txqueuelen", CAN_TXQUEUELEN_DEFAULT)
         auto_up = iface.get("auto_up", True)
+        restart_ms = iface.get("restart_ms", CAN_RESTART_MS_DEFAULT)
         content = [
             "[Match]",
             f"Name={name}",
@@ -1176,6 +1194,17 @@ def render_can(cfg: dict[str, Any]) -> None:
         ]
         if "sample_point" in iface:
             content.append(f"SamplePoint={iface['sample_point']}")
+        # The "ms" suffix is load bearing. networkd parses RestartSec= with
+        # parse_sec(), whose default unit is SECONDS - a bare "100" would mean
+        # 100 s, i.e. restart-ms 100000, and the bus would stay dead for a
+        # minute and a half per recovery. Nothing warns: the file parses fine.
+        # 0 is omitted rather than emitted, because RestartSec=0 makes networkd
+        # skip the netlink attribute entirely (leaving whatever the driver
+        # already has) instead of meaning "off" - so writing it would be a lie.
+        # The explicit off switch in systemd is "infinity", which we do not
+        # expose: dropping the key achieves the same on a freshly booted link.
+        if restart_ms:
+            content.append(f"RestartSec={restart_ms}ms")
         # [Link] is emitted unconditionally, and RequiredForOnline=no is never
         # optional: it defaults to YES, and a CAN link never becomes routable,
         # so omitting it lets systemd-networkd-wait-online hold

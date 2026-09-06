@@ -138,7 +138,7 @@ gh workflow run build.yml --ref vX.Y.Z
 | Variant | Description | Hostname | Extras |
 | --- | --- | --- | --- |
 | [`base`](config/variants/base.json) | Generic Raspberry Pi image, Docker-ready, no application-specific hardware. | `bg-rpi` | — |
-| [`canbus-plattform`](config/variants/canbus-plattform.json) | Base + Waveshare 17912 dual isolated CAN HAT (MCP2515 on SPI). | `bg-canbus` | `can0` + `can1` at 500 kbit/s, `can-utils`, dialout/gpio/i2c/spi groups |
+| [`canbus-plattform`](config/variants/canbus-plattform.json) | Base + Waveshare 17912 dual isolated CAN HAT (MCP2515 on SPI). | `bg-canbus` | `can0` + `can1` at 500 kbit/s with 100 ms bus-off auto-recovery, `can-utils`, dialout/gpio/i2c/spi groups |
 
 Adding a new variant is a 10-line JSON file — see
 [`docs/variants.md`](docs/variants.md).

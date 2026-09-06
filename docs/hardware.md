@@ -391,7 +391,7 @@ Two things that are easy to get wrong here:
 },
 "can": {
   "interfaces": [
-    { "name": "can0", "bitrate": 500000, "auto_up": true, "txqueuelen": 1024 }
+    { "name": "can0", "bitrate": 500000, "auto_up": true, "txqueuelen": 1024, "restart_ms": 100 }
   ]
 }
 ```
@@ -512,6 +512,41 @@ grep -E 'spi0\.[01]' /proc/interrupts
 An idle counter that keeps climbing means the overlay points at a GPIO the HAT
 does not drive; a counter stuck at 0 while traffic flows means it points at the
 other chip.
+
+#### Bus-off recovery
+
+`can status` prints the controller state and its recovery setting on one line:
+
+```text
+can state ERROR-ACTIVE restart-ms 100
+```
+
+`ERROR-ACTIVE` is the **healthy** state (TX/RX error counters below 96).
+The number that matters for availability is `restart-ms`.
+
+| `restart-ms` | Behaviour after a bus-off |
+| --- | --- |
+| `0` | **Terminal.** `can_bus_off()` in `drivers/net/can/dev/dev.c` only queues its recovery work `if (priv->restart_ms)`. Worse on this HAT: `mcp251x.c` takes the `restart_ms == 0` branch to set `force_quit` and call `mcp251x_hw_sleep()`, putting the MCP2515 into hardware **sleep** and killing its own ISR loop — which also defeats the controller's built-in bus-off recovery. Nothing but an `ip link` down/up revives it, i.e. an on-site visit. |
+| `100` | Shipped default (v0.7.3+). The driver skips the sleep path and the MCP2515 self-recovers in hardware after 128 × 11 bit times — about **2.8 ms** at 500 kbit/s. |
+
+On the MCP2515 the *value* is effectively a boolean: any non-zero setting
+declines the sleep path, and the generic `restart_work` timer is never armed,
+so 100 ms is not a recovery latency — the real figure is the ~2.8 ms above.
+The number only becomes load bearing on a controller that uses the generic
+timer. 100 is the value used in the kernel's own documentation.
+
+Two consequences worth knowing before writing acceptance tests:
+
+- With `restart-ms` non-zero the driver never calls `can_bus_off()`, so there
+  is **no `bus-off` journal line and the `bus-off` counter stays 0**. Assert on
+  `ip -details link show can0 | grep 'restart-ms 100'`, not on symptoms.
+- `ip link set can0 type can restart` starts returning `-EINVAL` once
+  `restart-ms` is set (`can_restart_now()` refuses when `priv->restart_ms` is
+  non-zero). That is expected — automatic recovery replaces the manual poke.
+
+To reproduce a bus-off on the bench: let a single node transmit with no peer to
+ACK it. The TX error counter passes 255 within milliseconds at 500 kbit/s, and
+the contrast between `restart-ms 0` and `restart-ms 100` is unambiguous.
 
 ---
 

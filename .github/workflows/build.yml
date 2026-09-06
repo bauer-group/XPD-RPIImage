@@ -378,7 +378,7 @@ jobs:
           overlay_count=$(jq -r '.boot_config.dtoverlays // [] | length' "$RESOLVED")
           can_ifaces=$(jq -r '.can.interfaces // [] | length'       "$RESOLVED")
           can_detail=$(jq -r '[.can.interfaces // []
-                              | .[] | "\(.name) @ \(.bitrate/1000) kbit/s (txq=\(.txqueuelen // "-"))"] | join(", ")' "$RESOLVED")
+                              | .[] | "\(.name) @ \(.bitrate/1000) kbit/s (txq=\(.txqueuelen // "-"), restart=\(.restart_ms // "-")ms)"] | join(", ")' "$RESOLVED")
 
           ssh_enabled=$(jq -r '.ssh.enabled // true'                "$RESOLVED")
           docker_enabled=$(jq -r '.docker.enabled // false'         "$RESOLVED")

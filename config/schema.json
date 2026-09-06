@@ -351,7 +351,9 @@
               "sample_point": { "type": "number" },
               "auto_up": { "type": "boolean" },
               "txqueuelen": { "type": "integer", "minimum": 1, "maximum": 4294967294,
-                              "description": "Rendered into 70-<name>.link as TransmitQueueLength (a .link key applied by systemd-udevd, NOT a .network key). Unset leaves the CAN core default of 10." }
+                              "description": "Rendered into 70-<name>.link as TransmitQueueLength (a .link key applied by systemd-udevd, NOT a .network key). Unset leaves the CAN core default of 10." },
+              "restart_ms": { "type": "integer", "minimum": 0, "maximum": 4294967295,
+                              "description": "Milliseconds after a bus-off before the controller rejoins the bus, rendered into 40-<name>.network as [CAN] RestartSec=<n>ms. Unset takes the house default of 100. 0 means no automatic recovery - the kernel and systemd default, which leaves a bus-off link dead until someone cycles it by hand." }
             }
           }
         }

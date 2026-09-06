@@ -51,6 +51,7 @@ sudo bgrpiimage-setup help
 > | `wifi enable` / `wifi disable` / `wifi status` | v0.6.0 (v0.5.0 used bare `wifi SSID [PSK]` and `wifi --disable`) |
 > | `can status`, `can bitrate` | v0.6.0 |
 > | `can txqueuelen` | v0.6.1 |
+> | `can status` showing `restart-ms` guidance | v0.7.3 |
 >
 > There is no in-place update path for the helper — **reflash** to move up.
 
@@ -157,7 +158,11 @@ Read the IRQ counters at idle:
 | Counter stuck at 0 while traffic flows | The overlay points at the *other* chip's INT line. |
 
 `can bitrate` writes `/etc/systemd/network/05-bgrpiimage-<iface>.network`,
-which sorts before the shipped `40-can<N>.network`. `can txqueuelen` writes
+which sorts before — and therefore **replaces** — the shipped
+`40-can<N>.network`. systemd applies the first matching `.network` in
+alphanumeric order and ignores every later one; two `.network` files are never
+merged. An override written by a helper older than v0.7.3 carries no
+`RestartSec=`, so it silently turns bus-off recovery back off. `can txqueuelen` writes
 `/etc/systemd/network/05-bgrpiimage-<iface>.link`, which sorts before the
 shipped `70-can<N>.link`. Delete either to go back to the image default.
 Bitrate and wiring live in the variant JSON — see
@@ -177,6 +182,64 @@ udev only reads `.link` files on a netdev *add* event, so restarting
 `can txqueuelen`, which writes the file *and* sets the live link. The `txq`
 column in `can status` shows what is actually in effect; a `txq` of `10` is
 the CAN core default, meaning no `.link` file reached udev.
+
+### Bus-off auto-recovery
+
+`can status` prints the controller state and its recovery setting together:
+
+```text
+can state ERROR-ACTIVE restart-ms 100
+```
+
+`ERROR-ACTIVE` is healthy. **`restart-ms 0` is not** — it means a controller
+that goes bus-off stays there until someone cycles the link by hand, and on the
+MCP2515 the driver additionally puts the chip to sleep. Images from **v0.7.3**
+ship `restart-ms 100`; see
+[`hardware.md`](hardware.md#bus-off-recovery) for the mechanism.
+
+> ⚠️ **Units flashed before v0.7.3 have `restart-ms 0`.** There is no in-place
+> update path for the shipped `.network` files, so a new image reaches them
+> only by reflashing. Remediate over SSH instead — no reflash, no reboot.
+
+**1 — Apply now** (bounces the bus briefly; `restart-ms` cannot be changed
+while the link is up, so the link must go down first):
+
+```bash
+for i in can0 can1; do
+  sudo ip link set "$i" down
+  sudo ip link set "$i" type can bitrate 500000 restart-ms 100
+  sudo ip link set "$i" up
+done
+```
+
+**2 — Make it survive a reboot.** Write a drop-in against whichever `.network`
+file actually applied — a `40-`/`05-` guess is what breaks here, and unlike a
+second `.network` file, a `.network.d/*.conf` drop-in **is** merged onto the
+file it belongs to:
+
+```bash
+for i in can0 can1; do
+  f=$(networkctl status "$i" | awk -F': *' '/Network File:/{print $2}')
+  sudo mkdir -p "$f.d"
+  sudo tee "$f.d/10-bus-off-recovery.conf" >/dev/null <<'EOF'
+[CAN]
+RestartSec=100ms
+EOF
+done
+sudo networkctl reload
+```
+
+**3 — Verify** (assert on the setting, not on symptoms — once `restart-ms` is
+non-zero the driver stops emitting `bus-off` journal lines and the `bus-off`
+counter stays at 0):
+
+```bash
+ip -details link show can0 | grep 'restart-ms 100'
+```
+
+Note that `ip link set can0 type can restart` returns `-EINVAL` once
+`restart-ms` is set. That is expected: automatic recovery replaces the manual
+one-shot.
 
 ---
 

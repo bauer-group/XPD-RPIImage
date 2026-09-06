@@ -230,6 +230,10 @@ can_status() {
     echo "  An idle IRQ counter that keeps climbing means the overlay points at a"
     echo "  GPIO the HAT does not drive; a counter stuck at 0 while traffic flows"
     echo "  means it points at the other chip."
+    echo "  ${CY}restart-ms${NC} on the 'can state' line is bus-off auto-recovery. A 0"
+    echo "  means OFF: on a bus-off the MCP2515 is put to sleep and stays off the"
+    echo "  bus until the link is cycled by hand. The image ships 100 - a 0 on a"
+    echo "  v0.7.3+ image means a 05-*.network drop-in replaced 40-<iface>.network."
 }
 
 can_bitrate() {
@@ -242,6 +246,17 @@ can_bitrate() {
     # by udev (see can_txqueuelen); this used to read the live tx_queue_len
     # back out of sysfs and re-persist it, which could only ever freeze
     # whatever was already in effect - including the broken default of 10.
+    # RestartSec is repeated here on purpose, and dropping it is a silent
+    # regression rather than a cosmetic one. A 05- .network file does not merge
+    # with the shipped 40-<iface>.network: networkd applies the FIRST matching
+    # .network in alphanumeric order and ignores every later one, so this file
+    # REPLACES the image default instead of amending it. Writing only BitRate=
+    # would therefore switch bus-off auto-recovery back off on exactly the
+    # interface an operator just touched - and invisibly, because the kernel
+    # keeps the running restart_ms until the next reboot. The "ms" suffix is
+    # mandatory: networkd parses RestartSec= in SECONDS by default, so a bare
+    # 100 would mean 100 s. Keep the value in sync with CAN_RESTART_MS_DEFAULT
+    # in scripts/generate.py.
     local dropin="/etc/systemd/network/05-bgrpiimage-${iface}.network"
     info "Writing $dropin"
     cat > "$dropin" <<EOF
@@ -251,6 +266,7 @@ Name=$iface
 
 [CAN]
 BitRate=$bps
+RestartSec=100ms
 
 [Link]
 RequiredForOnline=no

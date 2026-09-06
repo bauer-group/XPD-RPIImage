@@ -228,8 +228,8 @@ when a child variant extends a parent.
 ```json
 {
   "interfaces": [
-    { "name": "can0", "bitrate": 500000, "auto_up": true, "txqueuelen": 1024 },
-    { "name": "can1", "bitrate": 500000, "auto_up": true, "txqueuelen": 1024 }
+    { "name": "can0", "bitrate": 500000, "auto_up": true, "txqueuelen": 1024, "restart_ms": 100 },
+    { "name": "can1", "bitrate": 500000, "auto_up": true, "txqueuelen": 1024, "restart_ms": 100 }
   ]
 }
 ```
@@ -238,7 +238,7 @@ Writes two files per interface, because systemd splits ownership of them:
 
 | File | Read by | Carries |
 | ---- | ------- | ------- |
-| `/etc/systemd/network/40-can<N>.network` | `systemd-networkd` | `[CAN] BitRate=`, `SamplePoint=`, `RequiredForOnline=` |
+| `/etc/systemd/network/40-can<N>.network` | `systemd-networkd` | `[CAN] BitRate=`, `SamplePoint=`, `RestartSec=`, `RequiredForOnline=` |
 | `/etc/systemd/network/70-can<N>.link` | `systemd-udevd` | `[Link] TransmitQueueLength=` |
 
 `can-utils` is added to the package list automatically.
@@ -255,6 +255,18 @@ Writes two files per interface, because systemd splits ownership of them:
 > `bgrpiimage-setup can txqueuelen can0 <N>`, which writes the file *and* sets
 > the live link. Check the result with `bgrpiimage-setup can status` (the `txq`
 > column) or `ip -d link show can0`.
+
+> **`restart_ms` is bus-off auto-recovery, and its unit is mandatory.** It
+> renders as `[CAN] RestartSec=<n>ms`. systemd parses `RestartSec=` in
+> *seconds* by default, so a bare `100` would mean 100 s — the generator always
+> writes the `ms` suffix. Both the kernel and systemd default this to **off**,
+> which is what `ip -details link show` reports as `restart-ms 0`: a controller
+> that goes bus-off then stays there until someone cycles the link by hand. On
+> the MCP2515 it is worse than a stalled recovery — the driver puts the chip to
+> *sleep*, so it is physically off the bus. Set `restart_ms: 0` only if the
+> application does its own bus-off handling; the key is then omitted entirely
+> rather than written as `RestartSec=0`, which systemd would read as "leave the
+> current value alone" rather than "off".
 
 The renderer cross-checks this block against `boot_config.dtoverlays`: every
 `can<N>` needs a matching `mcp2515-can<N>` overlay, and each overlay needs its
