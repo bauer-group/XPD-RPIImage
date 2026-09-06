@@ -403,8 +403,9 @@ EOF
     networkd_apply "$iface"
     # networkd logs a rejected bittiming to the journal and still reports a
     # successful reconfigure, so an impossible rate - 2 Mbit/s on the shipped
-    # 8 MHz MCP2515, say - left the link DOWN while this printed success and
-    # exited 0. Read the value back rather than assuming it took. The link
+    # MCP2515 (8 MHz CAN core clock), say - left the link DOWN while this
+    # printed success and exited 0. Read the value back rather than assuming
+    # it took. The link
     # comes back asynchronously, hence the bounded poll instead of a sleep.
     local live=""
     for _ in 1 2 3 4 5; do

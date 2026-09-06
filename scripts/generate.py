@@ -1218,11 +1218,17 @@ def render_can(cfg: dict[str, Any]) -> None:
         # never apply: networkd logged "Failed to parse SamplePoint=..., ignoring"
         # at warning level, dropped the key and applied the rest of the file, so
         # nothing surfaced except in the journal.
-        # The schema keeps this in PERCENT (50..95). That lower bound is not
-        # decoration: it rejects the fraction 0.875 that `ip -details link show`
-        # prints, which would otherwise round to a perfectly valid
-        # "SamplePoint=0.9%" - a legal line configuring 0.9 percent, i.e. worse
-        # than the value being rejected outright.
+        # The schema keeps this in PERCENT (50..95). That lower bound catches
+        # the fraction 0.875 that `ip -details link show` prints, which would
+        # otherwise render as "SamplePoint=0.9%". systemd accepts that string
+        # as 9 permille, but can_calc_bittiming() then finds no candidate
+        # satisfying sample_point <= 9 and returns -EINVAL, so the link never
+        # takes the timing - a device that boots with a dead CAN bus. Failing
+        # in `make validate` is strictly better than failing in the field.
+        # Note the kernel treats the value as a TARGET and rounds DOWN to the
+        # nearest achievable point, silently: on this HAT at 500 kbit/s the
+        # reachable set is 50.0/56.2/62.5/68.7/75.0/81.2/87.5, so a requested
+        # 80 quietly becomes 75 and anything above 87.5 becomes 87.5.
         if "sample_point" in iface:
             content.append(f"SamplePoint={iface['sample_point']:.1f}%")
         # The "ms" suffix is load bearing. networkd parses RestartSec= with

@@ -515,9 +515,11 @@ than tune per device.
 
 **The default is almost always right.** When no sample point is configured the
 kernel computes one from the bitrate and the controller's clock. On this HAT at
-500 kbit/s that lands on 87.5%, which is also what CiA 301 (CANopen) specifies
-for bit rates up to 800 kbit/s. Deviating is rare and should follow from a
-measurement or a bus specification, not from guesswork.
+500 kbit/s that lands on 87.5% — which is both the kernel's own default for
+bit rates up to 500 kbit/s and what CiA 301 (CANopen) asks for ("as close as
+possible to 87,5 % of the bit time"; the standard does not tier by bit rate,
+the 750/800/875 tiering is the kernel's). Deviating is rare and should follow
+from a measurement or a bus specification, not from guesswork.
 
 Read the value in effect with:
 
@@ -529,9 +531,25 @@ ip -details link show can0
 > reads `bitrate 500000 sample-point 0.875`, and `0.875` there means **87.5%**.
 > In the variant JSON the same setting is written `"sample_point": 87.5`.
 > Copying `0.875` across is refused by schema validation — deliberately, because
-> it would otherwise render as `SamplePoint=0.9%`, which systemd accepts without
-> complaint as **0.9 percent**. A valid line carrying a nonsense value is worse
-> than one that is rejected outright.
+> it would otherwise render as `SamplePoint=0.9%`. systemd accepts that as 9
+> permille, and the kernel then refuses the timing outright, so the unit boots
+> with a CAN link that never comes up. Failing in `make validate` beats failing
+> in the field.
+
+**On this HAT the setting can only ever lower the sample point.** The 16 MHz
+crystal is halved by the `mcp251x` driver to an 8 MHz CAN core clock, and at
+500 kbit/s the only reachable values are:
+
+```text
+50.0   56.2   62.5   68.7   75.0   81.2   87.5
+```
+
+87.5% is the ceiling, and it is also what you get for free by leaving the key
+unset. Worse, the kernel treats the configured value as a *target* and rounds
+**down** to the nearest reachable point **without reporting it** — ask for 80
+and you silently get 75; ask for 90 or 95 and you silently get 87.5. So on this
+hardware the key is at best a no-op and at worst a silent downgrade. Leave it
+unset unless a bus specification or a measurement says otherwise.
 
 If you do set it, note that systemd accepts at most **one decimal place** here
 (`87.5%` is fine, `87.55%` is rejected outright), so the generator rounds to one
