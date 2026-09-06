@@ -7,7 +7,8 @@
 #   wifi enable SSID [PSK] [COUNTRY]       unblock the radio and join a network
 #   wifi disable                           tear wifi down and drop its stored PSK
 #   wifi status                            rfkill state, regulatory domain, link
-#   can status                             per interface: chip select, IRQ, bitrate
+#   can status                             per interface: chip select, IRQ, bitrate,
+#                                          link state, restart-ms, error counters
 #   can bitrate IFACE BPS                  change a CAN bitrate (persistent)
 #   can txqueuelen IFACE LEN               change a CAN tx queue length (persistent)
 #   ip IFACE dhcp                          switch an interface to DHCP
@@ -22,6 +23,13 @@
 # Network changes are written as a separate .network file that sorts before
 # the image defaults, so they win without those defaults being edited or
 # removed. Delete that file to fall back to the shipped configuration.
+#
+# "Sorts before" means REPLACES, not merges: systemd-networkd applies the
+# first matching .network file in alphanumeric order and ignores every later
+# one. An override therefore has to carry every key the shipped file carried,
+# which is why "can bitrate" also writes RestartSec= and "ip" also writes
+# RequiredForOnline=. Commands refuse an interface of the wrong type for the
+# same reason - the file they would write replaces the real configuration.
 set -euo pipefail
 
 PROG="${0##*/}"
