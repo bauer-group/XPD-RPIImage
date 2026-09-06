@@ -4,6 +4,12 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.7.7](https://github.com/bauer-group/XPD-RPIImage/compare/v0.7.6...v0.7.7) (2026-09-06)
+
+### 🐛 Bug Fixes
+
+* **can:** made sample_point actually reach the controller ([8a006c7](https://github.com/bauer-group/XPD-RPIImage/commit/8a006c79951ef4eedee992e8e02dd446631b48ab))
+
 ## [0.7.6](https://github.com/bauer-group/XPD-RPIImage/compare/v0.7.5...v0.7.6) (2026-09-06)
 
 ### 🐛 Bug Fixes
