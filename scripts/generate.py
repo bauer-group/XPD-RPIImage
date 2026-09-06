@@ -1241,6 +1241,30 @@ def render_docker(cfg: dict[str, Any]) -> None:
         create_lines.append("  " + " ".join(args))
     write(gen / "create-networks.sh", "\n".join(create_lines) + "\n", executable=True)
     # ipv6 masquerade helper unit (replaces stock docker-support)
+    #
+    # The prefix is read from daemon.json rather than hardcoded: the two used
+    # to be edited independently and could silently drift apart.
+    #
+    # Only the default bridge's fixed-cidr-v6 is masqueraded. The IPv6
+    # default-address-pools behind user-defined networks are deliberately left
+    # out: their traffic leaves via br-* interfaces, and the `! -o docker0`
+    # exclusion that keeps intra-bridge traffic un-NATed has no correct
+    # equivalent there without enumerating bridges at runtime.
+    fixed_v6 = (daemon.get("fixed-cidr-v6") or "").strip()
+    if fixed_v6:
+        # `-C` is the idempotence check and it FAILS when the rule is absent -
+        # i.e. on every clean boot. Under Type=oneshot a bare ExecStart that
+        # exits non-zero aborts the unit, so the previous form (an unprefixed
+        # -C followed by a `-`-prefixed -A) could never reach the -A: the rule
+        # was never installed and the unit sat permanently failed. Chaining
+        # both in one shell lets the check do the job it was written for.
+        _t = f"-t nat POSTROUTING -s {fixed_v6} ! -o docker0 -j MASQUERADE"
+        _chk = "/usr/sbin/ip6tables " + _t.replace("POSTROUTING", "-C POSTROUTING", 1)
+        _add = "/usr/sbin/ip6tables " + _t.replace("POSTROUTING", "-A POSTROUTING", 1)
+        exec_line = f'ExecStart=/bin/sh -c "{_chk} 2>/dev/null || {_add}"\n'
+    else:
+        exec_line = ""
+
     unit = (
         "[Unit]\n"
         "Description=BAUER GROUP IPv6 NAT for Docker\n"
@@ -1250,8 +1274,7 @@ def render_docker(cfg: dict[str, Any]) -> None:
         "\n"
         "[Service]\n"
         "Type=oneshot\n"
-        "ExecStart=/usr/sbin/ip6tables -t nat -C POSTROUTING -s fdff::/64 ! -o docker0 -j MASQUERADE\n"
-        "ExecStart=-/usr/sbin/ip6tables -t nat -A POSTROUTING -s fdff::/64 ! -o docker0 -j MASQUERADE\n"
+        + exec_line +
         "RemainAfterExit=yes\n"
         "\n"
         "[Install]\n"

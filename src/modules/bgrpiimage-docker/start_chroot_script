@@ -62,12 +62,12 @@ if [[ -f "$GEN/create-networks.sh" ]]; then
 Description=BAUER GROUP docker network bootstrap
 Requires=docker.service
 After=docker.service docker-support.service
-ConditionPathExists=!/var/lib/bgRPIImage/docker-networks.done
+ConditionPathExists=!/var/lib/bgrpiimage/docker-networks.done
 
 [Service]
 Type=oneshot
 ExecStart=/usr/local/sbin/bgrpiimage-docker-networks.sh
-ExecStartPost=/bin/sh -c "mkdir -p /var/lib/bgRPIImage && touch /var/lib/bgRPIImage/docker-networks.done"
+ExecStartPost=/bin/sh -c "mkdir -p /var/lib/bgrpiimage && touch /var/lib/bgrpiimage/docker-networks.done"
 RemainAfterExit=yes
 
 [Install]
