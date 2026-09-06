@@ -229,7 +229,8 @@ sudo bgrpiimage-setup password alice                 # rotate another user
 sudo bgrpiimage-setup wifi enable "MyNet" "s3cret"   # unblock radio + join
 sudo bgrpiimage-setup wifi status                    # rfkill / regdom / link
 sudo bgrpiimage-setup wifi disable                   # tear down, drop the PSK
-sudo bgrpiimage-setup can status                     # chip select, IRQ, bitrate
+sudo bgrpiimage-setup can status                     # chip select, IRQ, bitrate,
+                                                     #   state, restart-ms, counters
 sudo bgrpiimage-setup can bitrate can0 250000        # change a CAN bitrate
 sudo bgrpiimage-setup can txqueuelen can0 1024       # change a CAN tx queue
 sudo bgrpiimage-setup ip eth0 dhcp                   # back to DHCP
@@ -249,8 +250,15 @@ for every account including `root`, from
 
 All IP changes land as `/etc/systemd/network/05-bgrpiimage-<iface>.network`
 — the `05-` prefix sorts before the shipped `10-eth.network`, and
-systemd-networkd applies only the first matching file, so ours wins. The defaults are left in place, so reverting is just deleting
-the file.
+systemd-networkd applies only the first matching file, so ours wins. The
+shipped file stays on disk, so reverting is just deleting ours.
+
+> **"Wins" means replaces, not merges.** The override has to carry every
+> key the shipped file carried, which is why `can bitrate` also writes
+> `RestartSec=` and `ip` also writes `RequiredForOnline=`. For the same
+> reason each subcommand refuses an interface of the wrong type: `can
+> bitrate eth0` would replace eth0's DHCP configuration, and `ip can0 dhcp`
+> would drop the CAN bitrate and its bus-off recovery.
 
 See [`docs/post-flash-setup.md`](docs/post-flash-setup.md) for the full
 subcommand reference.

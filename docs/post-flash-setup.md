@@ -52,6 +52,8 @@ sudo bgrpiimage-setup help
 > | `can status`, `can bitrate` | v0.6.0 |
 > | `can txqueuelen` | v0.6.1 |
 > | `can status` showing `restart-ms` guidance | v0.7.3 |
+> | `can status` showing the error counters; argument validation and wrong-interface guards | v0.7.4 |
+> | `ip ... static` accepting `""` for "no DNS" | v0.7.4 |
 >
 > There is no in-place update path for the helper — **reflash** to move up.
 
@@ -128,7 +130,8 @@ networkctl status wlan0
 ## 🚌 CAN
 
 ```bash
-# chip select, IRQ line + count, bitrate and link state per interface
+# chip select, IRQ line + count, bitrate, link state, restart-ms and
+# the CAN error counters, per interface
 
 sudo bgrpiimage-setup can status
 
@@ -163,8 +166,16 @@ which sorts before — and therefore **replaces** — the shipped
 alphanumeric order and ignores every later one; two `.network` files are never
 merged. An override written by a helper older than v0.7.3 carries no
 `RestartSec=`, so it silently turns bus-off recovery back off. `can txqueuelen` writes
-`/etc/systemd/network/05-bgrpiimage-<iface>.link`, which sorts before the
-shipped `70-can<N>.link`. Delete either to go back to the image default.
+`/etc/systemd/network/05-bgrpiimage-<iface>.link`, which sorts before — and
+likewise replaces — the shipped `70-can<N>.link`. Delete either to go back to
+the image default.
+
+Both commands refuse an interface that is not a CAN device, and `ip` refuses
+one that is. The file they would write replaces the real configuration for
+that interface, so `can bitrate eth0` used to swap eth0's DHCP settings for an
+inert `[CAN]` section — dropping the operator's own SSH session — and `ip can0
+dhcp` used to delete the bitrate and bus-off recovery. Both now fail with an
+error and write nothing.
 Bitrate and wiring live in the variant JSON — see
 [`hardware.md`](hardware.md) for the INT GPIO map and why the overlay order
 matters.
@@ -273,10 +284,22 @@ sudo bgrpiimage-setup ip eth0 static 10.0.0.5/24 10.0.0.1
 # with gateway + custom DNS
 
 sudo bgrpiimage-setup ip eth0 static 10.0.0.5/24 10.0.0.1 192.168.1.53
+
+# no DNS at all - an isolated plant LAN with no resolver
+
+sudo bgrpiimage-setup ip eth0 static 10.0.0.5/24 10.0.0.1 ""
 ```
 
-After each change the script reloads `systemd-networkd` and
-`reconfigures` the affected interface. Verify:
+The address, gateway and DNS are validated before anything is written. An
+out-of-range octet or prefix is refused here rather than by networkd, which
+would otherwise reject the whole file and leave the interface with no address
+while the command still reported success.
+
+After each change the script reloads `systemd-networkd` and `reconfigures` the
+affected interface — that one interface only. A failure is reported with a
+pointer to `journalctl -u systemd-networkd`; the tool never restarts
+`systemd-networkd` wholesale, because that re-applies every link including the
+one carrying your SSH session. Verify:
 
 ```bash
 networkctl status eth0
