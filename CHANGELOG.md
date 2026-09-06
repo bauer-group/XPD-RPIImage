@@ -4,6 +4,12 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.7.6](https://github.com/bauer-group/XPD-RPIImage/compare/v0.7.5...v0.7.6) (2026-09-06)
+
+### 🐛 Bug Fixes
+
+* **banner:** surfaced the CAN controller state in the MOTD ([a3f216c](https://github.com/bauer-group/XPD-RPIImage/commit/a3f216c80b74f34f7b891a708c468a1b34749a68))
+
 ## [0.7.5](https://github.com/bauer-group/XPD-RPIImage/compare/v0.7.4...v0.7.5) (2026-09-06)
 
 ### 🐛 Bug Fixes
