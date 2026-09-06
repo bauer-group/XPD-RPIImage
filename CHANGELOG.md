@@ -4,6 +4,13 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.7.5](https://github.com/bauer-group/XPD-RPIImage/compare/v0.7.4...v0.7.5) (2026-09-06)
+
+### 🐛 Bug Fixes
+
+* **setup:** rejected a UID where the password command needs a name ([b2f3b55](https://github.com/bauer-group/XPD-RPIImage/commit/b2f3b551bbc63af0edf77da53082fc1ca863fc03))
+* **setup:** stopped restarting systemd-networkd to recover one interface ([3a7d4bd](https://github.com/bauer-group/XPD-RPIImage/commit/3a7d4bd8dfeef7d18b22d3dc1498f31e18eaa4ab))
+
 ## [0.7.4](https://github.com/bauer-group/XPD-RPIImage/compare/v0.7.3...v0.7.4) (2026-09-06)
 
 ### 🐛 Bug Fixes
