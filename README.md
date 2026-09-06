@@ -243,8 +243,9 @@ sudo bgrpiimage-setup status                         # overview
 > install; `sudo bgrpiimage-setup status` prints the version. See
 > [`post-flash-setup.md`](docs/post-flash-setup.md#-the-bgrpiimage-setup-helper).
 
-Interactive shells get the usual list shortcuts (`ll`, `la`, `l`) for every
-account including `root`, from `/etc/profile.d/50-bgrpiimage-shell.sh`.
+From v0.7.0, interactive shells get the usual list shortcuts (`ll`, `la`, `l`)
+for every account including `root`, from
+`/etc/profile.d/50-bgrpiimage-shell.sh`.
 
 All IP changes land as `/etc/systemd/network/05-bgrpiimage-<iface>.network`
 — the `05-` prefix sorts before the shipped `10-eth.network` /

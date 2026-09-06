@@ -231,9 +231,9 @@ The image-default drop-in takes over again.
 
 ## ⌨️ Shell aliases
 
-Images ship the usual list shortcuts, for every account including `root`
-(Debian leaves these commented out in `/etc/skel/.bashrc` and Raspberry Pi OS
-does not uncomment them, so stock images have no `ll`):
+Images from **v0.7.0** ship the usual list shortcuts, for every account
+including `root` (Debian leaves these commented out in `/etc/skel/.bashrc` and
+Raspberry Pi OS does not uncomment them, so stock images have no `ll`):
 
 ```bash
 ll      # ls -la
