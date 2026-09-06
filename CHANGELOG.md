@@ -4,6 +4,14 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.7.2](https://github.com/bauer-group/XPD-RPIImage/compare/v0.7.1...v0.7.2) (2026-09-06)
+
+### 🐛 Bug Fixes
+
+* **docker:** installed the IPv6 masquerade rule that never ran ([a7c868a](https://github.com/bauer-group/XPD-RPIImage/commit/a7c868aaf6e42e365472b147426b24dbf2f18f6a))
+* **generate:** reported disabled modules as disabled instead of rendered ([c9b2912](https://github.com/bauer-group/XPD-RPIImage/commit/c9b29121d4202ef7d2f03c33e23579278ad8c2f8))
+* **hardware:** honoured fake_hwclock without a HAT and emitted rtc.i2c_bus ([8452598](https://github.com/bauer-group/XPD-RPIImage/commit/8452598ef97a1b1bf69e76f20223aacaf1199963))
+
 ## [0.7.1](https://github.com/bauer-group/XPD-RPIImage/compare/v0.7.0...v0.7.1) (2026-09-06)
 
 ### 🐛 Bug Fixes
