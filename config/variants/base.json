@@ -3,7 +3,7 @@
   "variant": {
     "name": "base",
     "description": "BAUER GROUP generic Raspberry Pi base image - Docker-ready, no application-specific hardware configured",
-    "version": "0.7.3"
+    "version": "0.7.4"
   },
   "base_image": {
     "url": "https://downloads.raspberrypi.com/raspios_lite_arm64/images/raspios_lite_arm64-2026-06-19/2026-06-18-raspios-trixie-arm64-lite.img.xz",

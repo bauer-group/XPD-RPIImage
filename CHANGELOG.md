@@ -4,6 +4,14 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.7.4](https://github.com/bauer-group/XPD-RPIImage/compare/v0.7.3...v0.7.4) (2026-09-06)
+
+### 🐛 Bug Fixes
+
+* **setup:** corrected what can status and status actually report ([8ab0d57](https://github.com/bauer-group/XPD-RPIImage/commit/8ab0d57748163de72b3b8d756f1a02280004a0f8))
+* **setup:** refused interfaces the can and ip subcommands cannot configure ([105cc3b](https://github.com/bauer-group/XPD-RPIImage/commit/105cc3ba297f51780c93d6809316e46fbe4cff23))
+* **setup:** validated ip and wifi arguments before writing config ([bab47f5](https://github.com/bauer-group/XPD-RPIImage/commit/bab47f5317047fa8f42ca9538415491c389783c3))
+
 ## [0.7.3](https://github.com/bauer-group/XPD-RPIImage/compare/v0.7.2...v0.7.3) (2026-09-06)
 
 ### 🐛 Bug Fixes
