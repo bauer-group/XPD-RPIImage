@@ -178,7 +178,7 @@ wifi_status() {
     echo "${CY}regulatory domain:${NC}"
     iw reg get 2>/dev/null | sed -n '1,3p' | sed 's|^|  |' || echo "  (unknown)"
     echo "${CY}rfkill default_state:${NC} $(cat /sys/module/rfkill/parameters/default_state 2>/dev/null || echo '?')"
-    echo "${CY}wpa_supplicant@wlan0:${NC} $(systemctl is-active wpa_supplicant@wlan0.service 2>/dev/null || echo inactive)"
+    echo "${CY}wpa_supplicant@wlan0:${NC} $(svc_state wpa_supplicant@wlan0.service)"
     echo "${CY}link:${NC}"
     ip -br addr show wlan0 2>/dev/null | sed 's|^|  |' || echo "  (no wlan0)"
 }
@@ -282,8 +282,26 @@ can_status() {
         qlen=$(cat "/sys/class/net/$iface/tx_queue_len" 2>/dev/null || echo "?")
         printf "  %-6s %-8s gpio %-4s %-6s irq %-12s %-12s %-9s txq %s\n" \
             "$iface" "$cs" "$gpio" "$trig" "$count" "$rate" "${state:-?}" "$qlen"
-        ip -details -statistics link show "$iface" 2>/dev/null \
-            | grep -E 'can state|re-started|bus-error' | sed 's|^|         |' || true
+        # Two traps, both of which hid exactly what this command exists to show.
+        # (a) iproute2 emits the "re-started bus-errors ..." COLUMN HEADER and
+        # the six counters as SEPARATE lines, so a plain line grep printed the
+        # header and dropped every number. Since v0.7.3 ships restart-ms 100 a
+        # bus-off now recovers silently, which makes re-started the only
+        # evidence a bus is flapping. (b) the ctrlmode list is printed BEFORE
+        # the state, so with listen-only or berr-reporting set the line reads
+        # "can <BERR-REPORTING> state ..." and a literal 'can state' match
+        # dropped the whole line - including the restart-ms that the footer
+        # below and both docs pages promise. Match 'can .*state' so another
+        # future token cannot break it again.
+        # awk rather than grep -A1: -A1 would also drag in the line after the
+        # state match and insert literal "--" group separators, and awk exits 0
+        # on no match, so it cannot trip the pipefail trap described above.
+        # iproute2 indents the counter block with a tab; expand it or the
+        # numbers do not line up under the state line.
+        ip -details -statistics link show "$iface" 2>/dev/null | awk '
+            /^[ \t]*can .*state /               { print; next }
+            /^[ \t]*re-started[ \t]+bus-errors/ { print; if ((getline v) > 0) print v; next }
+        ' | sed 's|\t|  |g; s|^ *|         |' || true
     done
     if [[ "$found" -eq 0 ]]; then
         echo "  (no CAN interfaces)"
@@ -344,7 +362,28 @@ EOF
     # A CAN bitrate can only be set while the link is down; networkd does that
     # itself on reconfigure. Reboot if the interface refuses to come back up.
     networkctl reconfigure "$iface" 2>/dev/null || systemctl restart systemd-networkd
-    ok "$iface bitrate set to $bps bit/s"
+    # networkd logs a rejected bittiming to the journal and still reports a
+    # successful reconfigure, so an impossible rate - 2 Mbit/s on the shipped
+    # 8 MHz MCP2515, say - left the link DOWN while this printed success and
+    # exited 0. Read the value back rather than assuming it took. The link
+    # comes back asynchronously, hence the bounded poll instead of a sleep.
+    local live=""
+    for _ in 1 2 3 4 5; do
+        live=$(ip -details link show "$iface" 2>/dev/null \
+               | grep -oE 'bitrate [0-9]+' | awk '{print $2}' || true)
+        [[ "$live" == "$bps" ]] && break
+        sleep 0.3
+    done
+    if [[ "$live" == "$bps" ]]; then
+        ok "$iface bitrate set to $bps bit/s"
+    else
+        warn "$iface reports bitrate '${live:-none}' after applying $bps"
+        warn "  the controller likely rejected it (see: journalctl -u systemd-networkd -n 20)"
+        # Name the file: it is already written and will be applied again at the
+        # next boot, so leaving without saying how to revert would strand the
+        # bus on a rate the controller cannot do.
+        die  "  $dropin still holds $bps - remove it to fall back to the image default"
+    fi
     info "verify with: $PROG can status"
 }
 
@@ -471,6 +510,16 @@ EOF
 }
 
 # --------------------------------------------------------------------------
+# `systemctl is-active` PRINTS the state and still exits non-zero for every
+# state that is not "active", so `$(... || echo inactive)` captured BOTH words
+# and printed a second, unindented "inactive" line underneath - on every image,
+# since wifi ships off.
+svc_state() {
+    local st
+    st="$(systemctl is-active "$1" 2>/dev/null || true)"
+    echo "${st:-unknown}"
+}
+
 cmd_status() {
     if [[ -r /etc/bgrpiimage-release ]]; then
         # shellcheck disable=SC1091
@@ -479,22 +528,36 @@ cmd_status() {
     fi
     echo "${CY}host:${NC} $(hostname)"
     echo
-    networkctl status --no-pager 2>/dev/null | head -30 || ip -br addr
+    # `cmd | head -N` returns non-zero under pipefail as soon as head exits
+    # early and the writer dies of SIGPIPE, so this fallback fired on SUCCESS
+    # and appended a whole `ip -br addr` table under the networkctl block it
+    # was meant to replace. Decide on networkctl's own status, then truncate.
+    local netstat
+    if netstat="$(networkctl status --no-pager 2>/dev/null)"; then
+        printf '%s\n' "$netstat" | head -30
+    else
+        ip -br addr
+    fi
     echo
     echo "${CY}can:${NC}"
     can_status
     echo
     echo "${CY}radios:${NC}"
-    echo "  bluetooth: $(systemctl is-active bluetooth 2>/dev/null || echo inactive)"
-    echo "  wifi:      $(systemctl is-active wpa_supplicant@wlan0.service 2>/dev/null || echo inactive)"
+    echo "  bluetooth: $(svc_state bluetooth)"
+    echo "  wifi:      $(svc_state wpa_supplicant@wlan0.service)"
     rfkill list 2>/dev/null | sed 's|^|  |' || true
     echo
     # Both file types, on purpose: .network is networkd's, .link is udev's,
     # and listing only the former hid the file that owns TransmitQueueLength.
-    echo "${CY}network drop-ins:${NC}"
-    ls -1 /etc/systemd/network/*.network 2>/dev/null | sed 's|^|  |' || echo "  (none)"
-    echo "${CY}link drop-ins (udev):${NC}"
-    ls -1 /etc/systemd/network/*.link 2>/dev/null | sed 's|^|  |' || echo "  (none)"
+    # Split by origin: 05-bgrpiimage-* is what THIS tool writes, everything
+    # else was shipped in the image. Listing them together under one
+    # "drop-ins" heading told an operator nothing about what they had actually
+    # overridden - which is the whole question when a setting looks wrong.
+    echo "${CY}your overrides:${NC}"
+    ls -1 /etc/systemd/network/05-bgrpiimage-* 2>/dev/null | sed 's|^|  |' || echo "  (none)"
+    echo "${CY}image defaults:${NC}"
+    ls -1 /etc/systemd/network/*.network /etc/systemd/network/*.link 2>/dev/null \
+        | grep -v '/05-bgrpiimage-' | sed 's|^|  |' || echo "  (none)"
 }
 
 # --------------------------------------------------------------------------
