@@ -29,12 +29,20 @@ Three distinct surfaces, three mechanisms:
                  v6: 2001:db8::42/64
   wlan0   UP     v4: 10.0.1.50/24
   can0    UP     500 kbit/s
-  can1    UP     500 kbit/s
+  can1    UP     500 kbit/s  BUS-OFF          ← only if unhealthy
 ====================================================================
   ssh: active   docker: active (7 running)   bt: active   unattended-upgrades: active
   reboot pending (triggered by: linux-image-6.6.x libc6)    ← only if pending
 ====================================================================
 ```
+
+> **Why the CAN lines carry a second state.** The netdev flag is the wrong
+> health signal for a CAN link: a bus-off controller keeps it at `UP` while
+> passing nothing, so `can1 UP 500 kbit/s` was shown for a bus that had been
+> dead for weeks. The banner now also reads the controller state and appends
+> it when it is anything other than `ERROR-ACTIVE` — red for `BUS-OFF`, yellow
+> for `ERROR-WARNING`, `ERROR-PASSIVE` and `STOPPED`. A healthy link is
+> unchanged, so the common case stays quiet.
 
 Source: [`scripts/generate.py`](../scripts/generate.py) → `_MOTD_SCRIPT`.
 

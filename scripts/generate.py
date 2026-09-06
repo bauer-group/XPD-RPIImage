@@ -393,11 +393,29 @@ for iface in $(ip -o link show 2>/dev/null | \
     state=$(ip -br link show "$iface" 2>/dev/null | awk '{print $2}')
     case "$iface" in
         can*)
-            bitrate=$(ip -details link show "$iface" 2>/dev/null | \
-                      grep -oE 'bitrate [0-9]+' | awk '{print $2}')
+            # The netdev flag is the wrong health signal for a CAN link. A
+            # bus-off controller keeps it at UP while passing nothing at all,
+            # so this line used to read "can1 UP 500 kbit/s" for a bus that had
+            # been dead for weeks - the exact failure the banner exists to
+            # surface. Read the controller state as well.
+            # Match "can .*state", not "can state": iproute2 prints the
+            # ctrlmode list first, so "can <BERR-REPORTING> state ..." is a
+            # normal reading once listen-only or berr-reporting is enabled.
+            # Anchoring on ^[[:space:]]*can keeps it off the header line
+            # ("4: can0: ... state UP") and off "link/can promiscuity ...".
+            det=$(ip -details link show "$iface" 2>/dev/null)
+            bitrate=$(echo "$det" | grep -oE 'bitrate [0-9]+' | awk '{print $2}')
             [ -n "$bitrate" ] && rate_str="$((bitrate/1000)) kbit/s" || rate_str="(no bitrate)"
+            can_state=$(echo "$det" | \
+                        sed -n 's/^[[:space:]]*can .*state \([A-Z-]\{1,\}\).*/\1/p' | head -1)
+            case "$can_state" in
+                ""|ERROR-ACTIVE) cstr="" ;;
+                BUS-OFF)         cstr="  ${RD}BUS-OFF${NC}" ;;
+                *)               cstr="  ${YE}${can_state}${NC}" ;;
+            esac
             sc=$([ "$state" = "UP" ] && echo "$GR" || echo "$DIM")
-            printf "  ${DIM}%-7s${NC} ${sc}%-6s${NC} %s\n" "$iface" "$state" "$rate_str"
+            printf "  ${DIM}%-7s${NC} ${sc}%-6s${NC} %s%s\n" \
+                   "$iface" "$state" "$rate_str" "$cstr"
             ;;
         *)
             v4=$(ip -4 -br addr show "$iface" 2>/dev/null | awk '{$1=$2=""; print $0}' | xargs)
