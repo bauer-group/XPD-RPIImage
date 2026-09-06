@@ -161,7 +161,8 @@ EOF
 
     systemctl enable "wpa_supplicant@wlan0.service" >/dev/null 2>&1 || true
     systemctl restart "wpa_supplicant@wlan0.service"
-    networkctl reload 2>/dev/null || systemctl restart systemd-networkd
+    networkctl reload \
+        || die "networkctl reload failed - see: journalctl -u systemd-networkd -n 20"
     ok "wifi enabled (SSID=$ssid, country=$country)"
     info "check with: $PROG wifi status"
 }
@@ -170,7 +171,10 @@ wifi_disable() {
     info "Disabling wlan0"
     systemctl disable --now "wpa_supplicant@wlan0.service" 2>/dev/null || true
     rm -f "$WPA_CONF" /etc/systemd/network/05-bgrpiimage-wlan0.network
-    networkctl reload 2>/dev/null || systemctl restart systemd-networkd
+    # warn, not die: the PSK and the drop-in are already gone by this point, so
+    # aborting here would leave wifi half-disabled with no way to finish.
+    networkctl reload \
+        || warn "networkctl reload failed - see: journalctl -u systemd-networkd -n 20"
     ip link set wlan0 down 2>/dev/null || true
     ok "wlan0 down; wpa_supplicant config and stored PSK removed"
     if [[ -f /etc/systemd/network/20-wlan.network ]]; then
@@ -212,6 +216,25 @@ cmd_wifi() {
 # does, and can0 must resolve to spi0.0. The IRQ is registered under
 # dev_name(&spi->dev), i.e. "spi0.0", never "mcp251x", and only from ndo_open,
 # so a link that is down shows no IRQ line at all.
+# `networkctl reload` re-reads the .network files; `reconfigure IFACE` re-applies
+# them to ONE link. Both used to be written as
+#     networkctl ... 2>/dev/null || systemctl restart systemd-networkd
+# which was wrong twice over. Restarting systemd-networkd re-applies EVERY link,
+# including the eth0 carrying the operator's SSH session - so the recovery
+# action was more dangerous than the failure it papered over, and an operator
+# who ran this remotely could lose the box while "fixing" an unrelated
+# interface. And 2>/dev/null threw away the reason the call failed, which is the
+# single most useful thing on screen when it does. The fallback was dead code
+# besides: networkctl reload has existed since systemd 244 and the image ships
+# 257, so it was only reachable on a systemd this image cannot run.
+networkd_apply() {
+    local iface="$1"
+    networkctl reload \
+        || die "networkctl reload failed - see: journalctl -u systemd-networkd -n 20"
+    networkctl reconfigure "$iface" \
+        || die "networkctl reconfigure $iface failed - see: journalctl -u systemd-networkd -n 20"
+}
+
 # ARPHRD_CAN is 280 (include/uapi/linux/if_arp.h). Every `ip link show IFACE`
 # existence check below passes just as happily for eth0 as for can0, and each of
 # these commands then writes a 05- file that REPLACES the image default for that
@@ -366,10 +389,9 @@ RestartSec=100ms
 RequiredForOnline=no
 EOF
     chmod 644 "$dropin"
-    networkctl reload
     # A CAN bitrate can only be set while the link is down; networkd does that
     # itself on reconfigure. Reboot if the interface refuses to come back up.
-    networkctl reconfigure "$iface" 2>/dev/null || systemctl restart systemd-networkd
+    networkd_apply "$iface"
     # networkd logs a rejected bittiming to the journal and still reports a
     # successful reconfigure, so an impossible rate - 2 Mbit/s on the shipped
     # 8 MHz MCP2515, say - left the link DOWN while this printed success and
@@ -512,8 +534,7 @@ EOF
     esac
     chmod 644 "$dropin"
     info "reloading systemd-networkd"
-    networkctl reload
-    networkctl reconfigure "$iface" 2>/dev/null || systemctl restart systemd-networkd
+    networkd_apply "$iface"
     ok "$iface reconfigured; inspect with: networkctl status $iface"
 }
 
