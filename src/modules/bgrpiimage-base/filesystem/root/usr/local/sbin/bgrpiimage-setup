@@ -94,10 +94,26 @@ EOF
 wifi_enable() {
     local ssid="${1:-}" psk="${2:-}" country="${3:-DE}"
     [[ -n "$ssid" ]] || die "usage: $PROG wifi enable SSID [PSK] [COUNTRY]"
+    # The country lands verbatim in a 0644 file under /etc/modprobe.d. The
+    # pre-0.6.0 back-compat form shifts the arguments by one, so a stray
+    # `wifi enable MyNet DE` put "DE" where the PSK belongs - and the mirror
+    # slip wrote the PSK itself into that world-readable file in cleartext.
+    # Rejecting anything that is not a 2-letter code closes both directions.
+    [[ "$country" =~ ^[A-Za-z]{2}$ ]] || die "country must be a 2-letter ISO 3166-1 code, e.g. DE"
+    country="${country^^}"
     if [[ -z "$psk" ]]; then
-        read -r -s -p "WiFi password for \"$ssid\": " psk; echo
-        [[ -n "$psk" ]] || die "empty password"
+        # Without the tty check the read simply fails on a closed stdin (ssh
+        # without -t, an Ansible task, a first-boot script) and set -e killed
+        # the script with no message at all - which also made the old
+        # "empty password" die unreachable.
+        [[ -t 0 ]] || die "no PSK given and stdin is not a terminal - pass it as an argument"
+        read -r -s -p "WiFi password for \"$ssid\": " psk || true; echo
     fi
+    # wpa_passphrase enforces 8..63 characters and exits non-zero otherwise.
+    # Under set -e that killed the script inside the { } block below - after
+    # wifi_unblock had already rewritten the rfkill override, leaving a
+    # truncated $WPA_CONF.tmp behind with no error and no cleanup.
+    (( ${#psk} >= 8 && ${#psk} <= 63 )) || die "WiFi PSK must be 8-63 characters (got ${#psk})"
 
     info "Lifting the rfkill soft block (regulatory domain $country)"
     wifi_unblock "$country"
@@ -173,6 +189,10 @@ cmd_wifi() {
         disable|--disable) wifi_disable ;;
         status)            wifi_status ;;
         -h|--help)         usage 0 ;;
+        # Guard the back-compat form below against near-miss verbs: `wifi statu`
+        # was read as an SSID, so a typo silently prompted for a password and
+        # then overwrote working credentials instead of printing an error.
+        en*|dis*|stat*|-*) die "unknown wifi subcommand '${1}' (expected: enable | disable | status)" ;;
         # Back-compat with the pre-0.6.0 form: wifi SSID [PSK] [COUNTRY].
         *)                 wifi_enable "$@" ;;
     esac
@@ -193,6 +213,27 @@ cmd_wifi() {
 # BitRate= and RestartSec= and leaving the bus dead at the next reboot. Match on
 # the netdev type rather than the name: the name comes from probe order and an
 # operator can rename either one.
+# networkd parses Address=, Gateway= and DNS= itself and REFUSES the whole file
+# when any value is malformed - it logs to the journal and carries on, so the
+# interface silently ends up with no address while this script prints its green
+# success line and exits 0. The old guard matched only the SHAPE of a CIDR, so
+# 192.168.1.300/24 and a /64 prefix both sailed through. Validate the values
+# here, at the only point where refusing still costs the operator nothing.
+# 10#$o forces base 10: a padded octet like 010 would otherwise be read as
+# octal, and 08 or 09 are not valid octal at all and abort the arithmetic.
+is_ipv4() {
+    local o
+    [[ "$1" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] || return 1
+    for o in ${1//./ }; do (( 10#$o <= 255 )) || return 1; done
+}
+
+is_ipv4_cidr() {
+    local addr="${1%%/*}" prefix="${1#*/}"
+    [[ "$1" == */* ]] || return 1
+    [[ "$prefix" =~ ^[0-9]{1,2}$ ]] && (( 10#$prefix <= 32 )) || return 1
+    is_ipv4 "$addr"
+}
+
 is_can_iface() {
     [[ "$(cat "/sys/class/net/${1}/type" 2>/dev/null)" == "280" ]]
 }
@@ -319,6 +360,10 @@ can_txqueuelen() {
     # arithmetic below cannot overflow on absurd input.
     [[ "$len" =~ ^[0-9]+$ && ${#len} -le 10 ]] && (( len <= 4294967294 )) \
         || die "txqueuelen must be an integer in 0-4294967294"
+    # Strip padding to base 10. A pasted "0500000" passed the regex and was
+    # written verbatim into the .link file while `ip link set` read it as
+    # octal, so the persisted value and the live one silently disagreed.
+    len=$((10#$len))
     ip link show "$iface" >/dev/null 2>&1 || die "interface '$iface' does not exist"
     is_can_iface "$iface" || die "'$iface' is not a CAN interface - this would shadow its .link defaults (try: $PROG can status)"
 
@@ -389,9 +434,15 @@ RequiredForOnline=$rfo
 EOF
             ;;
         static)
-            local cidr="${3:-}" gw="${4:-}" dns="${5:-1.1.1.1}"
-            [[ "$cidr" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$ ]] \
-                || die "CIDR must look like 10.0.0.5/24"
+            # ${5-...} rather than ${5:-...}: an explicitly empty argument now
+            # means "write no DNS= at all", which an isolated plant LAN with no
+            # resolver needs. ${5:-} would have forced 1.1.1.1 back in.
+            local cidr="${3:-}" gw="${4:-}" dns="${5-1.1.1.1}" d
+            is_ipv4_cidr "$cidr" || die "CIDR must be a valid IPv4 address and prefix, e.g. 10.0.0.5/24"
+            [[ -z "$gw" ]] || is_ipv4 "$gw" || die "gateway '$gw' is not a valid IPv4 address"
+            for d in ${dns//,/ }; do
+                is_ipv4 "$d" || die "DNS '$d' is not a valid IPv4 address"
+            done
             info "Configuring $iface static $cidr${gw:+ via $gw} (DNS $dns)"
             {
                 echo "# Auto-generated by bgrpiimage-setup"
@@ -401,7 +452,7 @@ EOF
                 echo "[Network]"
                 echo "Address=$cidr"
                 [[ -n "$gw" ]] && echo "Gateway=$gw"
-                echo "DNS=$dns"
+                [[ -z "$dns" ]] || echo "DNS=${dns//,/ }"
                 echo "IPv6AcceptRA=yes"
                 echo
                 echo "[Link]"
