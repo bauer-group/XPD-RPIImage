@@ -268,6 +268,20 @@ Writes two files per interface, because systemd splits ownership of them:
 > rather than written as `RestartSec=0`, which systemd would read as "leave the
 > current value alone" rather than "off".
 
+`sample_point` is a property of the physical bus, not of one board, and every
+node has to agree on it — see
+[`hardware.md`](hardware.md#sample-point) for why there is deliberately no
+`bgrpiimage-setup can sample-point` command and why the kernel-computed default
+of 87.5% at 500 kbit/s is almost always the right answer.
+
+> ⚠️ **The JSON field is in percent (`87.5`), and does not match what `ip`
+> prints.** `ip -details link show` reports `sample-point 0.875` — the same
+> value as a fraction. Writing `0.875` into the config is refused by schema
+> validation, and that lower bound of `50` is deliberate rather than cosmetic:
+> `0.875` would otherwise render as `SamplePoint=0.9%`, which systemd accepts
+> quite happily as **0.9 percent**. A valid line carrying a catastrophic value
+> is worse than one that is rejected.
+
 The renderer cross-checks this block against `boot_config.dtoverlays`: every
 `can<N>` needs a matching `mcp2515-can<N>` overlay, and each overlay needs its
 own `params.interrupt`. Both defaults would otherwise land on GPIO 25. See

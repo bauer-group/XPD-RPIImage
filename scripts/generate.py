@@ -1210,8 +1210,21 @@ def render_can(cfg: dict[str, Any]) -> None:
             "[CAN]",
             f"BitRate={bitrate}",
         ]
+        # The "%" suffix is load bearing and so is the single decimal place.
+        # networkd parses SamplePoint= with parse_permille() (percent-util.c),
+        # which returns -EINVAL for any string without a "%" or permille suffix
+        # AND for more than one digit after the dot - "0.875" and "87.55%" are
+        # both rejected. The old renderer emitted a bare float, so the key could
+        # never apply: networkd logged "Failed to parse SamplePoint=..., ignoring"
+        # at warning level, dropped the key and applied the rest of the file, so
+        # nothing surfaced except in the journal.
+        # The schema keeps this in PERCENT (50..95). That lower bound is not
+        # decoration: it rejects the fraction 0.875 that `ip -details link show`
+        # prints, which would otherwise round to a perfectly valid
+        # "SamplePoint=0.9%" - a legal line configuring 0.9 percent, i.e. worse
+        # than the value being rejected outright.
         if "sample_point" in iface:
-            content.append(f"SamplePoint={iface['sample_point']}")
+            content.append(f"SamplePoint={iface['sample_point']:.1f}%")
         # The "ms" suffix is load bearing. networkd parses RestartSec= with
         # parse_sec(), whose default unit is SECONDS - a bare "100" would mean
         # 100 s, i.e. restart-ms 100000, and the bus would stay dead for a

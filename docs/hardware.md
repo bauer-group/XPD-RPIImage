@@ -495,6 +495,58 @@ scheme for swapping two interface names (`set_link_name()` is a single
 udev rule either fails mutually with `File exists` or wins a race and produces
 a different mapping per boot.
 
+### Sample point
+
+The sample point is the position inside a bit at which the controller reads the
+level, given as a percentage of the bit time. It has to sit late enough that a
+dominant level driven by the furthest node has actually propagated around the
+bus and settled, and early enough to leave room for resynchronisation. It is
+therefore a property of the **physical bus** — cable length, propagation delay,
+node count — not of any one board.
+
+**It is bus-wide.** Every node has to agree closely. A node sampling at a
+noticeably different point still wins arbitration most of the time, so the
+failure is not a clean refusal: it shows up as intermittent form and stuff
+errors under load, climbing error counters, and — once the counters pass the
+thresholds — an `ERROR-PASSIVE` or bus-off controller with no obvious cause.
+That is far harder to diagnose than a link that simply refuses to come up,
+which is why this is a value you set once for the whole installation rather
+than tune per device.
+
+**The default is almost always right.** When no sample point is configured the
+kernel computes one from the bitrate and the controller's clock. On this HAT at
+500 kbit/s that lands on 87.5%, which is also what CiA 301 (CANopen) specifies
+for bit rates up to 800 kbit/s. Deviating is rare and should follow from a
+measurement or a bus specification, not from guesswork.
+
+Read the value in effect with:
+
+```bash
+ip -details link show can0
+```
+
+> ⚠️ **`ip` prints it as a fraction, the config takes a percentage.** The line
+> reads `bitrate 500000 sample-point 0.875`, and `0.875` there means **87.5%**.
+> In the variant JSON the same setting is written `"sample_point": 87.5`.
+> Copying `0.875` across is refused by schema validation — deliberately, because
+> it would otherwise render as `SamplePoint=0.9%`, which systemd accepts without
+> complaint as **0.9 percent**. A valid line carrying a nonsense value is worse
+> than one that is rejected outright.
+
+If you do set it, note that systemd accepts at most **one decimal place** here
+(`87.5%` is fine, `87.55%` is rejected outright), so the generator rounds to one
+decimal. The value is emitted as `[CAN] SamplePoint=<v>%`; the `%` is mandatory,
+and a bare number is silently dropped with only a journal warning — which is why
+this key never worked before v0.7.7.
+
+There is deliberately **no** `bgrpiimage-setup can sample-point` command. The
+other CAN subcommands change per-device settings — a bitrate has to match the
+bus you are plugging into, a queue length absorbs bursts on that one board. The
+sample point is neither: changing it on a single node while the rest of the bus
+stays at 87.5% makes the bus worse, not better, and a per-device command would
+invite exactly that. It belongs in the variant JSON, applied identically to
+every unit built from that image.
+
 ### On-device diagnosis
 
 ```bash
