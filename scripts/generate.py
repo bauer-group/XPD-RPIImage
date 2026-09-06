@@ -1711,6 +1711,12 @@ def _module_status(module: str) -> tuple[str, int]:
     gen_tree = MODULES_DIR / module / "filesystem" / "root"
     if not gen_tree.exists():
         return ("empty", 0)
+    # A renderer whose config block is switched off bails out after writing a
+    # `.disabled` marker (render_docker, render_unattended). That marker is
+    # itself a file, so counting blindly reported a DISABLED module as
+    # "1 rendered" - and made main()'s "disabled in config" row unreachable.
+    if (gen_tree / "opt" / "bgrpiimage" / module / ".disabled").exists():
+        return ("disabled", 0)
     count = sum(1 for p in gen_tree.rglob("*") if p.is_file())
     return ("rendered" if count else "empty", count)
 
