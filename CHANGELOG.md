@@ -4,6 +4,17 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.7.0](https://github.com/bauer-group/XPD-RPIImage/compare/v0.6.3...v0.7.0) (2026-09-05)
+
+### 🚀 Features
+
+* **base:** added shell aliases for interactive logins ([3342f20](https://github.com/bauer-group/XPD-RPIImage/commit/3342f20cf62a2778e141abf0baebefe00f2f18c9))
+
+### 🐛 Bug Fixes
+
+* **build:** pinned line endings and restored the run.sh exec bit ([659781d](https://github.com/bauer-group/XPD-RPIImage/commit/659781d8948966deb6f8bd3b06e9f000ed82373e))
+* **setup:** stopped can status from aborting on unconfigured links ([56930e3](https://github.com/bauer-group/XPD-RPIImage/commit/56930e37a142fd62cea866863b14e03f76a18515))
+
 ## [0.6.3](https://github.com/bauer-group/XPD-RPIImage/compare/v0.6.2...v0.6.3) (2026-09-05)
 
 ### 🐛 Bug Fixes
