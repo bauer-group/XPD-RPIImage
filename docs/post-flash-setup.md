@@ -68,9 +68,11 @@ sudo bgrpiimage-setup password
 sudo bgrpiimage-setup password alice
 ```
 
-Behind the scenes this runs `passwd <user>` and also removes the
-`/etc/bgrpiimage-default-password-active` marker — the MOTD stops warning
-about default credentials on the next login.
+Behind the scenes this runs `passwd <user>` and clears **that user's**
+line from `/etc/bgrpiimage-default-password-active`; the file is removed only
+once the last line is gone. The MOTD stops warning about that account on the
+next login, and keeps warning about any other account still on its shipped
+password.
 
 ---
 
@@ -181,8 +183,8 @@ the CAN core default, meaning no `.link` file reached udev.
 ## 🌐 IP configuration
 
 All changes land as `/etc/systemd/network/05-bgrpiimage-<iface>.network`.
-The `05-` prefix makes the file sort **before** the image defaults
-`10-eth.network` / `20-wlan.network`, which is what makes it win:
+The `05-` prefix makes the file sort **before** the image default
+`10-eth.network`, which is what makes it win:
 systemd-networkd applies only the first `.network` file whose `[Match]`
 matches, in lexicographic order. The shipped defaults are left untouched, so
 reverting is just deleting the file.
@@ -229,6 +231,34 @@ The image-default drop-in takes over again.
 
 ---
 
+## 🎛 Reaching Portainer
+
+Images with `portainer.enabled` install it on first boot and bind it to
+`0.0.0.0`, so it is reachable from the network as soon as Docker is up:
+
+| URL | Port |
+| --- | --- |
+| `https://<device>:9443` | HTTPS (self-signed certificate — expect a browser warning) |
+| `http://<device>:9000` | HTTP |
+| — | `8000` is the Edge agent tunnel, not a UI |
+
+Portainer asks you to create the admin account **on first visit** and locks
+itself after a timeout if nobody does. If you are greeted by "your Portainer
+instance timed out for security purposes", restart it:
+
+```bash
+sudo docker restart portainer
+```
+
+Check that the first-boot install actually ran:
+
+```bash
+systemctl status bgrpiimage-portainer-install.service
+ls -l /var/lib/bgrpiimage/portainer.installed
+```
+
+---
+
 ## ⌨️ Shell aliases
 
 Images from **v0.7.0** ship the usual list shortcuts, for every account
@@ -262,8 +292,10 @@ sudo bgrpiimage-setup status
 ```
 
 Shows variant + version, hostname, all network interfaces (via
-`networkctl status`), plus every active systemd-networkd drop-in and the
-WiFi config path.
+`networkctl status`), the CAN table from `can status`, the state of Bluetooth,
+WiFi and rfkill, and both drop-in directories — `.network` files (owned by
+`systemd-networkd`) and `.link` files (owned by `systemd-udevd`), listed
+separately because the two are not interchangeable.
 
 ---
 

@@ -59,10 +59,10 @@ Output breakdown:
 | --- | --- |
 | `bgrpiimage-base` | `hostname`, `locale.env`, `packages.list`, `release.env`, `ssh.env`, `issue`, `issue.net`, `sshd_banner.conf`, `motd-banner.sh` |
 | `bgrpiimage-users` | `create-users.sh`, `pam_su` |
-| `bgrpiimage-network` | `systemd-networkd/10-eth.network`, `20-wlan.network`, `wpa_supplicant/wpa_supplicant-wlan0.conf` |
+| `bgrpiimage-network` | `systemd-networkd/10-eth.network`, `modprobe.d/zz-bgrpiimage-rfkill.conf` |
 | `bgrpiimage-boot` | `config-bgrpiimage.txt` (dtparam + dtoverlay snippet) |
 | `bgrpiimage-hardware` | `hardware.env`, `packages.list`, `eeprom.env`, EEPROM apply script + oneshot unit — only when RTC, watchdog, bootloader or a non-`auto` audio sink is configured |
-| `bgrpiimage-can` | `systemd-networkd/40-can0.network`, `40-can1.network`, `packages.list` |
+| `bgrpiimage-can` | `systemd-networkd/40-can0.network`, `40-can1.network`, `70-can0.link`, `70-can1.link`, `packages.list` |
 | `bgrpiimage-docker` | `daemon.json`, `98-docker.conf` (sysctl), `docker-support.service`, `create-networks.sh` |
 | `bgrpiimage-portainer` | `docker-compose.yml`, `bgrpiimage-portainer-install.service` (oneshot), `portainer.env` |
 | `bgrpiimage-unattended-upgrades` | `50unattended-upgrades`, `20auto-upgrades`, timer overrides, reboot-window service+timer+script |

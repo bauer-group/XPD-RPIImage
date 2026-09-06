@@ -304,7 +304,7 @@
       "properties": {
         "enabled":   { "type": "boolean" },
         "gen":       { "type": "integer", "enum": [1, 2, 3], "description": "Max PCIe generation (gen3 requires explicit opt-in - beyond spec but usually works on good boards)." },
-        "nvme_boot": { "type": "boolean", "description": "Pi5 only: set BOOT_ORDER in the EEPROM to prefer NVMe." }
+        "nvme_boot": { "type": "boolean", "description": "Advisory only - documents that the board is meant to boot from NVMe. It emits nothing on its own; the EEPROM change is made by bootloader.boot_order (e.g. 0xf461 = NVMe,USB,SD,repeat)." }
       }
     },
     "usb": {

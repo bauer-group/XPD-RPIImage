@@ -64,7 +64,7 @@ Create `config/variants/gps-tracker.json`:
 
   "variant": {
     "name": "gps-tracker",
-    "description": "BAUER GROUP GPS telemetry image (u-blox via UART)",
+    "description": "BAUER GROUP GPS telemetry image (u-blox via UART)"
   },
 
   "hostname": "bg-gps",

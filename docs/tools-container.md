@@ -94,7 +94,7 @@ tools\run.cmd shell --build
 | Command | Action |
 | --- | --- |
 | `validate [variant]` | Schema-check + env resolve (dry-run, no file writes). |
-| `render <variant>` | Generate module artifacts under `src/modules/*/files/_generated/`. |
+| `render <variant>` | Generate module artifacts under `src/modules/*/filesystem/root/opt/bgrpiimage/<module>/`. |
 | `build <variant>` | Full image build. Produces `dist/bgrpiimage-<variant>-v<version>.img.xz`. |
 | `shell` | Drop into bash inside the tools container. |
 | `clean` | Wipe generated files + `src/workspace/` + `dist/`. |

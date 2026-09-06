@@ -179,11 +179,13 @@ Each interface entry:
 unit per interface. `wpa_supplicant@<iface>` is enabled for each generated
 config.
 
-Every generated `.network` also gets a `[Link] RequiredForOnline=` — `no` for
-wireless, `degraded` (systemd's own default) for everything else. There is no
-config key for it: a wireless link that cannot associate must never gate
-`network-online.target`, because `docker.service` waits on that target and the
-Portainer first-boot install waits on Docker.
+Every generated `.network` also gets a `[Link] RequiredForOnline=`: `degraded`
+(systemd's own default) for wired interfaces, and `no` for wireless **and for
+CAN**. There is no config key for it. A link that cannot come up must never
+gate `network-online.target`, because `docker.service` waits on that target and
+the Portainer first-boot install waits on Docker — and a CAN interface with no
+bus attached, or a wireless link that cannot associate, is a normal state, not
+a fault.
 
 ---
 

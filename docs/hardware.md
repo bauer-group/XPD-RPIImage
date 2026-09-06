@@ -147,6 +147,10 @@ matches every DS18B20 "just plug it in" tutorial.
 
 - **`model`** — enum: `ds3231` | `pcf8523` | `pcf85063`. Emits
   `dtoverlay=i2c-rtc,<model>`. Requires `boot_config.enable_i2c: true`.
+- **`i2c_bus`** — which I2C bus the HAT sits on; `1` is the default and emits
+  nothing extra. Any other value appends the bus flag that `i2c-buses.dtsi`
+  defines, e.g. `i2c_bus: 3` gives `dtoverlay=i2c-rtc,ds3231,i2c3`. Bus `2` is
+  deliberately not accepted — it is the HDMI DDC channel.
 - **`fake_hwclock: true`** — installs the `fake-hwclock` package as a fallback
   (time survives reboots even without a HAT, but drifts without NTP).
 
@@ -246,8 +250,10 @@ ranges `-16..+14` in 0.025 V steps.
 - **`enabled`** — emits `dtparam=pciex1` (Pi5 / CM4 / CM5).
 - **`gen: 3`** — beyond spec but works on most boards; use gen2 for
   stability or bad cables.
-- **`nvme_boot: true`** — handled by the `bootloader` block (see below);
-  still useful here to signal intent.
+- **`nvme_boot: true`** — **advisory only, it emits nothing.** It records
+  that the board is meant to boot from NVMe; the EEPROM change is made by the
+  `bootloader` block below. Set `"bootloader": { "boot_order": "0xf461" }`
+  (NVMe, USB, SD, repeat) or the NVMe stays unbootable.
 
 ---
 
@@ -361,7 +367,7 @@ Two things that are easy to get wrong here:
 
 ## 🚌 `can` (Waveshare 17912 dual MCP2515)
 
-> ### \u26a0\ufe0f Upgrading a fleet from v0.5.0 or older
+> ### ⚠️ Upgrading a fleet from v0.5.0 or older
 >
 > **Which physical connector is `can0` changes.** Up to v0.5.0 the CS1 chip
 > won the name `can0` through probe order, so the interface named `can0` was

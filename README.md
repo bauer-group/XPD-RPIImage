@@ -248,9 +248,8 @@ for every account including `root`, from
 `/etc/profile.d/50-bgrpiimage-shell.sh`.
 
 All IP changes land as `/etc/systemd/network/05-bgrpiimage-<iface>.network`
-— the `05-` prefix sorts before the shipped `10-eth.network` /
-`20-wlan.network`, and systemd-networkd applies only the first matching file,
-so ours wins. The defaults are left in place, so reverting is just deleting
+— the `05-` prefix sorts before the shipped `10-eth.network`, and
+systemd-networkd applies only the first matching file, so ours wins. The defaults are left in place, so reverting is just deleting
 the file.
 
 See [`docs/post-flash-setup.md`](docs/post-flash-setup.md) for the full
