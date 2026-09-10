@@ -49,7 +49,8 @@ for p in /etc/shadow /etc/passwd /etc/sudoers.d/010-bgrpiimage-admin \
          /var/lib/systemd/rfkill/0:wlan \
          /etc/systemd/network/05-bgrpiimage-can0.network \
          /etc/docker/daemon.json /boot/firmware/cmdline.txt /etc/fstab \
-         /etc/apt/sources.list.d/docker.list /etc/machine-id; do
+         /etc/apt/sources.list.d/docker.list /etc/machine-id \
+         /etc/bgrpiimage-release; do
     if try_install device "$p"; then bad "device write to $p was ALLOWED"; else ok "device refuses $p"; fi
 done
 
@@ -61,7 +62,7 @@ done
 echo "=== paths this project owns stay writable on a device ==="
 for p in /etc/systemd/network/40-can0.network /etc/systemd/network/70-can0.link \
          /etc/apt/apt.conf.d/50unattended-upgrades /etc/issue \
-         /etc/update-motd.d/10-bgrpiimage /etc/bgrpiimage-release; do
+         /etc/update-motd.d/10-bgrpiimage; do
     if try_install device "$p"; then ok "device may write $p"; else bad "device write to $p was refused"; fi
 done
 

@@ -582,12 +582,93 @@ jobs:
           compression-level: 0
 
   # =========================================================================
+  # 📦  Config bundle - the ~30 KB an already-flashed device needs to catch up
+  #     with a release without being reflashed.
+  #
+  #     needs: validate, NOT needs: build. The bundle is a render plus a tar;
+  #     it takes seconds and no privileges, while an image build takes ~40
+  #     minutes per variant. Chaining it behind the build would make a
+  #     config-only release - which is most of them - wait for two image
+  #     builds it does not need, and would mean no bundle at all on a release
+  #     where an image build fails for unrelated reasons.
+  # =========================================================================
+  bundle:
+    name: 📦 Bundle ${{ matrix.variant }}
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: ${{ fromJSON(needs.validate.outputs.variants) }}
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v7
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: ⚙️ Install Python dependencies
+        run: python -m pip install -r scripts/requirements.txt
+
+      - name: 📦 Render + pack
+        env:
+          # Same as the image build: an unset secret resolves to the empty
+          # string and the generator fills in the documented default. The
+          # bundle carries no credential either way - bgrpiimage-users is not
+          # in it, and bundle.py refuses to publish if that ever stops being
+          # true - but the render has to succeed.
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          WIFI_PSK:       ${{ secrets.WIFI_PSK }}
+        run: |
+          set -euo pipefail
+          cfg="config/variants/${{ matrix.variant }}.json"
+          python scripts/generate.py "$cfg" >/dev/null
+          python scripts/bundle.py "$cfg" --out dist
+
+      - name: 📋 Summary
+        run: |
+          {
+            echo "### 📦 ${{ matrix.variant }} config bundle"
+            echo '```'
+            ls -lh dist/*.confbundle.tar.gz | awk '{print $9, $5}'
+            cat dist/*.confbundle.tar.gz.sha256
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 🧪 End-to-end update test
+        # Applies the bundle just built to a container seeded to look like a
+        # device that has been in service - rotated password, static
+        # resolv.conf, a CAN override written by an older helper. Most of
+        # the assertions are negative, because the refusals and the
+        # preservation rules are the product: a fresh container is the easy
+        # case and not the one that costs a site visit.
+        run: bash tests/test-update.sh
+
+      - name: 📤 Upload bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: bgrpiimage-bundle-${{ matrix.variant }}
+          path: |
+            dist/*.confbundle.tar.gz
+            dist/*.confbundle.tar.gz.sha256
+            dist/*.bundle.manifest.json
+          retention-days: 3
+          if-no-files-found: error
+
+  # =========================================================================
   # 🚀  Tag push -> create GitHub release with all built image artifacts.
   # =========================================================================
   release:
     name: 🚀 Release
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
+    needs: [build, bundle]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -630,6 +711,7 @@ jobs:
             release-assets/*.img.xz
             release-assets/*.sha256
             release-assets/*.manifest.json
+            release-assets/*.confbundle.tar.gz
             release-assets/bgrpiimage-setup
           fail_on_unmatched_files: true
           append_body: true

@@ -41,7 +41,7 @@ render: ## resolve env vars + render generated module files
 	$(PY) scripts/generate.py $(CONFIG) $(if $(ENV_FILE),--env-file $(ENV_FILE),)
 
 .PHONY: test
-test: test-selfupdate test-parity test-idempotence test-guards ## run all tests (needs docker)
+test: test-selfupdate test-parity test-idempotence test-guards test-update ## run all tests (needs docker)
 
 .PHONY: test-selfupdate
 test-selfupdate: ## exercise `bgrpiimage-setup update --self`
@@ -58,6 +58,14 @@ test-idempotence: render ## assert applying a release twice is a no-op
 .PHONY: test-guards
 test-guards: ## assert the apply-lib guards actually refuse
 	bash tests/test-apply-guards.sh
+
+.PHONY: test-update
+test-update: bundle ## end-to-end bgrpiimage-update against dirty fixtures
+	bash tests/test-update.sh
+
+.PHONY: bundle
+bundle: render ## pack the update bundle for $(VARIANT)
+	$(PY) scripts/bundle.py $(CONFIG) $(if $(ENV_FILE),--env-file $(ENV_FILE),) --out dist
 
 .PHONY: bootstrap
 bootstrap: ## clone/update CustomPiOS into ./CustomPiOS

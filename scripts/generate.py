@@ -423,6 +423,9 @@ _MOTD_SCRIPT = r"""#!/bin/bash
 set +e
 
 [ -r /etc/bgrpiimage-release ] && . /etc/bgrpiimage-release
+# Written only by bgrpiimage-update. Absent on a device that has never
+# been updated, which is why every read below is defaulted.
+[ -r /etc/bgrpiimage-applied ] && . /etc/bgrpiimage-applied
 
 if [ -t 1 ]; then
     CY=$'\033[1;36m'; GR=$'\033[1;32m'; DIM=$'\033[2m'
@@ -437,10 +440,24 @@ sep=$(printf '=%.0s' $(seq 1 "$cols"))
 active_color() { [ "$1" = "active" ] && echo "$GR" || echo "$YE"; }
 
 echo "${CY}${sep}${NC}"
-printf "  ${GR}%s${NC}  %s  ${DIM}v%s${NC}\n" \
+# The image version and the configuration version legitimately differ once
+# an update has been applied, and both matter: the first says which image was
+# flashed - the anchor for deciding whether the next release is a config
+# change or a reflash - and the second says what the device is actually
+# running. Showing only one of them would make a support call guesswork, so
+# the second is appended when, and only when, it differs.
+_ver="v${BGRPIIMAGE_VERSION:-0.0.0}"
+if [ -n "${BGRPIIMAGE_CONFIG_VERSION:-}" ] \
+   && [ "${BGRPIIMAGE_CONFIG_VERSION}" != "${BGRPIIMAGE_VERSION:-}" ]; then
+    _ver="${_ver} ${DIM}(config v${BGRPIIMAGE_CONFIG_VERSION})${NC}"
+fi
+printf "  ${GR}%s${NC}  %s  ${DIM}%s${NC}\n" \
     "${BGRPIIMAGE_DIST:-bgRPIImage}" \
     "${BGRPIIMAGE_VARIANT:-unknown}" \
-    "${BGRPIIMAGE_VERSION:-0.0.0}"
+    "$_ver"
+if [ "${BGRPIIMAGE_CONFIG_RESULT:-ok}" = "verify-failed" ]; then
+    printf "  ${RD}the last configuration update did not verify${NC} ${DIM}(sudo bgrpiimage-update status)${NC}\n"
+fi
 [ -n "${BGRPIIMAGE_DESCRIPTION:-}" ] && \
     printf "  ${DIM}%s${NC}\n" "$BGRPIIMAGE_DESCRIPTION"
 

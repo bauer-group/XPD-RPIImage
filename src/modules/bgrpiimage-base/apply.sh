@@ -13,13 +13,13 @@ SHELL_SNIPPET="$(bg_path /etc/profile.d/50-bgrpiimage-shell.sh)"
 # MOTD and in docs/post-flash-setup.md fails with "command not found". It is
 # tracked 0755 in git, but assert it here so the image never depends on how
 # the checkout or unpack preserved the mode bit.
-chmod 0755 "$SETUP"
+bg_dry || chmod 0755 "$SETUP"
 # Strip CRLF as well. The repo is developed on Windows and scripts/build.sh
 # bind-mounts the working tree straight into the build container, so a
 # checkout made without the repo's .gitattributes ships a `#!/usr/bin/env
 # bash\r` shebang - which execs as "bad interpreter: No such file or
 # directory" and reads to a user as "the command does not exist".
-sed -i 's/\r$//' "$SETUP"
+bg_dry || sed -i 's/\r$//' "$SETUP"
 
 # --- interactive shell conveniences ---
 # Debian leaves ll/la/l commented out in /etc/skel/.bashrc and pi-gen does not
@@ -36,9 +36,12 @@ sed -i 's/\r$//' "$SETUP"
 # non-interactive default keeps this modified file and writes the
 # maintainer's version alongside as /etc/bash.bashrc.dpkg-dist. The grep
 # guard keeps the append idempotent when a rootfs is rebuilt in place.
-sed -i 's/\r$//' "$SHELL_SNIPPET"
-chmod 0644 "$SHELL_SNIPPET"
+bg_dry || sed -i 's/\r$//' "$SHELL_SNIPPET"
+bg_dry || chmod 0644 "$SHELL_SNIPPET"
 if ! grep -q '50-bgrpiimage-shell.sh' "$(bg_path /etc/bash.bashrc)" 2>/dev/null; then
+    if bg_dry; then
+        bg_log "would append the profile.d hook to /etc/bash.bashrc"
+    else
     cat >> "$(bg_path /etc/bash.bashrc)" <<'__BGRPIIMAGE_SHELL_EOF__'
 
 # bgRPIImage: same aliases the login-shell path gets via /etc/profile.d.
@@ -48,6 +51,7 @@ if [ -r /etc/profile.d/50-bgrpiimage-shell.sh ]; then
     . /etc/profile.d/50-bgrpiimage-shell.sh
 fi
 __BGRPIIMAGE_SHELL_EOF__
+    fi
 fi
 
 # --- hostname ---
@@ -110,7 +114,13 @@ if [[ -n "${BGRPIIMAGE_BASE_EXTRA_PACKAGES:-}" ]]; then
 fi
 
 # --- release metadata (sourced by MOTD and ops tooling) ---
-if [[ -f "$GEN/release.env" ]]; then
+#
+# Image only. This file answers "which image is this device running", and
+# that answer must stay true after any number of configuration updates:
+# it is what tells an updater whether the base OS moved underneath. The
+# applied configuration version is recorded separately, in
+# /etc/bgrpiimage-applied, by bgrpiimage-update.
+if [[ -f "$GEN/release.env" ]] && bg_is_image; then
     bg_install "$GEN/release.env" /etc/bgrpiimage-release 0644
     # The codename is appended here rather than rendered by generate.py because
     # only this side knows it: the generator runs on the build host, where

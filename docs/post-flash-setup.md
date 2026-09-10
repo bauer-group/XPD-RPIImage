@@ -430,8 +430,51 @@ Be clear about what can and cannot be updated in place:
 | --- | --- |
 | Debian and Raspberry Pi packages, including security fixes | Automatic, via `unattended-upgrades` inside the configured maintenance window — see [`banner-and-updates.md`](banner-and-updates.md). |
 | Portainer | `docker compose -f /etc/bgrpiimage/portainer/docker-compose.yml pull && ... up -d` |
-| `bgrpiimage-setup` itself | `sudo bgrpiimage-setup update --self` — fetches the helper from the latest release, verifies its checksum, and swaps it in. Needs outbound HTTPS to github.com. |
-| Everything else bgRPIImage generates — `config.txt` overlays, systemd units, the MOTD, network and CAN configuration | **Reflash.** There is no in-place update mechanism for these yet. |
+| `bgrpiimage-setup` itself | `sudo bgrpiimage-setup update --self` — fetches the helper from the latest release, verifies its checksum, and swaps it in. |
+| Everything else bgRPIImage generates — `config.txt` overlays, systemd units, the MOTD, network and CAN configuration | `sudo bgrpiimage-update apply`. Run `plan` first to see what would change. Needs outbound HTTPS to github.com. |
+| Users, passwords, sudo, PAM, sshd | **Reflash.** Deliberately out of scope — see below. |
+| A release that moved to a new Raspberry Pi OS | **Reflash.** The updater refuses it rather than applying configuration built against a different base. |
+
+```bash
+sudo bgrpiimage-update check      # is there anything new?
+sudo bgrpiimage-update plan       # what would change, without changing it
+sudo bgrpiimage-update apply      # do it
+sudo bgrpiimage-update status     # image version, config version, pending reboot
+sudo bgrpiimage-update rollback   # restore the files the last apply replaced
+```
+
+### What it will refuse to do
+
+The refusals are the point. Each one exists because the alternative is a
+device that reports success and is quietly wrong:
+
+- **A bundle for another variant, or an older version.** `--version` overrides
+  the second: going back deliberately is how you undo a bad release.
+- **A release built on a different Raspberry Pi OS.** That is a reflash, and
+  the device knows because `/etc/bgrpiimage-release` records the base image it
+  was built from.
+- **An image that predates in-place updates.** It carries none of the identity
+  the checks need, and guessing is not better than saying so.
+- **An operator override that would swallow a new setting.** `bgrpiimage-setup
+  can bitrate` writes `05-bgrpiimage-<iface>.network`, which sorts before — and
+  therefore *replaces* — the shipped file. If a release adds a key the override
+  does not carry, that key can never reach the interface, and nothing would
+  warn. The updater stops and names the setting that would be lost.
+- **Anything during the unattended-upgrades reboot window**, which issues
+  `shutdown -r +1` and could land mid-apply.
+
+### What it never touches
+
+`/etc/shadow`, `/etc/passwd`, sudoers, PAM, sshd host keys, `/etc/hostname`,
+`/etc/hosts`, `/etc/resolv.conf`, stored WiFi PSKs, rfkill state, your own
+`05-bgrpiimage-*` overrides, `/etc/docker/daemon.json`, `cmdline.txt` and
+`fstab`. The list is enforced inside the one function that writes, not left to
+each module to respect.
+
+`/etc/bgrpiimage-release` is on that list too: it records the **flashed**
+image and has to keep doing so, because it is the input to the base-image
+check. The applied configuration version lives in `/etc/bgrpiimage-applied`,
+and the MOTD shows both when they differ.
 
 So a device picks up OS security updates on its own, but a fix to the platform
 (a corrected CAN interrupt pin, say) needs a new image. Grab it from

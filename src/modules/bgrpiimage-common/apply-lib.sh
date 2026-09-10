@@ -156,6 +156,12 @@ BGRPI_DENY_GLOBS=(
     '/etc/fstab' '/etc/crypttab'
     '/etc/apt/sources.list' '/etc/apt/sources.list.d/*' '/etc/apt/keyrings/*'
     '/etc/machine-id'
+    # Describes the FLASHED image and must keep doing so: it is the input
+    # to the base-image check that decides whether the next update is a
+    # config change or a reflash. An updater that stamps its own success
+    # here destroys the basis of its own next safety check. The applied
+    # configuration version lives in /etc/bgrpiimage-applied instead.
+    '/etc/bgrpiimage-release'
 )
 
 bg_denied() {
