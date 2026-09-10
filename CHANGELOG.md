@@ -4,6 +4,12 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.12.0](https://github.com/bauer-group/XPD-RPIImage/compare/v0.11.2...v0.12.0) (2026-09-10)
+
+### 🚀 Features
+
+* **update:** documented and proved the bootstrap for older hardware ([fe9926c](https://github.com/bauer-group/XPD-RPIImage/commit/fe9926c85c7684964dba83dbdab04e382c30ea00))
+
 ## [0.11.2](https://github.com/bauer-group/XPD-RPIImage/compare/v0.11.1...v0.11.2) (2026-09-10)
 
 ### 🐛 Bug Fixes
