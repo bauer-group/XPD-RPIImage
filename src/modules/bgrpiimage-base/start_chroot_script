@@ -60,8 +60,19 @@ GEN=/opt/bgrpiimage/bgrpiimage-base
 # --- hostname ---
 if [[ -f "$GEN/hostname" ]]; then
     install -m 644 "$GEN/hostname" /etc/hostname
-    sed -i "s/127\.0\.1\.1.*/127.0.1.1\t$(cat "$GEN/hostname")/" /etc/hosts \
-        || echo -e "127.0.1.1\t$(cat "$GEN/hostname")" >> /etc/hosts
+    # `sed -i s/...` exits 0 whether or not it substituted anything, so the
+    # `|| echo ... >>` fallback this used to carry was unreachable: an
+    # /etc/hosts with no 127.0.1.1 line silently kept none, the hostname did
+    # not resolve, and sudo printed "unable to resolve host" on every call.
+    # Decide on the grep instead. The ^ anchor matters too - the old pattern
+    # was unanchored and would also have rewritten a 127.0.1.10 entry.
+    _hn=$(cat "$GEN/hostname")
+    if grep -qE '^127\.0\.1\.1[[:space:]]' /etc/hosts; then
+        sed -i "s/^127\.0\.1\.1[[:space:]].*/127.0.1.1\t${_hn}/" /etc/hosts
+    else
+        printf '127.0.1.1\t%s\n' "$_hn" >> /etc/hosts
+    fi
+    unset _hn
 fi
 
 # --- locale & timezone ---
