@@ -50,4 +50,24 @@ venv/
 .env
 .env.local
 secrets.json
+
+# Local key material for release signing.
+#
+# The whole directory, not just the private half: a folder named .secrets is
+# a working area for key material, and an allowlist there is one forgotten
+# extension away from a committed private key. The PUBLIC half is not kept
+# here either - its home in the repo is the module tree that ships it into
+# the image, where it is meant to be committed and reviewed.
+#
+# Private keys are pushed to GitHub Actions secrets with
+# scripts/push-secrets.sh and never leave this machine any other way.
+.secrets/
+
+# Belt and braces: no private key may be committed from anywhere in the tree,
+# whatever it is called or wherever someone drops it. Nothing tracked matches
+# these today.
+*.key
+*.pem
+*.p12
+*.pfx
 .claude/
