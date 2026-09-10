@@ -59,6 +59,21 @@ if [ -z "${BGRPI_TEST_INNER:-}" ]; then
         echo "no module has an apply.sh yet - nothing to compare"; exit 0
     fi
 
+    # actions/checkout clones shallow (fetch-depth: 1) with no tags, so the
+    # pinned reference is simply absent in CI. Fetch just that one ref rather
+    # than making every build pull the full history for a test that needs one
+    # commit.
+    if ! ( cd "$root" && git cat-file -e "${BASE_REF}^{commit}" ) 2>/dev/null; then
+        ( cd "$root" && git fetch --depth=1 origin \
+            "refs/tags/${BASE_REF}:refs/tags/${BASE_REF}" ) >/dev/null 2>&1 \
+        || ( cd "$root" && git fetch --depth=1 origin "$BASE_REF" ) >/dev/null 2>&1 \
+        || true
+    fi
+    if ! ( cd "$root" && git cat-file -e "${BASE_REF}^{commit}" ) 2>/dev/null; then
+        echo "cannot resolve BASE_REF=${BASE_REF} - fetch it or override BASE_REF" >&2
+        exit 1
+    fi
+
     # Stage the pre-refactor scripts next to the tree, so the container sees
     # both versions without needing git or network inside it.
     old=$(mktemp -d)
