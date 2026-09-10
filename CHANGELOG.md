@@ -4,6 +4,12 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.13.1](https://github.com/bauer-group/XPD-RPIImage/compare/v0.13.0...v0.13.1) (2026-09-10)
+
+### 🐛 Bug Fixes
+
+* **bundle:** carried bgrpiimage-hardware in the update bundle ([eda59f2](https://github.com/bauer-group/XPD-RPIImage/commit/eda59f2ac07ac5c76304bfc750ae95ad3002df7a))
+
 ## [0.13.0](https://github.com/bauer-group/XPD-RPIImage/compare/v0.12.0...v0.13.0) (2026-09-10)
 
 ### 🚀 Features
