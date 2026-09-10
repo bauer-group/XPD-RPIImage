@@ -310,9 +310,28 @@ bg_apt_install() {
     if bg_is_device; then
         local missing=()
         local p
+        # Both the real package names and everything they Provide, gathered in
+        # one dpkg-query rather than one per package.
+        #
+        # `dpkg-query -W <name>` alone does NOT resolve virtual packages, and
+        # Debian renames things: on trixie `dnsutils` is provided by
+        # `bind9-dnsutils` and is never installed under the queried name. The
+        # old check therefore reported a package as missing on a device where
+        # `apt install dnsutils` answers "already the newest version" - which
+        # reads as the release wanting something the operator cannot supply,
+        # and sends them looking for a problem that does not exist.
+        local installed
+        installed=$(dpkg-query -W -f='${Status}\t${Package}\t${Provides}\n' 2>/dev/null \
+            | awk -F'\t' '$1 == "install ok installed" {
+                    print $2
+                    if ($3 != "") {
+                        gsub(/ *\([^)]*\)/, "", $3)   # drop "(= 1.2)" version qualifiers
+                        n = split($3, a, / *, */)
+                        for (i = 1; i <= n; i++) if (a[i] != "") print a[i]
+                    }
+                }')
         for p in "$@"; do
-            dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q '^install ok installed$' \
-                || missing+=("$p")
+            grep -qxF "$p" <<<"$installed" || missing+=("$p")
         done
         if (( ${#missing[@]} )); then
             bg_warn "this release expects packages that are not installed: ${missing[*]}"

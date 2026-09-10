@@ -405,7 +405,30 @@ install_payload() {
     # Everything else in the bundle - the two helpers - lands at a real path,
     # so it goes through the same denylist the modules are held to rather
     # than a raw tar extract that would bypass every guard in the library.
-    local mdir="$1" mode="${2:-payload}" f dest
+    local mdir="$1" mode="${2:-payload}" f dest m
+    # REPLACE each module's payload, do not merge into it.
+    #
+    # A plain tar extract only ever adds and overwrites, so any file the
+    # flashed image staged and the new bundle no longer carries survives every
+    # update forever - and the module's own apply.sh then finds it and acts on
+    # it. That is not theoretical: a unit flashed at v0.5.0 kept
+    # bgrpiimage-network/wpa_supplicant/ under /opt, the current bundle carries
+    # no such directory, and bgrpiimage-network reached for a path the denylist
+    # forbids on a running device. bg_install refused, the module died, and
+    # because a failed module rolls the whole update back that device could not
+    # be updated at all.
+    #
+    # Only the modules this bundle declares are cleared: a module the bundle
+    # does not carry is none of its business. The manifest is signature-checked
+    # before we get here, and the name guard is belt-and-braces on an rm -rf.
+    #
+    # Losing a payload to an interrupted extract is harmless in a way that
+    # losing a real file would not be: nothing on a running device reads
+    # /opt/bgrpiimage, and the next run restores it in full.
+    while IFS= read -r m; do
+        [[ -n "$m" && "$m" != *[!A-Za-z0-9._-]* ]] || continue
+        rm -rf "/opt/bgrpiimage/${m:?}"
+    done < <(jq -r '.modules[]? // empty' "$mdir/manifest.json" 2>/dev/null)
     ( cd "$mdir/root" && tar cf - opt ) | ( cd / && tar xf - )
     find /opt/bgrpiimage -name '*.sh' -exec chmod 0755 {} + 2>/dev/null || true
     [[ "$mode" == "full" ]] || return 0

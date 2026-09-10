@@ -373,6 +373,36 @@ grep -q "BGRPIIMAGE_VERSION='0.7.7'" /etc/bgrpiimage-release \
     && ok "still reports the originally flashed image" \
     || bad "the flashed version was overwritten"
 
+sect "12. payload the bundle no longer carries"
+# A device flashed at v0.5.0 staged bgrpiimage-network/wpa_supplicant/ under
+# /opt. No current bundle carries that directory, but the payload extract used
+# to merge rather than replace, so it survived every update - and
+# bgrpiimage-network then reached for /etc/wpa_supplicant/*, which the denylist
+# forbids on a running device. bg_install refused, the module died, and a failed
+# module rolls the entire update back. The device could not be updated at all.
+seed_device 0.0.1
+mkdir -p /opt/bgrpiimage/bgrpiimage-network/wpa_supplicant
+cat > /opt/bgrpiimage/bgrpiimage-network/wpa_supplicant/wpa_supplicant-wlan0.conf <<'EOF'
+network={
+    ssid="stale-from-the-flashed-image"
+    psk="cleartext-left-behind"
+}
+EOF
+
+$U apply --yes >/tmp/stale 2>&1; rc=$?
+[ $rc -eq 0 ] && ok "an update is not defeated by stale payload" \
+              || { bad "apply failed on stale payload (rc=$rc)"; tail -12 /tmp/stale; }
+grep -q "rolling back" /tmp/stale \
+    && bad "the whole update was rolled back" \
+    || ok "and nothing was rolled back"
+[ ! -e /opt/bgrpiimage/bgrpiimage-network/wpa_supplicant ] \
+    && ok "the stale directory is gone, with the cleartext PSK in it" \
+    || bad "stale payload survived the update"
+# The replace must not become a wipe: what the bundle DOES carry has to be there.
+[ -f /opt/bgrpiimage/bgrpiimage-network/systemd-networkd/10-eth.network ] \
+    && ok "and the payload the bundle carries is still installed" \
+    || bad "replacing the payload dir removed files the bundle carries"
+
 echo
 echo "================ $PASS passed, $FAIL failed ================"
 [ "$FAIL" -eq 0 ]

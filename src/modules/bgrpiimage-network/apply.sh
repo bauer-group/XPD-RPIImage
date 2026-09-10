@@ -47,7 +47,21 @@ if bg_is_image; then
 fi
 
 # wpa_supplicant per-interface
-if [[ -d "$GEN/wpa_supplicant" ]]; then
+#
+# Image only, like the two other denylisted paths in this module - and this one
+# was the exception by omission rather than by intent. /etc/wpa_supplicant/* is
+# on BGRPI_DENY_GLOBS because a deployed unit's PSK is site data an update has
+# no business rewriting, so bg_install refuses it and bg_die takes the module
+# down with it. A failing module is not a warning either: bgrpiimage-update
+# rolls the WHOLE update back and exits 1.
+#
+# That is not hypothetical. A device flashed at v0.5.0 still has this
+# directory staged under /opt from its image, the payload extract merges rather
+# than replaces, so the stale copy survives every update - and the module then
+# reaches for a path it may not write, on a bundle that does not even carry
+# one. Asking for a denied write and being refused is the module's bug; the
+# denylist worked exactly as designed.
+if bg_is_image && [[ -d "$GEN/wpa_supplicant" ]]; then
     bg_install_tree "$GEN/wpa_supplicant" /etc/wpa_supplicant 0600
     for f in "$(bg_path /etc/wpa_supplicant)"/wpa_supplicant-*.conf; do
         [[ -f "$f" ]] || continue
