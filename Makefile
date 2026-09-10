@@ -63,6 +63,10 @@ test-guards: ## assert the apply-lib guards actually refuse
 test-update: bundle ## end-to-end bgrpiimage-update against dirty fixtures
 	bash tests/test-update.sh
 
+.PHONY: push-secrets
+push-secrets: ## upload signing keys to GitHub Actions secrets (needs gh)
+	$(PY) scripts/push-secrets.py
+
 .PHONY: bundle
 bundle: render ## pack the update bundle for $(VARIANT)
 	$(PY) scripts/bundle.py $(CONFIG) $(if $(ENV_FILE),--env-file $(ENV_FILE),) --out dist
