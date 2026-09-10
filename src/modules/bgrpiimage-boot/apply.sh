@@ -38,16 +38,25 @@ END_MARK="# <<< bgrpiimage AUTO-GENERATED <<<"
 tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
 
-if grep -qF "$START_MARK" "$CFG"; then
-    sed "/${START_MARK//\//\\/}/,/${END_MARK//\//\\/}/d" "$CFG" > "$tmp"
-else
-    cat "$CFG" > "$tmp"
-fi
+# The blank line in front of the fence is separator, not content, so it has to
+# be regenerated rather than preserved. Deleting only START..END leaves the
+# previous separator behind, and the next run adds another - the file grew one
+# blank line per apply and its hash changed every time, which on a device
+# means a reboot intent for an update that altered nothing. Command
+# substitution strips ALL trailing newlines; printf puts exactly one back.
+body="$(
+    if grep -qF "$START_MARK" "$CFG"; then
+        sed "/${START_MARK//\//\\/}/,/${END_MARK//\//\\/}/d" "$CFG"
+    else
+        cat "$CFG"
+    fi
+)"
 {
+    printf '%s\n' "$body"
     printf '\n%s\n' "$START_MARK"
     cat "$GEN/config-bgrpiimage.txt"
     printf '%s\n' "$END_MARK"
-} >> "$tmp"
+} > "$tmp"
 
 if [[ "$(sha256sum "$tmp" | cut -d' ' -f1)" == "$(sha256sum "$CFG" | cut -d' ' -f1)" ]]; then
     exit 0

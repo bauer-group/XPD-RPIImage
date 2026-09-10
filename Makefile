@@ -41,7 +41,7 @@ render: ## resolve env vars + render generated module files
 	$(PY) scripts/generate.py $(CONFIG) $(if $(ENV_FILE),--env-file $(ENV_FILE),)
 
 .PHONY: test
-test: test-selfupdate test-parity ## run all tests (needs docker)
+test: test-selfupdate test-parity test-idempotence ## run all tests (needs docker)
 
 .PHONY: test-selfupdate
 test-selfupdate: ## exercise `bgrpiimage-setup update --self`
@@ -50,6 +50,10 @@ test-selfupdate: ## exercise `bgrpiimage-setup update --self`
 .PHONY: test-parity
 test-parity: render ## assert apply.sh still produces what the chroot scripts did
 	bash tests/test-apply-parity.sh
+
+.PHONY: test-idempotence
+test-idempotence: render ## assert applying a release twice is a no-op
+	bash tests/test-apply-idempotence.sh
 
 .PHONY: bootstrap
 bootstrap: ## clone/update CustomPiOS into ./CustomPiOS

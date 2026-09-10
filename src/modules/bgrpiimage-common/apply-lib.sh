@@ -59,6 +59,13 @@ BGRPI_INTENTS="${BGRPI_INTENTS:-${BGRPI_ROOT}/run/bgrpiimage-intents}"
 # rather than on having been run.
 BGRPI_LAST_CHANGED=0
 
+# Same question across a whole module. Needed because the interesting intents
+# are usually module-wide - one daemon-reload covers six unit files - and
+# emitting them unconditionally means a device restarts timers on every update
+# that changed nothing, which is exactly the noise the content comparison
+# exists to avoid.
+BGRPI_CHANGE_COUNT=0
+
 # ---------------------------------------------------------------------------
 # Output
 # ---------------------------------------------------------------------------
@@ -134,6 +141,7 @@ bg_install() {
     fi
 
     BGRPI_LAST_CHANGED=1
+    BGRPI_CHANGE_COUNT=$((BGRPI_CHANGE_COUNT + 1))
     if bg_dry; then
         bg_log "would write $dest"
         return 0
@@ -166,6 +174,7 @@ bg_install_tree() {
 }
 
 bg_changed() { [[ "$BGRPI_LAST_CHANGED" == "1" ]]; }
+bg_any_changed() { (( BGRPI_CHANGE_COUNT > 0 )); }
 
 # ---------------------------------------------------------------------------
 # Units

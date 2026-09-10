@@ -50,8 +50,14 @@ bg_unit_enable unattended-upgrades
 # Unit files and timer overrides only take effect after the manager re-reads
 # them. Queued, not done here: the caller batches one daemon-reload for the
 # whole transaction instead of one per module.
-bg_intent "daemon-reload"
-bg_intent "restart apt-daily.timer apt-daily-upgrade.timer"
+#
+# Conditional on something actually having changed. Restarting the apt timers
+# resets their randomised delay, so doing it on every apply would nudge a
+# fleet's maintenance windows around for no reason.
+if bg_any_changed; then
+    bg_intent "daemon-reload"
+    bg_intent "restart apt-daily.timer apt-daily-upgrade.timer"
+fi
 
 # Build-time hygiene: shrink the image by dropping the package cache. On a
 # running device this would throw away a cache the operator may still need.

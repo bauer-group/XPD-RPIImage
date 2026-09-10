@@ -137,6 +137,16 @@ jobs:
           python scripts/generate.py config/variants/canbus-plattform.json >/dev/null
           bash tests/test-apply-parity.sh
 
+      - name: 🧪 Apply idempotence test
+        # Applies every module twice against a scratch root in device
+        # context and asserts the second run changes nothing and queues no
+        # intent. This is the property the updater depends on, and the one
+        # this codebase has already been bitten by - create-users.sh resets
+        # a rotated password on every run. It found two more the day it was
+        # written: config.txt grew a blank line per apply, and the apt
+        # timers were restarted whether or not anything had changed.
+        run: bash tests/test-apply-idempotence.sh
+
       - name: ✅ Validate all variants
         run: |
           set -euo pipefail
