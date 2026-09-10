@@ -120,6 +120,23 @@ jobs:
         # for each of them.
         run: bash tests/test-selfupdate.sh
 
+      - name: 🧪 Apply-logic parity test
+        # Moving module logic out of start_chroot_script into apply.sh must
+        # not change what a build puts on disk. Both versions run in a
+        # container with apt/systemctl stubbed, and the resulting
+        # filesystem plus the external calls each asked for are diffed.
+        # BASE_REF is pinned inside the script, not derived from the git
+        # history, so this cannot quietly compare a commit against itself.
+        env:
+          ADMIN_PASSWORD: ci-placeholder-pw
+          WIFI_PSK: ci-placeholder-psk
+        run: |
+          set -euo pipefail
+          # canbus-plattform enables every module that has an apply.sh;
+          # rendering it first is what makes the auto-discovery complete.
+          python scripts/generate.py config/variants/canbus-plattform.json >/dev/null
+          bash tests/test-apply-parity.sh
+
       - name: ✅ Validate all variants
         run: |
           set -euo pipefail

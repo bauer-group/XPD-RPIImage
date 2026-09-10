@@ -256,6 +256,46 @@ def clean_generated(module_name: str) -> Path:
     return gen
 
 
+def stage_apply(module_name: str, gen: Path) -> None:
+    """Copy a module's hand-written apply.sh into its generated payload.
+
+    The apply logic stays hand-written and git-tracked at
+    src/modules/<m>/apply.sh - those scripts run ~60% comment density and
+    every comment is a scar (rfkill dpkg-conffile semantics, mcp2515 probe
+    order, agetty's inotify redraw, the ip6tables -C that left a unit
+    permanently failed). Generating shell would bury all of it inside Python
+    string literals, where shellcheck cannot see it and `git blame` points at
+    the generator instead of the decision.
+
+    But the payload directory must stay 100% derived, or clean_generated()'s
+    invariant breaks and a stale apply.sh could outlive a rename. So the file
+    is COPIED here on every render: one owner for the logic, one owner for the
+    tree it ships in.
+    """
+    src = MODULES_DIR / module_name / "apply.sh"
+    if not src.exists():
+        return
+    # Normalise to LF: the repo is developed on Windows and scripts/build.sh
+    # bind-mounts the working tree straight into the build container, where a
+    # CRLF shebang execs as "bad interpreter: No such file or directory" and
+    # reads to a user as "the command does not exist".
+    body = src.read_text(encoding="utf-8").replace("\r\n", "\n")
+    write(gen / "apply.sh", body, executable=True)
+
+
+def render_common(cfg: dict[str, Any]) -> None:
+    """Ship the shared apply library.
+
+    Carries no configuration of its own. It exists so that every module's
+    apply.sh has a library to source, and it is first in ACTIVE_MODULES so
+    that library is on disk before anything sources it.
+    """
+    gen = clean_generated("bgrpiimage-common")
+    lib = MODULES_DIR / "bgrpiimage-common" / "apply-lib.sh"
+    body = lib.read_text(encoding="utf-8").replace("\r\n", "\n")
+    write(gen / "apply-lib.sh", body)
+
+
 # -----------------------------------------------------------------------------
 # Renderers - one per feature area
 # -----------------------------------------------------------------------------
@@ -1737,6 +1777,9 @@ def _window_minutes(start_hhmm: str, end_hhmm: str) -> int:
 # Variant shell config & module selection
 # -----------------------------------------------------------------------------
 ACTIVE_MODULES: list[str] = [
+    # First on purpose: it puts apply-lib.sh in the rootfs, and every
+    # other module's apply.sh sources it.
+    "bgrpiimage-common",
     "bgrpiimage-base",
     "bgrpiimage-users",
     "bgrpiimage-network",
@@ -1901,6 +1944,7 @@ def main() -> int:
     ))
 
     steps: list[tuple[str, Any]] = [
+        ("bgrpiimage-common",               render_common),
         ("bgrpiimage-base",                 render_base),
         ("bgrpiimage-users",                render_users),
         ("bgrpiimage-network",              render_network),
@@ -1921,6 +1965,18 @@ def main() -> int:
     total = 0
     for module, fn in steps:
         fn(resolved)
+        # Staged centrally rather than from each renderer: a renderer that
+        # forgets to ship its own apply.sh produces a module the updater
+        # cannot run, and the failure would only surface on a device.
+        gen_dir = MODULES_DIR / module / "filesystem" / "root" / "opt" / "bgrpiimage" / module
+        # _module_enabled is the authority on whether this variant runs the
+        # module at all. The `.disabled` marker is not: render_can and friends
+        # bail out after clean_generated() without writing one, so keying off
+        # the marker staged an apply.sh into modules the variant excludes -
+        # which then reported as "rendered" in the table below and put a script
+        # in a module that is not even in MODULES.
+        if _module_enabled(module, resolved) and gen_dir.is_dir():
+            stage_apply(module, gen_dir)
         status, count = _module_status(module)
         if status == "rendered":
             table.add_row("[green]✓[/]", module, str(count), "rendered")

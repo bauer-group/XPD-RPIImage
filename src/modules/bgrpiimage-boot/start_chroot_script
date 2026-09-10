@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# bgrpiimage-boot: append dtoverlays / dtparam entries to firmware config.txt.
-# Uses a fenced block so subsequent generator runs can replace it idempotently.
+# bgrpiimage-boot: build-time adapter. Logic lives in apply.sh.
 set -x
 set -e
 export LC_ALL=C
@@ -8,33 +7,6 @@ export LC_ALL=C
 source /common.sh
 install_cleanup_trap
 
-# Deploy this module's files from the copied /filesystem/root tree
-# (CustomPiOS copies module/filesystem/ into the chroot root) to
-# their real destinations under /.
 unpack /filesystem/root / root
 
-GEN=/opt/bgrpiimage/bgrpiimage-boot
-CFG="${BGRPIIMAGE_BOOT_CONFIG_PATH:-/boot/firmware/config.txt}"
-
-# Fallback for images that still use the legacy path.
-if [[ ! -f "$CFG" && -f /boot/config.txt ]]; then
-    CFG=/boot/config.txt
-fi
-if [[ ! -f "$CFG" ]]; then
-    echo "bgrpiimage-boot: no config.txt found - skipping"
-    exit 0
-fi
-
-START_MARK="# >>> bgrpiimage AUTO-GENERATED >>>"
-END_MARK="# <<< bgrpiimage AUTO-GENERATED <<<"
-
-# Strip any previous bgRPIImage block.
-if grep -qF "$START_MARK" "$CFG"; then
-    sed -i "/${START_MARK//\//\\/}/,/${END_MARK//\//\\/}/d" "$CFG"
-fi
-
-{
-    printf '\n%s\n' "$START_MARK"
-    cat "$GEN/config-bgrpiimage.txt"
-    printf '%s\n' "$END_MARK"
-} >> "$CFG"
+BGRPI_CTX=image /opt/bgrpiimage/bgrpiimage-boot/apply.sh

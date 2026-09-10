@@ -1,0 +1,5 @@
+# bgrpiimage-common module config
+# Carries no settings of its own: its whole job is to put apply-lib.sh into
+# the rootfs before any other module's apply.sh sources it. It must therefore
+# be FIRST in MODULES (see ACTIVE_MODULES in scripts/generate.py).
+BGRPIIMAGE_COMMON_MODULE=1

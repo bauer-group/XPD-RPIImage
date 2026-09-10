@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
-# bgrpiimage-can: install can-utils and drop the systemd configs for can0/can1.
-# Two file types land in the same directory on purpose, because systemd splits
-# ownership between two daemons: 40-canN.network carries the [CAN] bitrate and
-# is read by systemd-networkd, while 70-canN.link carries TransmitQueueLength
-# and is read by systemd-udevd. Both have a section called [Link] with
-# disjoint key sets, so a misplaced key is silently discarded rather than
-# rejected. Alternative would be /etc/network/interfaces.d - but we already
-# standardize on networkd, so we stay consistent.
+# bgrpiimage-can: build-time adapter.
+#
+# The logic lives in apply.sh, which the updater also runs on a live device.
+# This file is only the CustomPiOS half: source the build harness, put the
+# payload in place, then hand over.
 set -x
 set -e
 export LC_ALL=C
@@ -15,17 +12,6 @@ export DEBIAN_FRONTEND=noninteractive
 source /common.sh
 install_cleanup_trap
 
-# Deploy this module's files from the copied /filesystem/root tree
-# (CustomPiOS copies module/filesystem/ into the chroot root) to
-# their real destinations under /.
 unpack /filesystem/root / root
 
-GEN=/opt/bgrpiimage/bgrpiimage-can
-
-apt-get update
-if [[ -f "$GEN/packages.list" ]]; then
-    xargs -a "$GEN/packages.list" -r apt-get install -y --no-install-recommends
-fi
-
-mkdir -p /etc/systemd/network
-cp -a "$GEN/systemd-networkd/." /etc/systemd/network/
+BGRPI_CTX=image /opt/bgrpiimage/bgrpiimage-can/apply.sh
