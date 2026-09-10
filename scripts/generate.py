@@ -45,6 +45,13 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 console = Console(highlight=False, legacy_windows=False)
+# Diagnostics go to STDERR, never stdout. `--json` writes the resolved config to
+# stdout for CI to pipe into jq, and _semantic_validate() runs before that
+# branch - so a note printed on the shared console lands INSIDE the JSON and
+# makes it unparseable. The build step that reads it (`generate.py --json >
+# /tmp/resolved.json`, then `jq .variant.version`) fails with no obvious link
+# back to the note that caused it.
+err_console = Console(highlight=False, legacy_windows=False, stderr=True)
 
 
 def _error_panel(title: str, body: str, hint: str | None = None) -> None:
@@ -1914,7 +1921,7 @@ def _validate_mcp251xfd(cfg: dict[str, Any], overlays: list[dict[str, Any]]) -> 
         if osc is not None and speed is not None:
             ceiling = int(osc) // 2 // 1000 * 850
             if int(speed) > ceiling:
-                console.print(
+                err_console.print(
                     f"[yellow]note:[/] {label} sets speed={speed}, which the "
                     f"mcp251xfd driver clamps to {ceiling} Hz for a {osc} Hz "
                     "oscillator (0.85 x osc/2, silicon errata DS80000789 item 4). "

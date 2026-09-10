@@ -462,6 +462,34 @@ device that reports success and is quietly wrong:
   warn. The updater stops and names the setting that would be lost.
 - **Anything during the unattended-upgrades reboot window**, which issues
   `shutdown -r +1` and could land mid-apply.
+- **A bundle that is not signed, or signed by a key this device does not
+  trust.** See below.
+
+### Signatures
+
+Every bundle carries an Ed25519 signature over its manifest, and the manifest
+carries a SHA-256 for every file in it — so one signature covers the whole
+bundle: the signature authenticates the manifest, the manifest authenticates
+the contents. The device checks it *before* it reads anything else.
+
+The checksum published beside a bundle is not a substitute. It proves the
+download was not corrupted; it proves nothing about who produced it, because
+whoever can replace the bundle can replace the checksum next to it.
+
+Public keys live in `/usr/share/bgrpiimage/trusted-keys.d/` and ship with the
+image. Any key in that directory may vouch for a bundle, which is what allows
+a key to be rotated without reflashing: a release signed with the current key
+can deliver a new public key into that directory, and the next release may be
+signed with either. Nothing is ever trusted that was not already on the device
+or delivered by something that was.
+
+Verification uses `openssl`, which is already present on every image as a
+dependency of `ca-certificates` — a signature format needing a package the
+device cannot install without an update would be circular.
+
+> **Images from before signing carry no trust directory** and will refuse every
+> bundle, saying so explicitly. Those devices need one reflash to a signed
+> image; after that they update in place like the rest.
 
 ### What it never touches
 

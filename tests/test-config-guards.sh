@@ -35,6 +35,14 @@ spec = importlib.util.spec_from_file_location("gen", "scripts/generate.py")
 gen = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gen)
 
+# Silence the advisory notes _semantic_validate() writes to stderr. Several
+# cases below deliberately trip them, and 20 repetitions of the SPI-clamp note
+# would bury the PASS/FAIL lines this file exists to print. The stdout-discipline
+# section at the end is what actually asserts where those notes go.
+import io as _io
+from rich.console import Console as _Console
+gen.err_console = _Console(file=_io.StringIO())
+
 BASE = json.load(open("config/variants/base.json", encoding="utf-8"))
 FD = json.load(open("config/variants/canbusfd-plattform.json", encoding="utf-8"))
 CLASSIC = json.load(open("config/variants/canbus-plattform.json", encoding="utf-8"))
@@ -182,3 +190,29 @@ print()
 print(f"{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
 PYEOF
+guards_rc=$?
+
+# --- stdout discipline -------------------------------------------------------
+# `--json` writes the resolved config to stdout so CI can pipe it into jq
+# (build.yml, "Resolve variant metadata": generate.py --json > /tmp/resolved.json
+# then jq .variant.version). Anything else printed on stdout lands INSIDE that
+# JSON and makes it unparseable, and the resulting failure names jq, not the
+# print that caused it. This is not hypothetical: a validation note added on the
+# shared rich console broke exactly this step for one variant while every other
+# check stayed green.
+echo
+echo "=== --json puts nothing but JSON on stdout ==="
+json_rc=0
+for cfg in config/variants/*.json; do
+    name=$(basename "$cfg" .json)
+    if ADMIN_PASSWORD=ci-placeholder-pw WIFI_PSK=ci-placeholder-psk \
+       "$PY" scripts/generate.py "$cfg" --json 2>/dev/null \
+       | "$PY" -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then
+        echo "  PASS  $name"
+    else
+        echo "  FAIL  $name -- stdout is not valid JSON (something printed to stdout)"
+        json_rc=1
+    fi
+done
+
+[ "$guards_rc" -eq 0 ] && [ "$json_rc" -eq 0 ]

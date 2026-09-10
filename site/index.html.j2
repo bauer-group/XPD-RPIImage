@@ -168,6 +168,7 @@ sudo bgrpiimage-update rollback   # restore the files the last apply replaced</c
         stops rather than proceeding when:
       </p>
       <ul class="steps">
+        <li>the bundle is not signed, or signed by a key this device does not trust</li>
         <li>the bundle is for a different variant, or older than what is installed</li>
         <li>the release was built on a different Raspberry Pi OS - that is a reflash</li>
         <li>
@@ -179,6 +180,12 @@ sudo bgrpiimage-update rollback   # restore the files the last apply replaced</c
           cannot land mid-apply
         </li>
       </ul>
+      <p>
+        Every bundle carries an Ed25519 signature over its manifest, checked
+        against public keys that ship inside the image, before anything else is
+        read. A checksum published next to a download only proves the transfer;
+        whoever can replace the bundle can replace the checksum beside it.
+      </p>
       <p>
         After applying, it reads back running state - which network file systemd
         actually chose, whether every device-tree overlay exists, whether the

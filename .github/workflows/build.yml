@@ -643,6 +643,12 @@ jobs:
           # true - but the render has to succeed.
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           WIFI_PSK:       ${{ secrets.WIFI_PSK }}
+          # The PEM itself, not a path: that is the shape of an Actions
+          # secret, and it means the private key is never written to the
+          # runner's disk. bundle.py refuses to build without it, so a
+          # misconfigured secret fails the job rather than silently shipping
+          # an unsigned bundle every device would then reject.
+          BGRPIIMAGE_SIGNING_KEY: ${{ secrets.BGRPIIMAGE_SIGNING_KEY }}
         run: |
           set -euo pipefail
           cfg="config/variants/${{ matrix.variant }}.json"
@@ -658,6 +664,26 @@ jobs:
             cat dist/*.confbundle.tar.gz.sha256
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 🔏 Verify the bundle signature
+        # Checks the published artefact against the public key that ships in
+        # the image, using the same command a device runs. A key mismatch
+        # between CI and the trust store is otherwise invisible until every
+        # device rejects every release.
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d)
+          tar xzf dist/*.confbundle.tar.gz -C "$work" manifest.json manifest.json.sig
+          pub=src/modules/bgrpiimage-base/filesystem/root/usr/share/bgrpiimage/trusted-keys.d
+          ok=0
+          for key in "$pub"/*.pub; do
+            if openssl pkeyutl -verify -rawin -pubin -inkey "$key" \
+                 -sigfile "$work/manifest.json.sig" -in "$work/manifest.json" >/dev/null 2>&1; then
+              echo "signature verifies against $(basename "$key")"
+              ok=1; break
+            fi
+          done
+          [ "$ok" = 1 ] || { echo "::error::bundle signature matches no key in $pub"; exit 1; }
 
       - name: 🧪 End-to-end update test
         # Applies the bundle just built to a container seeded to look like a
@@ -676,6 +702,7 @@ jobs:
             dist/*.confbundle.tar.gz
             dist/*.confbundle.tar.gz.sha256
             dist/*.bundle.manifest.json
+            dist/*.bundle.manifest.json.sig
           retention-days: 3
           if-no-files-found: error
 
@@ -729,6 +756,7 @@ jobs:
             release-assets/*.sha256
             release-assets/*.manifest.json
             release-assets/*.confbundle.tar.gz
+            release-assets/*.bundle.manifest.json.sig
             release-assets/bgrpiimage-setup
           fail_on_unmatched_files: true
           append_body: true

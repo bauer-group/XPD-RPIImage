@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import os
 import hashlib
 import io
 import json
@@ -47,6 +48,11 @@ import generate as gen  # noqa: E402  (path shim above is deliberate)
 # Bundle wire format. Bumped only when the device-side applier would
 # misinterpret an older or newer layout - never for a new optional field.
 BUNDLE_FORMAT = 1
+
+# Repository root, for the local signing-key fallback. bundle.py otherwise
+# reaches the tree through generate's MODULES_DIR, so it had no ROOT of its
+# own until signing needed one.
+ROOT = Path(__file__).resolve().parent.parent
 
 # The modules an update may carry. See the module note in the docstring.
 BUNDLE_MODULES = [
@@ -156,7 +162,47 @@ def build_manifest(cfg: dict[str, Any], staging: Path, files: list[Path]) -> dic
     }
 
 
-def write_tar(staging: Path, out: Path, manifest: dict[str, Any]) -> None:
+def sign(payload: bytes, key_pem: bytes) -> bytes:
+    """Sign the manifest with the release key.
+
+    Ed25519 over the exact manifest bytes that go into the archive. The
+    manifest already carries a SHA-256 for every file, so one signature
+    covers the whole bundle: signature authenticates the manifest, the
+    manifest authenticates the contents. Nothing else needs signing, and a
+    device can reject a tampered bundle before it reads a single payload file.
+
+    Raw Ed25519 rather than a container format, because the verifier is
+    `openssl pkeyutl -verify` on the device - openssl is already present
+    there as a dependency of ca-certificates, and adding a package that a
+    device cannot install without an update would be circular.
+    """
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives import serialization
+
+    key = serialization.load_pem_private_key(key_pem, password=None)
+    if not isinstance(key, Ed25519PrivateKey):
+        raise SystemExit("error: the signing key is not an Ed25519 key")
+    return key.sign(payload)
+
+
+def load_signing_key() -> bytes | None:
+    """The key comes from the environment in CI, or a file locally.
+
+    BGRPIIMAGE_SIGNING_KEY holds the PEM itself rather than a path, because
+    that is the shape a GitHub Actions secret has: the workflow can hand it
+    over without ever writing it to disk on the runner.
+    """
+    pem = os.environ.get("BGRPIIMAGE_SIGNING_KEY", "").strip()
+    if pem:
+        return pem.encode("utf-8") + b"\n"
+    local = ROOT / ".secrets" / "bgrpiimage-recovery.key"
+    if local.is_file():
+        return local.read_bytes().replace(b"\r\n", b"\n")
+    return None
+
+
+def write_tar(staging: Path, out: Path, manifest: dict[str, Any],
+              signature: bytes | None = None) -> bytes:
     """Deterministic tarball: same commit in, same bytes out.
 
     Sorted names and zeroed mtime/uid/gid, so rebuilding a release produces an
@@ -180,6 +226,13 @@ def write_tar(staging: Path, out: Path, manifest: dict[str, Any]) -> None:
         info.mode = 0o644
         tar.addfile(info, io.BytesIO(payload))
 
+        if signature is not None:
+            sig_info = tarfile.TarInfo("manifest.json.sig")
+            sig_info.size = len(signature)
+            sig_info.mtime = 0
+            sig_info.mode = 0o644
+            tar.addfile(sig_info, io.BytesIO(signature))
+
         root = staging / "root"
         for path in sorted(p for p in root.rglob("*") if p.is_file()):
             rel = path.relative_to(staging).as_posix()
@@ -191,12 +244,16 @@ def write_tar(staging: Path, out: Path, manifest: dict[str, Any]) -> None:
             with path.open("rb") as fh:
                 tar.addfile(info, fh)
 
+    return payload
+
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("config", type=Path, help="path to variant JSON config")
     ap.add_argument("--env-file", type=Path, help="optional .env file (KEY=VALUE lines)")
     ap.add_argument("--out", type=Path, default=Path("dist"), help="output directory")
+    ap.add_argument("--unsigned", action="store_true",
+                    help="build without a signature (devices will refuse it)")
     args = ap.parse_args()
 
     # Same precedence as generate.py's main(): the process environment wins,
@@ -250,9 +307,21 @@ def main() -> int:
 
         manifest = build_manifest(cfg, staging, files)
 
+        # Sign the exact bytes that go into the archive, so the signature and
+        # the manifest cannot drift apart through a re-serialisation.
+        payload = json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8") + b"\n"
+        key_pem = None if args.unsigned else load_signing_key()
+        if key_pem is None and not args.unsigned:
+            print("error: no signing key. Set BGRPIIMAGE_SIGNING_KEY (the PEM itself, "
+                  "as CI does) or keep .secrets/bgrpiimage-recovery.key locally.\n"
+                  "       Pass --unsigned only for a bundle no device is meant to apply.",
+                  file=sys.stderr)
+            return 1
+        signature = sign(payload, key_pem) if key_pem else None
+
         stem = f"bgrpiimage-{name}-v{version}"
         tar_path = args.out / f"{stem}.confbundle.tar.gz"
-        write_tar(staging, tar_path, manifest)
+        write_tar(staging, tar_path, manifest, signature)
 
     digest = _sha256_file(tar_path)
     (args.out / f"{stem}.confbundle.tar.gz.sha256").write_text(
@@ -260,14 +329,17 @@ def main() -> int:
     )
     # Published beside the bundle so `update --check` can answer without
     # downloading it.
-    (args.out / f"{stem}.bundle.manifest.json").write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    (args.out / f"{stem}.bundle.manifest.json").write_bytes(payload)
+    if signature is not None:
+        # Sidecar for the standalone manifest, so `update check` can verify
+        # what it reads without pulling the whole bundle.
+        (args.out / f"{stem}.bundle.manifest.json.sig").write_bytes(signature)
 
     size_kb = tar_path.stat().st_size / 1024
     print(f"{tar_path}  ({size_kb:.1f} KB, {len(manifest['files'])} files, "
           f"{len(manifest['modules'])} modules)")
     print(f"  sha256 {digest}")
+    print(f"  signed {'yes' if signature else 'NO - devices will refuse this bundle'}")
     return 0
 
 

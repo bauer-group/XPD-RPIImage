@@ -45,8 +45,15 @@ PROG="${0##*/}"
 
 CY=$'\033[1;36m'; GR=$'\033[1;32m'; YE=$'\033[1;33m'; RD=$'\033[1;31m'; NC=$'\033[0m'
 [[ -t 1 ]] || { CY=''; GR=''; YE=''; RD=''; NC=''; }
-info() { echo "${CY}[*]${NC} $*"; }
-ok()   { echo "${GR}[+]${NC} $*"; }
+# Progress goes to stderr, not stdout. Several functions here return a value
+# by echoing it - the extracted bundle directory, a resolved version - and a
+# status line sharing that channel gets captured by the caller's command
+# substitution and becomes part of the "value". That bug has now appeared
+# twice, in download_bundle and in verify_signature; separating the channels
+# retires the whole class instead of the two instances. Real output - status,
+# history - still goes to stdout, which is what a pipeline would want.
+info() { echo "${CY}[*]${NC} $*" >&2; }
+ok()   { echo "${GR}[+]${NC} $*" >&2; }
 warn() { echo "${YE}[!]${NC} $*" >&2; }
 die()  { echo "${RD}[x]${NC} $*" >&2; exit 1; }
 
@@ -62,6 +69,7 @@ WORK="$STATE/update"
 ROLLBACK="$STATE/rollback"
 LOCK="$STATE/update.lock"
 PENDING="$STATE/update-pending-verify"
+TRUSTED_KEYS=/usr/share/bgrpiimage/trusted-keys.d
 
 UPDATE_REPO="${BGRPIIMAGE_UPDATE_REPO:-bauer-group/XPD-RPIImage}"
 UPDATE_API="${BGRPIIMAGE_UPDATE_API:-https://api.github.com}"
@@ -132,10 +140,7 @@ download_bundle() {
     local version="$1" dest="$2" base name
     base="${UPDATE_DL}/${UPDATE_REPO}/releases/download/v${version}"
     name="bgrpiimage-${VARIANT}-v${version}.confbundle.tar.gz"
-    # stderr, not stdout: this function returns the bundle path through
-    # stdout, so anything else printed there is captured by the caller's
-    # command substitution and becomes part of the "path".
-    info "downloading $name" >&2
+    info "downloading $name"
     fetch -o "$dest/$name" "$base/$name" \
         || die "no bundle for ${VARIANT} on v${version} - that release may predate config bundles"
     fetch -o "$dest/$name.sha256" "$base/$name.sha256" \
@@ -150,13 +155,21 @@ download_bundle() {
 # nothing outside root/ and manifest.json.
 extract_bundle() {
     local tarball="$1" dest="$2" bad
-    bad=$(tar tzf "$tarball" | grep -vE '^(manifest\.json|root/)' || true)
+    bad=$(tar tzf "$tarball" | grep -vE '^(manifest\.json(\.sig)?|root/)' || true)
     [[ -z "$bad" ]] || die "bundle contains unexpected members: $(printf '%s' "$bad" | head -3 | tr '\n' ' ')"
     bad=$(tar tzf "$tarball" | grep -E '(^/|\.\.)' || true)
     [[ -z "$bad" ]] || die "bundle contains absolute or traversing paths"
     mkdir -p "$dest"
     tar xzf "$tarball" -C "$dest" --no-same-owner --no-same-permissions
     [[ -f "$dest/manifest.json" ]] || die "bundle has no manifest.json"
+
+    # BEFORE anything reads the manifest. A SHA-256 published beside the
+    # bundle proves the download was not corrupted; it proves nothing about
+    # who produced it, because whoever can replace the bundle can replace the
+    # checksum next to it. The signature is what makes the manifest - and
+    # therefore every file hash in it - worth trusting.
+    verify_signature "$dest"
+
     # Per-file verification against the manifest, not just the tarball hash:
     # the tar checksum proves the transfer, this proves the contents.
     local rel sha actual
@@ -164,6 +177,44 @@ extract_bundle() {
         actual=$(sha256sum "$dest/root/$rel" 2>/dev/null | cut -d' ' -f1)
         [[ "$actual" == "$sha" ]] || die "bundle file $rel does not match its manifest hash"
     done < <(jq -r '.files[] | "\(.path)\t\(.sha256)"' "$dest/manifest.json")
+}
+
+# Ed25519 over the manifest, checked with openssl - which is on every device
+# already, as a dependency of ca-certificates. A signature format needing a
+# package a device cannot install without an update would be circular.
+#
+# Any key in the trust directory may vouch for a bundle. That is what makes
+# key rotation possible without a reflash: a release signed by the current key
+# can ship a new public key into this directory, and the next release may be
+# signed by either. Nothing is trusted that was not already on the device or
+# delivered by something that was.
+verify_signature() {
+    local dest="$1" key ok=0 count=0
+    local sig="$dest/manifest.json.sig"
+
+    [[ -f "$sig" ]] || die "bundle is not signed.
+    Releases are signed; an unsigned bundle is either older than signing or
+    not from this project. Refusing to apply it."
+
+    shopt -s nullglob
+    local keys=("$TRUSTED_KEYS"/*.pub)
+    shopt -u nullglob
+    count=${#keys[@]}
+    (( count > 0 )) || die "no trusted keys in $TRUSTED_KEYS.
+    This image predates release signing. Reflash to a signed image, or
+    install the project's public key there by hand if you know it."
+
+    for key in "${keys[@]}"; do
+        if openssl pkeyutl -verify -rawin -pubin -inkey "$key" \
+                -sigfile "$sig" -in "$dest/manifest.json" >/dev/null 2>&1; then
+            ok=1
+            info "signature verified against $(basename "$key")"
+            break
+        fi
+    done
+    (( ok == 1 )) || die "signature does not match any trusted key.
+    Checked $count key(s) in $TRUSTED_KEYS. The bundle was signed by
+    something this device does not trust - do not apply it."
 }
 
 # ---------------------------------------------------------------------------

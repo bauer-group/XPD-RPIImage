@@ -116,7 +116,7 @@ U=/usr/local/sbin/bgrpiimage-update
 seed_device() { # seed_device [version] [variant] [base_sha] [contract]
     rm -rf /etc/bgrpiimage-release /etc/bgrpiimage-applied /var/lib/bgrpiimage \
            /opt/bgrpiimage /etc/systemd/network /boot/firmware
-    mkdir -p /etc/systemd/network /etc/ssh/sshd_config.d /etc/update-motd.d \
+    mkdir -p /etc/systemd/network /etc/ssh/sshd_config.d /etc/update-motd.d /etc/sudoers.d \
              /etc/apt/apt.conf.d /etc/modprobe.d /boot/firmware/overlays \
              /var/lib/bgrpiimage /usr/local/sbin /etc/profile.d /var/run
     # The updater ships inside the bundle, but the device must already have a
@@ -124,6 +124,11 @@ seed_device() { # seed_device [version] [variant] [base_sha] [contract]
     install -m 0755 /repo/src/modules/bgrpiimage-base/filesystem/root/usr/local/sbin/bgrpiimage-update "$U"
     install -m 0755 /repo/src/modules/bgrpiimage-base/filesystem/root/usr/local/sbin/bgrpiimage-setup /usr/local/sbin/
     install -m 0644 /repo/src/modules/bgrpiimage-base/filesystem/root/etc/profile.d/50-bgrpiimage-shell.sh /etc/profile.d/
+    # The trust store a signed image ships. Section 10 removes it again to
+    # cover hardware from before signing existed.
+    mkdir -p /usr/share/bgrpiimage/trusted-keys.d
+    cp /repo/src/modules/bgrpiimage-base/filesystem/root/usr/share/bgrpiimage/trusted-keys.d/*.pub \
+       /usr/share/bgrpiimage/trusted-keys.d/ 2>/dev/null || true
     printf '# stock\ndtparam=audio=on\n' > /boot/firmware/config.txt
     printf '# stock bashrc\n' > /etc/bash.bashrc
     printf '127.0.0.1\tlocalhost\n127.0.1.1\tbg-canbus\n' > /etc/hosts
@@ -224,6 +229,11 @@ printf 'nameserver 10.0.0.1\n' > /etc/resolv.conf
 printf 'admin ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/010-bgrpiimage-admin
 sha_shadow=$(sha256sum /etc/shadow); sha_resolv=$(sha256sum /etc/resolv.conf)
 sha_sudo=$(sha256sum /etc/sudoers.d/010-bgrpiimage-admin); sha_hosts=$(sha256sum /etc/hosts)
+# The fixtures have to exist, or the comparisons below are two identical
+# sha256sum failures reporting success for a file that was never there.
+for f in /etc/shadow /etc/resolv.conf /etc/sudoers.d/010-bgrpiimage-admin /etc/hosts; do
+    [ -s "$f" ] || bad "fixture missing: $f"
+done
 $U apply --yes >/tmp/t 2>&1 || true
 [ "$(sha256sum /etc/shadow)" = "$sha_shadow" ] && ok "rotated password untouched" || bad "/etc/shadow was modified"
 [ "$(sha256sum /etc/resolv.conf)" = "$sha_resolv" ] && ok "static resolv.conf untouched" || bad "/etc/resolv.conf was modified"
@@ -247,6 +257,66 @@ printf 'tampered' >> "$DL/$(basename "$BUNDLE")"
 $U apply --yes >/tmp/x 2>&1; grep -qi "checksum mismatch" /tmp/x \
     && ok "corrupt bundle refused" || { bad "corrupt bundle accepted"; tail -3 /tmp/x; }
 cp "$BUNDLE" "$DL/"
+
+sect "10. signatures"
+seed_device 0.0.1
+$U apply --yes >/tmp/sg 2>&1 || true
+grep -qi "signature verified" /tmp/sg \
+    && ok "a genuine bundle verifies against the shipped key" \
+    || { bad "signature was not verified"; tail -4 /tmp/sg; }
+
+# A tampered manifest must fail the signature, not merely the file hashes:
+# the signature is what stands between a device and whoever can write to the
+# release, and the per-file hashes are only as good as the manifest carrying
+# them.
+seed_device 0.0.1
+work=/tmp/tamper && rm -rf $work && mkdir -p $work
+tar xzf "$DL/$(basename "$BUNDLE")" -C $work
+sed -i 's/"version": "/"version": "9/' $work/manifest.json
+( cd $work && tar czf "$DL/$(basename "$BUNDLE")" manifest.json manifest.json.sig root )
+( cd "$DL" && sha256sum "$(basename "$BUNDLE")" > "$(basename "$BUNDLE").sha256" )
+$U apply --yes >/tmp/sg2 2>&1
+grep -qi "signature does not match" /tmp/sg2 \
+    && ok "tampered manifest refused by signature" \
+    || { bad "tampered manifest accepted"; tail -4 /tmp/sg2; }
+cp "$BUNDLE" "$DL/"
+( cd "$DL" && sha256sum "$(basename "$BUNDLE")" > "$(basename "$BUNDLE").sha256" )
+
+# Signed by a key the device does not know.
+seed_device 0.0.1
+rm -rf $work && mkdir -p $work
+tar xzf "$BUNDLE" -C $work
+openssl genpkey -algorithm ed25519 -out /tmp/foreign.key 2>/dev/null
+openssl pkeyutl -sign -rawin -inkey /tmp/foreign.key \
+    -in $work/manifest.json -out $work/manifest.json.sig 2>/dev/null
+( cd $work && tar czf "$DL/$(basename "$BUNDLE")" manifest.json manifest.json.sig root )
+( cd "$DL" && sha256sum "$(basename "$BUNDLE")" > "$(basename "$BUNDLE").sha256" )
+$U apply --yes >/tmp/sg3 2>&1
+grep -qi "does not match any trusted key" /tmp/sg3 \
+    && ok "foreign signature refused" \
+    || { bad "foreign signature accepted"; tail -4 /tmp/sg3; }
+
+# Unsigned entirely.
+seed_device 0.0.1
+rm -rf $work && mkdir -p $work
+tar xzf "$BUNDLE" -C $work && rm -f $work/manifest.json.sig
+( cd $work && tar czf "$DL/$(basename "$BUNDLE")" manifest.json root )
+( cd "$DL" && sha256sum "$(basename "$BUNDLE")" > "$(basename "$BUNDLE").sha256" )
+$U apply --yes >/tmp/sg4 2>&1
+grep -qi "not signed" /tmp/sg4 \
+    && ok "unsigned bundle refused" || { bad "unsigned bundle accepted"; tail -4 /tmp/sg4; }
+cp "$BUNDLE" "$DL/"
+( cd "$DL" && sha256sum "$(basename "$BUNDLE")" > "$(basename "$BUNDLE").sha256" )
+
+# Hardware from before signing: the image carries no trust store at all. This
+# is the case an existing fleet is in, so the message has to say what to do
+# rather than just fail.
+seed_device 0.0.1
+rm -rf /usr/share/bgrpiimage/trusted-keys.d
+$U apply --yes >/tmp/sg5 2>&1
+grep -qi "no trusted keys" /tmp/sg5 \
+    && ok "a device with no trust store refuses and explains" \
+    || { bad "device without trust store did not refuse clearly"; tail -4 /tmp/sg5; }
 
 echo
 echo "================ $PASS passed, $FAIL failed ================"
