@@ -619,7 +619,12 @@ install_payload() {
     # no message and never reached the rollback sitting ready for it.
     ( cd "$mdir/root" && tar cf - opt ) | ( cd / && tar xf - ) \
         || { warn "could not stage the bundle payload under /opt/bgrpiimage"; return 1; }
-    find /opt/bgrpiimage -name '*.sh' -exec chmod 0755 {} + 2>/dev/null || true
+    # `2>/dev/null || true` hid the one failure that matters here: a payload
+    # script left non-executable does not run, and until the check in
+    # run_modules that was indistinguishable from a module with nothing to do.
+    find /opt/bgrpiimage -name '*.sh' -exec chmod 0755 {} + \
+        || { warn "could not make the payload scripts under /opt/bgrpiimage executable"
+             return 1; }
     [[ "$mode" == "full" ]] || return 0
 
     while IFS= read -r f; do
@@ -677,7 +682,20 @@ run_modules() {
     while IFS= read -r m; do
         [[ -n "$m" ]] || continue
         [[ "$m" == "bgrpiimage-common" ]] && continue
-        [[ -x "/opt/bgrpiimage/$m/apply.sh" ]] || continue
+        # These are two different situations and `-x || continue` collapsed
+        # them into one. A module with NO apply.sh carries payload only and
+        # has nothing to run - skipping it is correct. A module whose apply.sh
+        # exists but is not executable did not run because something went
+        # wrong: the chmod in install_payload failed, or the payload was
+        # unpacked by something that dropped the mode. Treating that as
+        # "nothing to do" left the module unapplied, rc at 0, and apply
+        # stamping the new configuration version over a device it had not
+        # configured.
+        [[ -e "/opt/bgrpiimage/$m/apply.sh" ]] || continue
+        if [[ ! -x "/opt/bgrpiimage/$m/apply.sh" ]]; then
+            warn "$m/apply.sh is present but not executable - it did not run"
+            rc=1; continue
+        fi
         ran=$((ran + 1))
         if ! "/opt/bgrpiimage/$m/apply.sh"; then
             warn "$m failed"; rc=1
