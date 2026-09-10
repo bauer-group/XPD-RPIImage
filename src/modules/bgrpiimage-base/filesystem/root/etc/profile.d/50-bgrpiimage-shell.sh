@@ -1,5 +1,11 @@
 # bgRPIImage - interactive shell conveniences.
 #
+# shellcheck shell=sh
+# No shebang on purpose: /etc/profile's run-parts loop sources this file,
+# it is never executed. The directive tells shellcheck the target shell it
+# therefore cannot infer, and turns the POSIX-sh promise made below into an
+# enforced one - a bashism added here now fails CI instead of dash at login.
+#
 # Debian ships ll/la/l COMMENTED OUT in /etc/skel/.bashrc (bash package,
 # lines 91-93), and pi-gen's only skel patch touches force_color_prompt, PS1
 # and the grep aliases - never those three. Every account on a stock

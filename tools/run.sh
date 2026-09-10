@@ -14,7 +14,7 @@ TOOLS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$TOOLS_DIR")"
 IMAGE_NAME="${BGRPIIMAGE_TOOLS_IMAGE:-bgrpiimage-tools}"
 
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; CYAN='\033[0;36m'; NC='\033[0m'
+RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; NC='\033[0m'
 
 show_help() {
     cat <<EOF

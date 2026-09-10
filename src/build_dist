@@ -16,7 +16,8 @@ if [[ ! -f "${DIR}/custompios_path" ]]; then
     echo "       run: bash CustomPiOS/src/update-custompios-paths src" >&2
     exit 2
 fi
-export CUSTOM_PI_OS_PATH=$(<"${DIR}/custompios_path")
+CUSTOM_PI_OS_PATH=$(<"${DIR}/custompios_path")
+export CUSTOM_PI_OS_PATH
 export PATH="${PATH}:${CUSTOM_PI_OS_PATH}"
 
 # Explicitly seed BASE_WORKSPACE so CustomPiOS never ends up with an empty

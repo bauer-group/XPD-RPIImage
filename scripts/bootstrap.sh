@@ -32,7 +32,7 @@ REF_LC="$(printf '%s' "$CUSTOMPIOS_REF" | tr '[:upper:]' '[:lower:]')"
 # CustomPiOS ships no .gitattributes, so a host with a global
 # core.autocrlf=true (every default Git for Windows install) checks out
 # src/common.sh and src/custompios with CRLF. Both are sourced inside the
-# build container, where a trailing  is not whitespace - `unpack` and the
+# build container, where a trailing ^M is not whitespace - `unpack` and the
 # module scripts then fail in ways that look like anything but line endings.
 # Pin the setting on this repo instead of trusting the host's global config.
 if [[ -d "$CUSTOMPIOS_DIR/.git" ]]; then

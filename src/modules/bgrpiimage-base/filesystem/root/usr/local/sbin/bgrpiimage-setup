@@ -293,6 +293,11 @@ required_for_online() {
 
 can_status() {
     local iface cs irq_line gpio trig count rate state qlen found=0
+    # shellcheck disable=SC2010  # netdev names cannot contain whitespace or
+    # newlines (dev_valid_name() in net/core/dev.c rejects them), so the
+    # filename safety this warns about cannot apply here. A glob would need
+    # nullglob to avoid yielding its own pattern when no CAN device exists -
+    # exactly the case the found=0 branch below reports on.
     for iface in $(ls /sys/class/net 2>/dev/null | grep '^can[0-9]' | sort); do
         found=1
         cs=$(basename "$(readlink -f "/sys/class/net/$iface/device" 2>/dev/null)" 2>/dev/null)
@@ -595,6 +600,8 @@ cmd_status() {
     echo "${CY}your overrides:${NC}"
     ls -1 /etc/systemd/network/05-bgrpiimage-* 2>/dev/null | sed 's|^|  |' || echo "  (none)"
     echo "${CY}image defaults:${NC}"
+    # shellcheck disable=SC2010  # display only: the grep -v splits the listing
+    # by origin, and the paths come from a glob this tool controls.
     ls -1 /etc/systemd/network/*.network /etc/systemd/network/*.link 2>/dev/null \
         | grep -v '/05-bgrpiimage-' | sed 's|^|  |' || echo "  (none)"
 }
