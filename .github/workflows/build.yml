@@ -84,6 +84,32 @@ jobs:
       - name: 🧪 Syntax check
         run: python -m py_compile scripts/generate.py
 
+      - name: 🐚 Shell lint
+        run: |
+          set -euo pipefail
+          # py_compile has always guarded generate.py, but everything that runs
+          # ON a device is shell - nine chroot scripts plus the operator helper,
+          # together more lines than the generator - and none of it was checked.
+          # That is where the bugs have actually been: five of the last twenty
+          # releases were shell fixes in exactly these files.
+          shellcheck --version
+          files=$(git ls-files \
+            'src/modules/*/start_chroot_script' \
+            'src/modules/*/filesystem/root/usr/local/sbin/*' \
+            'src/modules/*/filesystem/root/etc/profile.d/*.sh' \
+            'scripts/*.sh' \
+            'tools/run.sh' \
+            'src/build_dist')
+          # A refactor that moves these paths must not silently drop coverage.
+          [ -n "$files" ] || { echo "::error::shell lint matched no files"; exit 1; }
+          echo "::group::🐚 files checked"
+          printf '%s\n' "$files" | sed 's/^/  /'
+          echo "::endgroup::"
+          # SC1091: /common.sh comes from CustomPiOS at build time and is not in
+          # this repo, so the chroot scripts' `source` can never be followed here.
+          printf '%s\n' "$files" \
+            | xargs -r -d '\n' shellcheck --severity=warning --exclude=SC1091
+
       - name: ✅ Validate all variants
         run: |
           set -euo pipefail
