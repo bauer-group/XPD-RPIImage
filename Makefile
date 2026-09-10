@@ -40,6 +40,10 @@ validate-one: ## schema-check a single variant (VARIANT=..., default canbus-plat
 render: ## resolve env vars + render generated module files
 	$(PY) scripts/generate.py $(CONFIG) $(if $(ENV_FILE),--env-file $(ENV_FILE),)
 
+.PHONY: test
+test: ## run the on-device helper tests (needs docker)
+	bash tests/test-selfupdate.sh
+
 .PHONY: bootstrap
 bootstrap: ## clone/update CustomPiOS into ./CustomPiOS
 	bash scripts/bootstrap.sh

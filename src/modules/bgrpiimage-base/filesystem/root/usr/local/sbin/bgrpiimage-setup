@@ -14,6 +14,14 @@
 #   ip IFACE dhcp                          switch an interface to DHCP
 #   ip IFACE static CIDR [GATEWAY] [DNS]   assign a static IPv4 (CIDR = addr/prefix)
 #   status                                 show current network + identity
+#   update --self [--version X.Y.Z]        replace this helper from a release
+#
+# "update --self" fetches /usr/local/sbin/bgrpiimage-setup from a published
+# GitHub release and swaps it in. It updates NOTHING else - not config.txt,
+# not the systemd units, not the MOTD. Those still need a new image today.
+# The point is that three of the last five releases changed only this file,
+# and reflashing a CM4 for a helper fix costs a jumper, a USB-C cable and a
+# trip to the cabinet.
 #
 # Images ship with WiFi off: no wlan0 .network file, no wpa_supplicant config.
 # "wifi enable" creates both and lifts the rfkill soft block that Raspberry Pi
@@ -558,6 +566,149 @@ EOF
 # state that is not "active", so `$(... || echo inactive)` captured BOTH words
 # and printed a second, unindented "inactive" line underneath - on every image,
 # since wifi ships off.
+# --------------------------------------------------------------------------
+# update --self
+# --------------------------------------------------------------------------
+# Overridable so the flow can be exercised against a fork or a local file
+# server without editing a file that lives on customer hardware.
+UPDATE_REPO="${BGRPIIMAGE_UPDATE_REPO:-bauer-group/XPD-RPIImage}"
+UPDATE_API="${BGRPIIMAGE_UPDATE_API:-https://api.github.com}"
+UPDATE_DL="${BGRPIIMAGE_UPDATE_DL:-https://github.com}"
+APPLIED=/etc/bgrpiimage-applied
+
+# Every transfer here goes through these flags. --proto '=https' and --tlsv1.2
+# refuse a plaintext or downgraded redirect, the timeouts stop a captive
+# portal from hanging the command forever, and --max-filesize turns a hostile
+# or broken endpoint into an error rather than a full disk - the helper is
+# ~30 KB, so 4 MB is four orders of magnitude of headroom.
+fetch() {
+    curl --proto '=https' --tlsv1.2 -fsSL \
+         --connect-timeout 15 --max-time 120 --max-filesize 4194304 \
+         "$@"
+}
+
+resolve_tag() {
+    local body tag
+    command -v jq >/dev/null || die "jq is required to resolve the latest release"
+    body=$(fetch "${UPDATE_API}/repos/${UPDATE_REPO}/releases/latest") \
+        || die "could not reach ${UPDATE_API} - check DNS and outbound HTTPS"
+    tag=$(printf '%s' "$body" | jq -r '.tag_name // empty')
+    [[ -n "$tag" ]] || die "release API returned no tag_name"
+    printf '%s' "$tag"
+}
+
+# The helper's own version. After a self-update this is deliberately NOT the
+# image version in /etc/bgrpiimage-release: that one records the flashed image
+# and has to keep saying so, because it is what tells a future updater whether
+# the base OS moved under the device.
+helper_version() {
+    [[ -r "$APPLIED" ]] || return 0
+    # shellcheck disable=SC1090
+    ( . "$APPLIED" 2>/dev/null && printf '%s' "${BGRPIIMAGE_HELPER_VERSION:-}" )
+}
+
+# Set KEY='value' in the applied-state file, replacing any previous line.
+applied_set() {
+    local key="$1" val="$2"
+    touch "$APPLIED"
+    chmod 644 "$APPLIED"
+    if grep -q "^${key}=" "$APPLIED" 2>/dev/null; then
+        sed -i "s|^${key}=.*|${key}='${val}'|" "$APPLIED"
+    else
+        printf "%s='%s'\n" "$key" "$val" >> "$APPLIED"
+    fi
+}
+
+selfupdate() {
+    local want="" tag tmp staged url cur dir
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --version) shift; want="${1:-}"; [[ -n "$want" ]] || die "--version needs a value" ;;
+            --self)    ;;
+            *)         die "unknown option '$1' for update" ;;
+        esac
+        shift
+    done
+
+    if [[ -n "$want" ]]; then
+        tag="v${want#v}"
+    else
+        info "resolving latest release of ${UPDATE_REPO}"
+        tag=$(resolve_tag)
+    fi
+    # Refuse anything that is not a plain release tag before it reaches a URL.
+    [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "not a release tag: '$tag'"
+
+    cur=$(helper_version)
+    if [[ -n "$cur" && "v${cur#v}" == "$tag" ]]; then
+        ok "helper is already at $tag"
+        return 0
+    fi
+
+    tmp=$(mktemp -d) || die "could not create a temporary directory"
+    # shellcheck disable=SC2064  # $tmp must expand now, not when the trap fires
+    trap "rm -rf '$tmp'" RETURN
+
+    url="${UPDATE_DL}/${UPDATE_REPO}/releases/download/${tag}"
+    info "downloading $tag"
+    fetch -o "$tmp/bgrpiimage-setup" "${url}/bgrpiimage-setup" \
+        || die "no bgrpiimage-setup asset on $tag - releases before this feature have none"
+    fetch -o "$tmp/bgrpiimage-setup.sha256" "${url}/bgrpiimage-setup.sha256" \
+        || die "no checksum asset on $tag - refusing to install an unverified helper"
+
+    # The checksum file carries a bare filename, so verify from inside the
+    # directory rather than rewriting its path column.
+    ( cd "$tmp" && sha256sum -c bgrpiimage-setup.sha256 >/dev/null 2>&1 ) \
+        || die "checksum mismatch - the download is corrupt or not what the release published"
+
+    # Everything below asks the same question a different way: is this actually
+    # our script, or an error page a proxy served for both files so that they
+    # agree with each other? A checksum cannot tell those two apart.
+    if grep -qU $'\r' "$tmp/bgrpiimage-setup"; then
+        die "downloaded helper contains CR bytes - a CRLF copy execs as 'bad interpreter'"
+    fi
+    head -1 "$tmp/bgrpiimage-setup" | grep -q '^#!/usr/bin/env bash$' \
+        || die "downloaded helper has no bash shebang"
+    grep -q '^# bgrpiimage-setup - on-device helper' "$tmp/bgrpiimage-setup" \
+        || die "downloaded file does not look like bgrpiimage-setup"
+    bash -n "$tmp/bgrpiimage-setup" \
+        || die "downloaded helper does not parse"
+    chmod 0755 "$tmp/bgrpiimage-setup"
+    # --help reaches the dispatcher and exits 0 on every version that has ever
+    # shipped, so it smoke-tests the whole file without any side effect.
+    "$tmp/bgrpiimage-setup" --help >/dev/null \
+        || die "downloaded helper failed to run"
+
+    # Stage on the SAME filesystem as the target, then rename(2). This script
+    # is the file being replaced, and bash reads its own source incrementally
+    # by byte offset - truncating it in place (install, cp, cat >) would make
+    # the running shell resume mid-file on the new bytes. A rename swaps the
+    # directory entry and leaves this process on the old inode until it exits.
+    dir="$(cd "$(dirname "$0")" && pwd)"
+    staged="${dir}/.bgrpiimage-setup.new"
+    cp "$tmp/bgrpiimage-setup" "$staged"
+    chmod 0755 "$staged"
+    cp -p "$0" "${dir}/bgrpiimage-setup.prev" 2>/dev/null || true
+    mv -f "$staged" "${dir}/bgrpiimage-setup"
+
+    applied_set BGRPIIMAGE_HELPER_VERSION "${tag#v}"
+    applied_set BGRPIIMAGE_HELPER_UPDATED_AT "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+    ok "bgrpiimage-setup updated to $tag (previous kept as bgrpiimage-setup.prev)"
+    warn "helper only - config.txt, systemd units and the MOTD still come from the flashed image"
+}
+
+cmd_update() {
+    case "${1:-}" in
+        --self) shift; selfupdate "$@" ;;
+        "")     echo "$PROG: 'update' currently supports --self only." >&2
+                echo "       Config-bundle updates are not part of this image." >&2
+                echo "       Try: sudo $PROG update --self" >&2
+                exit 2 ;;
+        *)      die "unknown option '$1' for update (only --self is supported)" ;;
+    esac
+}
+
 svc_state() {
     local st
     st="$(systemctl is-active "$1" 2>/dev/null || true)"
@@ -613,6 +764,7 @@ case "${1:-}" in
     can)              shift; cmd_can "$@" ;;
     ip|network)       shift; cmd_ip "$@" ;;
     status|info)      shift; cmd_status "$@" ;;
+    update)           shift; cmd_update "$@" ;;
     -h|--help|help|"") usage 0 ;;
     # Name the offending word before dumping help. Printing bare usage made an
     # unknown subcommand indistinguishable from `--help`, so a user on an older

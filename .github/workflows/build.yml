@@ -98,6 +98,7 @@ jobs:
             'src/modules/*/filesystem/root/usr/local/sbin/*' \
             'src/modules/*/filesystem/root/etc/profile.d/*.sh' \
             'scripts/*.sh' \
+            'tests/*.sh' \
             'tools/run.sh' \
             'src/build_dist')
           # A refactor that moves these paths must not silently drop coverage.
@@ -109,6 +110,15 @@ jobs:
           # this repo, so the chroot scripts' `source` can never be followed here.
           printf '%s\n' "$files" \
             | xargs -r -d '\n' shellcheck --severity=warning --exclude=SC1091
+
+      - name: 🧪 Helper self-update test
+        # Exercises `bgrpiimage-setup update --self` against a throwaway
+        # HTTPS server in a container: happy path, idempotence, and every
+        # refusal. The refusals are the point - a half-replaced recovery
+        # tool on a device in a customer cabinet is the worst outcome this
+        # command can produce, so "leaves the helper untouched" is asserted
+        # for each of them.
+        run: bash tests/test-selfupdate.sh
 
       - name: ✅ Validate all variants
         run: |
@@ -549,11 +559,30 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Checkout first: actions/checkout cleans the workspace by default,
+      # which would delete release-assets/ if it ran after the download.
+      - name: 📥 Checkout
+        uses: actions/checkout@v7
+
       - name: 📥 Download artifacts
         uses: actions/download-artifact@v8
         with:
           path: release-assets
           merge-multiple: true
+
+      - name: 🧰 Stage the on-device helper
+        # Published on its own, next to the images, because it is the one
+        # device-facing file a flashed unit can replace by itself
+        # (`bgrpiimage-setup update --self`). Three of the last five
+        # releases changed only this file, and reaching a CM4 to reflash it
+        # costs a jumper, a USB-C cable and a trip to the cabinet.
+        # It is variant-independent, so one copy serves every image.
+        run: |
+          set -euo pipefail
+          src=src/modules/bgrpiimage-base/filesystem/root/usr/local/sbin/bgrpiimage-setup
+          install -m 0755 "$src" release-assets/bgrpiimage-setup
+          ( cd release-assets && sha256sum bgrpiimage-setup > bgrpiimage-setup.sha256 )
+          sha256sum release-assets/bgrpiimage-setup
 
       # The GitHub release itself is created by release.yml (semantic-release)
       # when the version is bumped on main. Here we only *append* the image
@@ -567,6 +596,7 @@ jobs:
             release-assets/*.img.xz
             release-assets/*.sha256
             release-assets/*.manifest.json
+            release-assets/bgrpiimage-setup
           fail_on_unmatched_files: true
           append_body: true
           body: |

@@ -55,7 +55,25 @@ sudo bgrpiimage-setup help
 > | `can status` showing the error counters; argument validation and wrong-interface guards | v0.7.4 |
 > | `ip ... static` accepting `""` for "no DNS" | v0.7.4 |
 >
-> There is no in-place update path for the helper — **reflash** to move up.
+> From **v0.8.0** the helper can replace itself, so a newer one no longer
+> needs a new image:
+>
+> ```bash
+> sudo bgrpiimage-setup update --self
+> ```
+>
+> On an image older than that the subcommand does not exist yet — bootstrap
+> it once, then use the subcommand from then on:
+>
+> ```bash
+> sudo curl -fsSL --proto '=https' --tlsv1.2 -o /usr/local/sbin/bgrpiimage-setup \
+>     https://github.com/bauer-group/XPD-RPIImage/releases/latest/download/bgrpiimage-setup
+> sudo chmod 0755 /usr/local/sbin/bgrpiimage-setup
+> ```
+>
+> This updates the **helper only**. `config.txt` overlays, systemd units and
+> the MOTD still come from the flashed image — see
+> [Updating an installed system](#-updating-an-installed-system).
 
 ---
 
@@ -412,7 +430,8 @@ Be clear about what can and cannot be updated in place:
 | --- | --- |
 | Debian and Raspberry Pi packages, including security fixes | Automatic, via `unattended-upgrades` inside the configured maintenance window — see [`banner-and-updates.md`](banner-and-updates.md). |
 | Portainer | `docker compose -f /etc/bgrpiimage/portainer/docker-compose.yml pull && ... up -d` |
-| Everything bgRPIImage itself generates — `config.txt` overlays, systemd units, the MOTD, `bgrpiimage-setup`, network and CAN configuration | **Reflash.** There is no in-place update mechanism, and nothing on the device knows about releases. |
+| `bgrpiimage-setup` itself | `sudo bgrpiimage-setup update --self` — fetches the helper from the latest release, verifies its checksum, and swaps it in. Needs outbound HTTPS to github.com. |
+| Everything else bgRPIImage generates — `config.txt` overlays, systemd units, the MOTD, network and CAN configuration | **Reflash.** There is no in-place update mechanism for these yet. |
 
 So a device picks up OS security updates on its own, but a fix to the platform
 (a corrected CAN interrupt pin, say) needs a new image. Grab it from
