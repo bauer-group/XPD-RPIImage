@@ -51,16 +51,23 @@ venv/
 .env.local
 secrets.json
 
-# Local key material for release signing.
+# Local key material for release signing - PRIVATE halves only.
 #
-# The whole directory, not just the private half: a folder named .secrets is
-# a working area for key material, and an allowlist there is one forgotten
-# extension away from a committed private key. The PUBLIC half is not kept
-# here either - its home in the repo is the module tree that ships it into
-# the image, where it is meant to be committed and reviewed.
+# The whole directory rather than an extension allowlist: a folder named
+# .secrets is a working area for key material, and an allowlist is one
+# forgotten suffix away from a committed private key.
 #
-# Private keys are pushed to GitHub Actions secrets with
-# scripts/push-secrets.sh and never leave this machine any other way.
+# The PUBLIC half deliberately does NOT live here. It is committed at
+# src/modules/bgrpiimage-base/filesystem/root/usr/share/bgrpiimage/trusted-keys.d/
+# because it has two jobs that both require it to be in git: it ships into
+# the image as the trust anchor devices verify releases against, and it is
+# the only way to check which key CI signs with - a private key cannot be
+# read back out of Actions secrets, so the committed public half is the
+# reference. scripts/push-secrets.py refuses to upload a private key whose
+# public counterpart is missing or does not match.
+#
+# Private keys reach GitHub Actions secrets through scripts/push-secrets.py
+# and never leave this machine any other way.
 .secrets/
 
 # Belt and braces: no private key may be committed from anywhere in the tree,

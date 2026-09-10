@@ -20,6 +20,14 @@ Usage:
     python scripts/push-secrets.py --dry-run     # what would be pushed
     python scripts/push-secrets.py               # do it
     python scripts/push-secrets.py --list        # what is configured now
+    python scripts/push-secrets.py --verify      # local key vs committed public key
+
+VERIFYING A SECRET AFTER THE FACT
+    A private key cannot be read back out of Actions secrets, so the public
+    half is committed to the image tree and every push prints a fingerprint
+    derived from it. Comparing that fingerprint against the committed key is
+    how "is CI signing with the key our devices trust" stays answerable -
+    which is exactly what --verify does, without needing credentials.
 """
 from __future__ import annotations
 
@@ -49,7 +57,14 @@ ROOT = Path(__file__).resolve().parent.parent
 @dataclass(frozen=True)
 class Secret:
     name: str
+    #: the private half - local only, never committed
     path: str
+    #: the public counterpart that IS committed and ships in the image. This
+    #: is what makes the secret verifiable: the private key becomes invisible
+    #: the moment it is uploaded, so the only way to answer "is CI signing
+    #: with the key our devices trust" is to compare against a public half
+    #: that lives in the repository, under review, in git history.
+    public: str = ""
     private: bool = True
 
 
@@ -64,7 +79,12 @@ class Secret:
 # belong here at all. Only its public half goes into the image tree, because a
 # key held in CI cannot be the recovery for a compromise of CI.
 SECRETS: list[Secret] = [
-    Secret("BGRPIIMAGE_SIGNING_KEY", ".secrets/bgrpiimage-recovery.key"),
+    Secret(
+        "BGRPIIMAGE_SIGNING_KEY",
+        ".secrets/bgrpiimage-recovery.key",
+        public="src/modules/bgrpiimage-base/filesystem/root"
+               "/usr/share/bgrpiimage/trusted-keys.d/bgrpiimage-recovery.pub",
+    ),
 ]
 
 
@@ -144,7 +164,51 @@ def load(secret: Secret) -> tuple[bytes, str, bool]:
         error("unreadable key", f"{secret.name}: {secret.path} could not be parsed.\n{exc}")
         raise SystemExit(1) from exc
 
+    check_pair(secret, fp)
     return pem, fp, had_crlf
+
+
+def check_pair(secret: Secret, fp: str) -> None:
+    """Refuse to upload a key the devices would not trust.
+
+    Once a private key is in Actions secrets it cannot be read back, so a
+    mismatch between what CI signs with and what the image trusts is
+    undetectable from the outside - it surfaces as every device rejecting
+    every release, with nothing to inspect. Catching it here costs one
+    comparison and is the only moment where both halves are in reach.
+    """
+    if not secret.public:
+        return
+    pub_path = ROOT / secret.public
+    if not pub_path.is_file():
+        error(
+            "public counterpart missing",
+            f"{secret.name}: {secret.public} does not exist.",
+            "the private key would be unverifiable - commit the matching public "
+            "key so devices, and this check, have something to compare against:\n"
+            f"  openssl pkey -in {secret.path} -pubout -out {secret.public}",
+        )
+        raise SystemExit(1)
+
+    try:
+        pub_fp = fingerprint(pub_path.read_bytes().replace(b"\r\n", b"\n"), private=False)
+    except Exception as exc:  # noqa: BLE001
+        error("unreadable public key", f"{secret.name}: {secret.public}\n{exc}")
+        raise SystemExit(1) from exc
+
+    if pub_fp != fp:
+        error(
+            "key pair mismatch",
+            f"{secret.name}: the private key and the committed public key are "
+            f"different keys.\n\n"
+            f"  private ({secret.path})\n    {fp}\n"
+            f"  public  ({secret.public})\n    {pub_fp}",
+            "uploading this would make CI sign with a key no device trusts, and "
+            "the failure would only appear when every device rejects every "
+            "release. Regenerate the public half from the private one:\n"
+            f"  openssl pkey -in {secret.path} -pubout -out {secret.public}",
+        )
+        raise SystemExit(1)
 
 
 def resolve_repo(explicit: str | None) -> str:
@@ -175,8 +239,23 @@ def main() -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("-n", "--dry-run", action="store_true", help="report without sending")
     ap.add_argument("-l", "--list", action="store_true", help="list secrets currently set")
+    ap.add_argument("-c", "--verify", action="store_true",
+                    help="check the local keys against the committed public ones and stop")
     ap.add_argument("--repo", help="OWNER/NAME (default: this checkout's remote)")
     args = ap.parse_args()
+
+    # --verify touches nothing remote, so it must not require gh or a login:
+    # it is the check a reviewer runs, and the one CI could run on a pull
+    # request, neither of which has credentials for this repository.
+    if args.verify:
+        for secret in SECRETS:
+            _pem, fp, _crlf = load(secret)
+            console.print(f"[green]+[/] [cyan]{secret.name}[/]")
+            console.print(f"    private     {secret.path}")
+            console.print(f"    public      {secret.public or '[dim]none declared[/]'}")
+            console.print(f"    fingerprint {fp}")
+        console.print("[green]local keys match their committed public halves[/]")
+        return 0
 
     preflight()
     repo = resolve_repo(args.repo)
