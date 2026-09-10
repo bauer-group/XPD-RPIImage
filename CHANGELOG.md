@@ -4,6 +4,17 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.7.8](https://github.com/bauer-group/XPD-RPIImage/compare/v0.7.7...v0.7.8) (2026-09-10)
+
+### 🐛 Bug Fixes
+
+* **base:** made the /etc/hosts fallback actually reachable ([46e96ab](https://github.com/bauer-group/XPD-RPIImage/commit/46e96abba2dab3b9fc2160999e425c21e1de4b0d))
+* **security:** removed cleartext credentials from the device ([1a00db5](https://github.com/bauer-group/XPD-RPIImage/commit/1a00db52c7fe3392f58a0fc2a815b9fcdf854f4a))
+
+### 🔧 Maintenance
+
+* **shell:** made the shell sources shellcheck-clean ([e93d550](https://github.com/bauer-group/XPD-RPIImage/commit/e93d5503f76743265cee94eab1d758e1958e407d))
+
 ## [0.7.7](https://github.com/bauer-group/XPD-RPIImage/compare/v0.7.6...v0.7.7) (2026-09-06)
 
 ### 🐛 Bug Fixes
