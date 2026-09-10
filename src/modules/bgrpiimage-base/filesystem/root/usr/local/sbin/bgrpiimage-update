@@ -410,21 +410,44 @@ snapshot() {
     # Snapshot exactly the destinations this bundle can touch, in their
     # current state - not the whole filesystem. Kilobytes, and restoring it
     # cannot do collateral damage.
-    ( cd "$mdir/root" && find . -type f -printf '/%P\n' ) | while read -r p; do
+    #
+    # The trailing `true` in both loops is load-bearing. A loop exits with the
+    # status of its LAST iteration, so `while read; do [[ -f "$p" ]] && printf;
+    # done` returned 1 whenever the bundle's last path was a file this device
+    # does not have yet - which is most of what an update ships. Under errexit
+    # that killed `apply` right here: after preflight, before a single byte was
+    # written, with no message at all. A `|| true` on the whole loop would hide
+    # a genuine failure just as effectively, so the status is made meaningless
+    # on purpose and the outcome is judged by looking at the list instead.
+    while IFS= read -r p; do
         [[ -f "$p" ]] && printf '%s\n' "${p#/}"
-    done > "$list"
+        true
+    done > "$list" < <(cd "$mdir/root" && find . -type f -printf '/%P\n')
     for extra in etc/bgrpiimage-release etc/bgrpiimage-applied boot/firmware/config.txt; do
         [[ -f "/$extra" ]] && printf '%s\n' "$extra" >> "$list"
+        true
     done
-    if [[ -s "$list" ]]; then
-        tar czf "$tarball" -C / -T "$list" 2>/dev/null || true
-        ok "snapshot: $tarball ($(du -h "$tarball" | cut -f1))"
-    fi
+
+    # A snapshot that did not happen must stop the apply, not decorate it.
+    # This used to `|| true` the tar, print "snapshot: ..." regardless, and
+    # then overwrite last-rollback - so a device with a full /var announced a
+    # rollback point it did not have, destroyed the pointer to the one it did
+    # have, and applied anyway. Rollback is the whole reason apply is allowed
+    # to touch a running device.
+    [[ -s "$list" ]] \
+        || die "nothing to snapshot - refusing to apply without a rollback point"
+    tar czf "$tarball" -C / -T "$list" 2>/dev/null \
+        || die "could not write the rollback snapshot $tarball - refusing to apply
+    without a way back. Check free space and permissions under $ROLLBACK."
     rm -f "$list"
+    ok "snapshot: $tarball ($(du -h "$tarball" 2>/dev/null | cut -f1 || true))"
+
+    # Only once the snapshot is known good: this pointer is what `rollback`
+    # follows, and moving it on a failed snapshot loses the last good one.
     printf '%s' "$tarball" > "$STATE/last-rollback"
     # Keep the three most recent and no more: these are for the next few
     # minutes, not an archive.
-    ls -1t "$ROLLBACK"/*.tar.gz 2>/dev/null | tail -n +4 | xargs -r rm -f
+    ls -1t "$ROLLBACK"/*.tar.gz 2>/dev/null | tail -n +4 | xargs -r rm -f || true
 }
 
 do_rollback() {
@@ -432,7 +455,16 @@ do_rollback() {
     tarball=$(cat "$STATE/last-rollback" 2>/dev/null || true)
     [[ -n "$tarball" && -f "$tarball" ]] || die "no snapshot to roll back to"
     info "restoring $tarball"
-    tar xzf "$tarball" -C / --no-same-owner
+    # Unchecked, a restore that died half-way took errexit's silent exit: no
+    # message, and the applied-state file below never reached "rolled-back",
+    # so `status` went on reporting the result of the apply that had just been
+    # undone. A partial restore is the one state this tool must never leave
+    # quietly.
+    tar xzf "$tarball" -C / --no-same-owner \
+        || die "restoring $tarball failed part-way through.
+    This device is now between configurations. Do not reboot: re-run
+    '$PROG rollback', and if that fails the snapshot itself is damaged and
+    the device needs a reflash."
     systemctl daemon-reload 2>/dev/null || true
     applied_set BGRPIIMAGE_CONFIG_RESULT "rolled-back"
     ok "restored. A reboot may be needed if config.txt was part of it."
@@ -474,11 +506,26 @@ install_payload() {
     # Losing a payload to an interrupted extract is harmless in a way that
     # losing a real file would not be: nothing on a running device reads
     # /opt/bgrpiimage, and the next run restores it in full.
+    #
+    # The module list is read into a variable rather than piped from a process
+    # substitution so that jq's own failure is visible. Read straight from
+    # `< <(jq ... 2>/dev/null)` it was not: an unreadable manifest produced an
+    # empty list, nothing was cleared, and the stale-payload bug this block
+    # exists to prevent came back silently.
+    local modules
+    modules=$(jq -r '.modules[]? // empty' "$mdir/manifest.json") \
+        || die "manifest.json does not parse - refusing to touch the payload"
     while IFS= read -r m; do
         [[ -n "$m" && "$m" != *[!A-Za-z0-9._-]* ]] || continue
         rm -rf "/opt/bgrpiimage/${m:?}"
-    done < <(jq -r '.modules[]? // empty' "$mdir/manifest.json" 2>/dev/null)
-    ( cd "$mdir/root" && tar cf - opt ) | ( cd / && tar xf - )
+    done <<< "$modules"
+
+    # Both callers test this function's status, which switches errexit off for
+    # its whole body - so every step from here down is checked by hand. It ran
+    # unchecked before: a write failure after the snapshot aborted apply with
+    # no message and never reached the rollback sitting ready for it.
+    ( cd "$mdir/root" && tar cf - opt ) | ( cd / && tar xf - ) \
+        || { warn "could not stage the bundle payload under /opt/bgrpiimage"; return 1; }
     find /opt/bgrpiimage -name '*.sh' -exec chmod 0755 {} + 2>/dev/null || true
     [[ "$mode" == "full" ]] || return 0
 
@@ -488,8 +535,10 @@ install_payload() {
             warn "bundle carries $dest, which an update may not write - skipped"
             continue
         fi
-        install -D -m 0755 "$mdir/root/${f#./}" "$dest"
+        install -D -m 0755 "$mdir/root/${f#./}" "$dest" \
+            || { warn "could not install $dest"; return 1; }
     done < <(cd "$mdir/root" && find . -path ./opt -prune -o -type f -print)
+    return 0
 }
 
 # The same list the apply library enforces, restated here because this runs
@@ -507,18 +556,38 @@ denied_path() {
 }
 
 run_modules() {
-    local mdir="$1" dry="$2" m rc=0
+    local mdir="$1" dry="$2" m rc=0 modules ran=0
     export BGRPI_CTX=device
     export BGRPI_DRY_RUN="$dry"
     export BGRPI_INTENTS="$STATE/intents"
     : > "$BGRPI_INTENTS"
-    for m in $(jq -r '.modules[]' "$mdir/manifest.json"); do
+
+    # `for m in $(jq ...)` swallowed jq's status along with its stderr: a
+    # manifest this could not read left the loop iterating over nothing, rc
+    # stayed 0, and apply went on to stamp the new configuration version on a
+    # device where not one module had run. Both call sites test this
+    # function's status, so errexit is off in here and nothing is caught for
+    # us. `.modules[]?` also stops a manifest without the key from printing a
+    # raw jq error at the operator.
+    modules=$(jq -r '.modules[]? // empty' "$mdir/manifest.json") \
+        || { warn "manifest.json does not parse - no module was run"; return 1; }
+
+    while IFS= read -r m; do
+        [[ -n "$m" ]] || continue
         [[ "$m" == "bgrpiimage-common" ]] && continue
         [[ -x "/opt/bgrpiimage/$m/apply.sh" ]] || continue
+        ran=$((ran + 1))
         if ! "/opt/bgrpiimage/$m/apply.sh"; then
             warn "$m failed"; rc=1
         fi
-    done
+    done <<< "$modules"
+
+    # A bundle that declares modules and runs none of them has not been
+    # applied, whatever the exit status says.
+    if [[ "$rc" -eq 0 && "$ran" -eq 0 ]] && grep -q '"modules"' "$mdir/manifest.json"; then
+        warn "the bundle declares modules but none of them ran"
+        rc=1
+    fi
     return $rc
 }
 
@@ -720,7 +789,14 @@ cmd_apply() {
     snapshot "$dir"
     since=$(date '+%Y-%m-%d %H:%M:%S')
 
-    install_payload "$dir" full
+    # A failed write is treated exactly like a failed module: the snapshot
+    # above exists for this, and reaching it only from the module branch meant
+    # a half-installed payload aborted with the rollback sitting unused.
+    if ! install_payload "$dir" full; then
+        warn "installing the payload failed - rolling back"
+        do_rollback
+        exit 1
+    fi
     if ! run_modules "$dir" 0; then
         warn "a module failed - rolling back"
         do_rollback

@@ -42,7 +42,26 @@ apt-get update -qq >/dev/null 2>&1
 apt-get install -y -qq --no-install-recommends \
     curl jq ca-certificates openssl python3 >/dev/null 2>&1
 
-BUNDLE=$(ls /repo/dist/*.confbundle.tar.gz | head -1)
+# Newest by mtime, not first alphabetically. dist/ accumulates bundles on a
+# developer's machine, and `ls | head -1` picked the lowest version string
+# there - so the gate meant to guard a commit tested a months-old bundle.
+# CI never noticed because CI only ever has the one it just built.
+BUNDLE=$(ls -1t /repo/dist/*.confbundle.tar.gz | head -1)
+
+# The bundle CARRIES bgrpiimage-update, and `apply` installs it over
+# /usr/local/sbin - so every assertion made after an apply exercises the
+# PACKED copy, not the working tree. Editing the script and running this file
+# directly therefore tests the previous version and reports passes that mean
+# nothing. `make test-update` depends on `bundle` to avoid this; this check is
+# for the direct run, and it exists because it already cost an afternoon.
+if ! cmp -s <(tar xzOf "$BUNDLE" root/usr/local/sbin/bgrpiimage-update 2>/dev/null) \
+            /repo/src/modules/bgrpiimage-base/filesystem/root/usr/local/sbin/bgrpiimage-update
+then
+    echo "STALE BUNDLE: $(basename "$BUNDLE") carries a bgrpiimage-update that differs"
+    echo "from src/. Everything after an apply would test the packed copy. Re-pack first:"
+    echo "  make bundle    # or: python scripts/bundle.py config/variants/<variant>.json --out dist"
+    exit 1
+fi
 VERSION=$(basename "$BUNDLE" | sed 's/.*-v\(.*\)\.confbundle\.tar\.gz/\1/')
 VARIANT=$(basename "$BUNDLE" | sed 's/^bgrpiimage-\(.*\)-v.*/\1/')
 BASE_SHA=$(tar xzOf "$BUNDLE" manifest.json | jq -r '.applies_to.base_image_sha256')
@@ -470,6 +489,37 @@ grep -qi "cannot read" /tmp/na \
 [ ! -f /etc/bgrpiimage-applied ] && ok "and nothing was applied" || bad "state was written"
 cp "$BUNDLE" "$DL/"
 ( cd "$DL" && sha256sum "$(basename "$BUNDLE")" > "$(basename "$BUNDLE").sha256" )
+
+sect "15. the rollback point is real, and a broken one is not hidden"
+# snapshot() used to `|| true` its tar, print "snapshot: ..." either way and
+# then move last-rollback regardless - so a device that could not write the
+# snapshot was told it had a rollback point, lost the pointer to the one it
+# really had, and applied anyway. It also ended its file-list loop on the
+# status of the last `[[ -f ]]` test, so a bundle whose last path was a file
+# the device did not have yet aborted apply under errexit with no output.
+seed_device 0.0.1
+$U apply --yes >/tmp/sn 2>&1; rc=$?
+[ $rc -eq 0 ] && ok "apply succeeded" || { bad "apply failed (rc=$rc)"; tail -12 /tmp/sn; }
+snap=$(cat /var/lib/bgrpiimage/last-rollback 2>/dev/null || true)
+{ [ -n "$snap" ] && [ -f "$snap" ]; } \
+    && ok "last-rollback points at a snapshot that exists" \
+    || bad "last-rollback does not name a real snapshot: '${snap:-}'"
+tar tzf "$snap" >/dev/null 2>&1 \
+    && ok "and that snapshot is a readable archive" || bad "snapshot is not readable"
+
+# A restore that cannot complete must say so. Unchecked, it took errexit's
+# silent exit and never reached the applied-state write, so `status` went on
+# reporting the result of the apply the operator had just tried to undo.
+printf 'not a tarball at all' > "$snap"
+$U rollback >/tmp/rb2 2>&1; rc=$?
+[ $rc -ne 0 ] && ok "rollback refuses a damaged snapshot (rc=$rc)" \
+              || bad "rollback reported success restoring a damaged snapshot"
+grep -qi "failed part-way" /tmp/rb2 \
+    && ok "and names the failure" \
+    || { bad "rollback failed silently"; sed 's/^/      | /' /tmp/rb2; }
+grep -q "BGRPIIMAGE_CONFIG_RESULT='rolled-back'" /etc/bgrpiimage-applied \
+    && bad "recorded a rollback that did not happen" \
+    || ok "and does not record a rollback that did not happen"
 
 echo
 echo "================ $PASS passed, $FAIL failed ================"
