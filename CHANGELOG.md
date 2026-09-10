@@ -4,6 +4,13 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.8.0](https://github.com/bauer-group/XPD-RPIImage/compare/v0.7.8...v0.8.0) (2026-09-10)
+
+### 🚀 Features
+
+* **release:** recorded the identity an in-place update needs ([a80e01b](https://github.com/bauer-group/XPD-RPIImage/commit/a80e01be5709e85889bacbe0f0bf3fab133a5eaa))
+* **setup:** added update --self so the helper can replace itself ([00d72fe](https://github.com/bauer-group/XPD-RPIImage/commit/00d72fe57723dc41ed1f9d455df76ed9f84dedb6))
+
 ## [0.7.8](https://github.com/bauer-group/XPD-RPIImage/compare/v0.7.7...v0.7.8) (2026-09-10)
 
 ### 🐛 Bug Fixes
