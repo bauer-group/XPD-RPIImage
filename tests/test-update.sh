@@ -581,6 +581,22 @@ grep -qi "stdin is not a terminal" /tmp/ni \
     || { bad "exited without saying anything"; sed 's/^/      | /' /tmp/ni; }
 [ ! -f /etc/bgrpiimage-applied ] && ok "and nothing was applied" || bad "state was written"
 
+sect "18. the recorded helper version follows the helper on disk"
+# The bundle carries bgrpiimage-setup and apply installs it, but only
+# bgrpiimage-setup itself ever wrote BGRPIIMAGE_HELPER_VERSION. So the
+# documented way back - `apply --version <older>` - put an older helper on
+# disk while the record still named the newer one, and `update --self` then
+# decided there was nothing to do and refused to fetch it back. The helper is
+# the recovery tool; being silently pinned to an old copy with no CLI way out
+# is the worst file for that to happen to.
+seed_device 0.0.1
+$U apply --yes >/tmp/hv 2>&1 || { bad "apply failed"; tail -8 /tmp/hv; }
+grep -q "BGRPIIMAGE_HELPER_VERSION='$VERSION'" /etc/bgrpiimage-applied \
+    && ok "apply records the helper version it just installed" \
+    || { bad "helper version not recorded after apply"
+         grep HELPER /etc/bgrpiimage-applied 2>/dev/null | sed 's/^/      | /' \
+           || echo "      | (no BGRPIIMAGE_HELPER_VERSION line at all)"; }
+
 echo
 echo "================ $PASS passed, $FAIL failed ================"
 [ "$FAIL" -eq 0 ]

@@ -630,6 +630,15 @@ install_payload() {
         fi
         install -D -m 0755 "$mdir/root/${f#./}" "$dest" \
             || { warn "could not install $dest"; return 1; }
+        # bgrpiimage-setup decides whether `update --self` has anything to do
+        # by reading BGRPIIMAGE_HELPER_VERSION, and only bgrpiimage-setup ever
+        # wrote it. So replacing the helper here - which the documented way
+        # back, `apply --version <older>`, does - left the record naming a
+        # version that is no longer on disk, and `update --self` then declined
+        # to fetch the newer helper back. The helper is the recovery tool.
+        if [[ "$dest" == /usr/local/sbin/bgrpiimage-setup && -n "${BUNDLE_VERSION:-}" ]]; then
+            applied_set BGRPIIMAGE_HELPER_VERSION "$BUNDLE_VERSION"
+        fi
     done < <(cd "$mdir/root" && find . -path ./opt -prune -o -type f -print)
     return 0
 }
@@ -813,6 +822,10 @@ prepare() { # -> BUNDLE_DIR (the extracted bundle directory)
     # inside extract_bundle.
     command -v jq >/dev/null || die "jq is required to read a bundle manifest - install it first"
     mkdir -p "$WORK"
+    # $WORK kept one extracted bundle per version it had ever seen, forever,
+    # on a device whose rollback snapshots are deliberately capped at three.
+    # Nothing reads a previous run's copy - every path below re-extracts.
+    find "$WORK" -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} + 2>/dev/null || true
     if [[ -n "$OPT_FILE" ]]; then
         [[ -f "$OPT_FILE" ]] || die "no such bundle: $OPT_FILE"
         dir="$WORK/local"; rm -rf "$dir"; mkdir -p "$dir"
@@ -836,6 +849,14 @@ cmd_check() {
     # trust starts at 0 and is only raised by a failure: seeded to 1 it would
     # stay 1 on success, because `|| trust=$?` never runs when the call works.
     local latest remote rc=0 work mf trust=0
+    # --file was parsed, stored and then quietly ignored here, so the
+    # air-gapped operator who did the careful thing - look before leaping at
+    # the bundle on the USB stick - got "could not reach api.github.com"
+    # instead. Silently discarding an option someone passed is the one
+    # behaviour that cannot be right; plan and apply honour it.
+    [[ -z "$OPT_FILE" ]] \
+        || die "--file is for plan and apply. check asks the release host what is
+    published; to inspect a local bundle use: $PROG plan --file $OPT_FILE"
     if [[ -n "$OPT_VERSION" ]]; then
         latest="${OPT_VERSION#v}"
     else

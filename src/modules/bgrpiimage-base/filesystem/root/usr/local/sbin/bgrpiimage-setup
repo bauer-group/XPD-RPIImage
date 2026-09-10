@@ -722,9 +722,21 @@ selfupdate() {
     # Refuse anything that is not a plain release tag before it reaches a URL.
     [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "not a release tag: '$tag'"
 
+    # The short-circuit trusts a RECORDED version, and only this function ever
+    # writes it - so anything else that replaces the helper leaves the record
+    # lying. `bgrpiimage-update apply --version <older>` does exactly that: it
+    # installs the older release's bgrpiimage-setup while the applied-state
+    # file still names the newer one, and this check then refuses to fetch the
+    # helper back. The helper is the recovery tool, so being silently pinned
+    # to an old copy with no CLI way out is the worst file for this to happen
+    # to.
+    #
+    # An explicit --version is a statement of intent and always proceeds -
+    # the same rule bgrpiimage-update applies to its own --version. Only the
+    # implicit "give me the latest" path may decide there is nothing to do.
     cur=$(helper_version)
-    if [[ -n "$cur" && "v${cur#v}" == "$tag" ]]; then
-        ok "helper is already at $tag"
+    if [[ -z "$want" && -n "$cur" && "v${cur#v}" == "$tag" ]]; then
+        ok "helper is already at $tag (pass --version $tag to reinstall it anyway)"
         return 0
     fi
 
