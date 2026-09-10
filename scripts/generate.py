@@ -21,6 +21,7 @@ import shlex
 import shutil
 import stat
 import sys
+import textwrap
 from pathlib import Path
 from typing import Any
 
@@ -432,6 +433,30 @@ def render_base(cfg: dict[str, Any]) -> None:
         _render_banner(gen, cfg, banner)
 
 
+# Width of the rule in /etc/issue and /etc/issue.net, and therefore the width
+# everything in those files wraps to. 68 leaves a little room inside an 80
+# column terminal for the SSH client's own "| " banner prefix, which is two
+# more columns nobody accounts for until the line wraps.
+_BANNER_RULE_WIDTH = 68
+
+
+def _wrap_banner_text(text: str, indent: str = "  ") -> str:
+    """Wrap one paragraph to the banner rule, on word boundaries.
+
+    Returns "" for empty input rather than a blank line, so an absent
+    description does not leave a hole in the block.
+    """
+    if not text.strip():
+        return ""
+    lines = textwrap.wrap(
+        text.strip(),
+        width=_BANNER_RULE_WIDTH - len(indent),
+        break_long_words=False,
+        break_on_hyphens=False,
+    )
+    return "".join(f"{indent}{line}\n" for line in lines)
+
+
 def _render_banner(gen: Path, cfg: dict[str, Any], banner: dict[str, Any]) -> None:
     """Emit /etc/issue, /etc/issue.net, the MOTD script and the sshd banner
     drop-in. The MOTD script is static - all dynamic info (hostname, IPs, CAN
@@ -440,10 +465,18 @@ def _render_banner(gen: Path, cfg: dict[str, Any], banner: dict[str, Any]) -> No
     variant = cfg["variant"]
     note = banner.get("pre_login_note", "")
 
-    header = (
-        f"bgRPIImage {variant['name']} v{variant.get('version', '0.0.0')}\n"
-        f"  {variant.get('description', '')}\n"
-    ).rstrip() + "\n"
+    # The description is wrapped to the rule, not printed as one long line.
+    # /etc/issue.net has no idea how wide the client's terminal is, so an
+    # unwrapped line is broken by the SSH client wherever it happens to run
+    # out - mid-word, and with its own "> " continuation marker, which reads
+    # as a corrupted banner rather than a long one:
+    #     |   BAUER GROUP ... dual isolated C
+    #     > AN HAT (MCP2515 on SPI)
+    # Wrapping at the rule width also keeps the block rectangular, which is
+    # the whole point of having a rule.
+    rule = "-" * _BANNER_RULE_WIDTH + "\n"
+    header = f"bgRPIImage {variant['name']} v{variant.get('version', '0.0.0')}\n"
+    header += _wrap_banner_text(variant.get("description", ""))
 
     # /etc/issue is deliberately STATIC and short.
     #
@@ -456,22 +489,16 @@ def _render_banner(gen: Path, cfg: dict[str, Any], banner: dict[str, Any]) -> No
     # Dynamic state belongs in the MOTD, which renders once per login and
     # can run real commands. The hostname is not lost: agetty already
     # prefixes the prompt with it ("bg-canbus login:").
-    issue = (
-        f"{header}"
-        "--------------------------------------------------------------------\n"
-    )
+    issue = f"{header}{rule}"
     if note:
-        issue += f"{note}\n"
+        issue += _wrap_banner_text(note, indent="")
     write(gen / "issue", issue)
 
     # /etc/issue.net: sshd reads raw (no escapes), so keep it static.
-    issue_net = (
-        f"{header}"
-        "--------------------------------------------------------------------\n"
-    )
+    issue_net = f"{header}{rule}"
     if note:
-        issue_net += f"{note}\n"
-    issue_net += "--------------------------------------------------------------------\n"
+        issue_net += _wrap_banner_text(note, indent="")
+    issue_net += rule
     write(gen / "issue.net", issue_net)
 
     # sshd drop-in to surface the pre-login banner.
@@ -526,8 +553,20 @@ printf "  ${GR}%s${NC}  %s  ${DIM}%s${NC}\n" \
 if [ "${BGRPIIMAGE_CONFIG_RESULT:-ok}" = "verify-failed" ]; then
     printf "  ${RD}the last configuration update did not verify${NC} ${DIM}(sudo bgrpiimage-update status)${NC}\n"
 fi
-[ -n "${BGRPIIMAGE_DESCRIPTION:-}" ] && \
-    printf "  ${DIM}%s${NC}\n" "$BGRPIIMAGE_DESCRIPTION"
+# Wrapped to the rule rather than printed as one line. $cols already follows
+# the real terminal, so the separator above is exactly as wide as the window -
+# but an unwrapped description is broken by the TERMINAL instead, mid-word and
+# without the two-space indent, which leaves a ragged line hanging under a
+# neat block. `fold -s` breaks on spaces; the sed strips the trailing space it
+# leaves behind on each break.
+if [ -n "${BGRPIIMAGE_DESCRIPTION:-}" ]; then
+    printf '%s\n' "$BGRPIIMAGE_DESCRIPTION" \
+        | fold -s -w "$((cols - 2))" \
+        | sed 's/[[:space:]]*$//' \
+        | while IFS= read -r _dline; do
+              printf "  ${DIM}%s${NC}\n" "$_dline"
+          done
+fi
 
 model=""
 if [ -r /sys/firmware/devicetree/base/model ]; then
