@@ -388,12 +388,19 @@ can_status() {
     # Two chips on TWO controllers are probed by independent, parallel driver
     # binds with no ordering between them, so the can0/can1 assignment is a
     # genuine per-boot race - and one an operator can only discover by looking.
-    if [[ "$(ls /sys/class/net 2>/dev/null | grep -c '^can[0-9]')" -gt 1 ]]; then
+    # Collected with a glob rather than `ls | grep`: the loop above needs the
+    # sorted names and earns its shellcheck disable, this one only needs the
+    # controller each device hangs off, and a glob says that without the
+    # exception. `-e` guards the no-match case, where the glob yields itself.
+    local ctrl_list=() dev ctrl
+    for dev in /sys/class/net/can[0-9]*; do
+        [[ -e "$dev" ]] || continue
+        ctrl=$(basename "$(readlink -f "$dev/device" 2>/dev/null)" 2>/dev/null)
+        [[ -n "$ctrl" ]] && ctrl_list+=("${ctrl%%.*}")
+    done
+    if [[ "${#ctrl_list[@]}" -gt 1 ]]; then
         local buses
-        buses=$(for i in /sys/class/net/can[0-9]*; do
-                    basename "$(readlink -f "$i/device" 2>/dev/null)" 2>/dev/null \
-                        | sed 's/\..*//'
-                done | sort -u | wc -l)
+        buses=$(printf '%s\n' "${ctrl_list[@]}" | sort -u | wc -l)
         if [[ "$buses" -gt 1 ]]; then
             echo
             echo "  ${CY}note:${NC} these controllers sit on DIFFERENT SPI buses, so which"
