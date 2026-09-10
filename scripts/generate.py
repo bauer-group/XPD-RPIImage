@@ -105,7 +105,16 @@ CAN_RESTART_MS_DEFAULT = 100
 # rpi-6.1.y and later (f33f5b1fd1be, "Fix WDIOC_SETTIMEOUT handling") the ioctl
 # no longer even returns EINVAL for an out-of-range value, so nothing is logged
 # at all. Trixie ships exactly those kernels.
-WATCHDOG_RUNTIME_SEC_DEFAULT = 10
+#
+# The default is the hardware MAXIMUM rather than something comfortably below
+# it, which is the opposite of the usual instinct. Nothing else pings: below
+# 16 s the kernel starts no keepalive worker (watchdog_need_worker() needs a
+# timeout above max_hw_heartbeat_ms = 15999), so PID 1 is the only kicker and
+# there is no safety net behind it. systemd issue 7932 measured 4.3 s of PID 1
+# blocked in a single SIGCHLD dispatch under a fork storm - which is a near
+# miss against the 5 s budget a timeout of 10 gives, and comfortably absorbed
+# by the 7.5 s that 15 gives. The extra margin costs nothing.
+WATCHDOG_RUNTIME_SEC_DEFAULT = 15
 # RebootWatchdogSec does NOT bound the orderly shutdown, which is the natural
 # reading and the wrong one. It arms the watchdog only for the SECOND phase of
 # a reboot - after PID 1 has been replaced by systemd-shutdown. Stopping Docker
@@ -1258,8 +1267,17 @@ def render_hardware(cfg: dict[str, Any]) -> None:
     wd = cfg.get("watchdog") or {}
     env_chunks.append(shell_var("BGRPIIMAGE_WATCHDOG_ENABLED", "yes" if wd.get("enabled") else "no"))
     if wd.get("enabled"):
-        env_chunks.append(shell_var("BGRPIIMAGE_WATCHDOG_RUNTIME_SEC", wd.get("runtime_sec", 10)))
-        env_chunks.append(shell_var("BGRPIIMAGE_WATCHDOG_REBOOT_SEC", wd.get("reboot_sec", 120)))
+        # Both fallbacks come from the constants, not from literals repeated
+        # here. They used to read 10 and 120, while the drop-in below already
+        # used the constants - so hardware.env could carry a reboot_sec of 120,
+        # a value the schema's own minimum of 240 forbids. Nothing reads these
+        # two any more (apply.sh installs the rendered file), which is exactly
+        # why the drift went unnoticed and why it is worth removing rather than
+        # leaving as a second, quietly wrong source of truth.
+        env_chunks.append(shell_var("BGRPIIMAGE_WATCHDOG_RUNTIME_SEC",
+                                    wd.get("runtime_sec", WATCHDOG_RUNTIME_SEC_DEFAULT)))
+        env_chunks.append(shell_var("BGRPIIMAGE_WATCHDOG_REBOOT_SEC",
+                                    wd.get("reboot_sec", WATCHDOG_REBOOT_SEC_DEFAULT)))
         # Rendered as a FILE rather than expanded from hardware.env by a
         # heredoc in the apply script. bg_install compares content and only
         # writes on a real difference, which is what makes re-applying a

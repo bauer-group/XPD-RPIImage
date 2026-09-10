@@ -246,6 +246,22 @@ schema_refuses("reboot_sec 120 (inside the systemd-shutdown window)",
 schema_accepts("reboot_sec 600 (upstream default)",
                {"enabled": True, "runtime_sec": 15, "reboot_sec": 600})
 
+# The watchdog values are rendered TWICE - into hardware.env and into the
+# systemd drop-in - and the two used to carry different hardcoded fallbacks, so
+# hardware.env could hold a reboot_sec of 120 that the schema's own minimum
+# forbids. Two renderers of one value drift; assert they cannot.
+for key, const in (("runtime_sec", "WATCHDOG_RUNTIME_SEC_DEFAULT"),
+                   ("reboot_sec", "WATCHDOG_REBOOT_SEC_DEFAULT")):
+    report(getattr(gen, const) is not None, f"{const} is defined")
+try:
+    jsonschema.validate(
+        {"enabled": True, "reboot_sec": gen.WATCHDOG_REBOOT_SEC_DEFAULT,
+         "runtime_sec": gen.WATCHDOG_RUNTIME_SEC_DEFAULT},
+        SCHEMA["properties"]["watchdog"])
+    report(True, "the code defaults satisfy the schema bounds")
+except jsonschema.ValidationError as exc:
+    report(False, "the code defaults satisfy the schema bounds", exc.message)
+
 print()
 print(f"{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
