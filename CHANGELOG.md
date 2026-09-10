@@ -4,6 +4,16 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.8.1](https://github.com/bauer-group/XPD-RPIImage/compare/v0.8.0...v0.8.1) (2026-09-10)
+
+### 🐛 Bug Fixes
+
+* **ci:** fetched the parity reference in a shallow checkout ([d87408a](https://github.com/bauer-group/XPD-RPIImage/commit/d87408aaeb279c01b293191647f494255314e266))
+
+### ♻️ Code Refactoring
+
+* **modules:** split apply logic out of the chroot scripts ([aed6c8a](https://github.com/bauer-group/XPD-RPIImage/commit/aed6c8a77d97dae054d3ae297c79dc41d443b77e))
+
 ## [0.8.0](https://github.com/bauer-group/XPD-RPIImage/compare/v0.7.8...v0.8.0) (2026-09-10)
 
 ### 🚀 Features
