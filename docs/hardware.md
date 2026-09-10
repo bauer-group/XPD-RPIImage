@@ -300,8 +300,8 @@ Common `boot_order` values (nibble order is reversed):
 ```json
 "watchdog": {
   "enabled": true,
-  "runtime_sec": 10,
-  "reboot_sec": 120
+  "runtime_sec": 15,
+  "reboot_sec": 600
 }
 ```
 
@@ -310,17 +310,78 @@ Configures the systemd side of `bcm2835-wdt`. Writes
 
 ```ini
 [Manager]
-RuntimeWatchdogSec=10
-RebootWatchdogSec=120
+RuntimeWatchdogSec=15
+RebootWatchdogSec=600
 ```
 
-- **`runtime_sec: 5..15`** — pid1 kicks the watchdog this often. Lower
-  values reboot faster on hard hangs.
-- **`reboot_sec`** — maximum time allowed for orderly shutdown before the
-  watchdog forces a cold boot.
+Enabled on both CAN variants: a hung device in a cabinet is a service call, and
+neither key costs anything on a healthy one. No extra packages — the driver and
+systemd's support are both stock.
 
-No extra packages needed; the driver + systemd support is in the stock
-Raspberry Pi OS kernel and systemd.
+### `runtime_sec` — a timeout, not a kick interval
+
+It is the **hardware timeout**. PID 1 kicks at *half* of it, once per main-loop
+iteration (`manager_loop()` calls `watchdog_ping()` then sleeps at most
+`timeout/2`). So `15` means: armed for 15 s, pinged about every 7.5 s.
+
+> ### 🚨 The 15 ceiling is a cliff, not a clamp
+>
+> `bcm2835_wdt_start()` arms the hardware with
+> `SECS_TO_WDOG_TICKS(timeout) & PM_WDOG_TIME_SET`, i.e. `(t << 16) & 0xfffff`.
+> Only the low four bits of the seconds survive, so the effective timeout is
+> **`t mod 16`**:
+>
+> | configured | actually armed |
+> | --- | --- |
+> | 15 | 15 s |
+> | **16** | **0 s — resets immediately, forever** |
+> | 20 | 4 s |
+> | 30 | 14 s |
+>
+> Nothing warns. Since the 6.8 fix backported into `rpi-6.1.y`
+> (`f33f5b1fd1be`, *"Fix WDIOC_SETTIMEOUT handling"*) the ioctl does not even
+> return `EINVAL` for an out-of-range value any more — it succeeds, and the
+> board reboots forever. Trixie ships exactly those kernels. This is a real
+> field report, not a theory: systemd issue
+> [#21949](https://github.com/systemd/systemd/issues/21949) is a Pi 4 stuck in
+> a reboot loop from `RuntimeWatchdogSec=20`, rebooting after "about 3 seconds"
+> — the predicted `20 mod 16 = 4`.
+>
+> The schema's `maximum: 15` is what stands between a config and that loop.
+
+**Prefer 15 over a lower value.** Below 16 s no kernel keepalive worker runs
+(`watchdog_need_worker()` needs a timeout above `max_hw_heartbeat_ms`, which is
+15999 ms), so PID 1 is the *only* thing kicking and every stall lands directly
+on the budget. systemd issue
+[#7932](https://github.com/systemd/systemd/issues/7932) measured **4.3 s** of
+PID 1 blocked in a single `SIGCHLD` dispatch under a fork storm — and a Docker
+host with container healthchecks produces those routinely. At `runtime_sec: 10`
+that is 4.3 s of a 5 s budget.
+
+> A spurious watchdog reset is not a reboot. It is a power-cycle with no sync,
+> no unmount and no container stop — on an SD-card-rooted device, the fastest
+> route to the corrupted filesystem the watchdog was installed to prevent.
+> Moving Docker's data root off the SD card removes the biggest stall source
+> from under PID 1.
+
+### `reboot_sec` — not what the name suggests
+
+It is **not** "time allowed for an orderly shutdown". It arms the watchdog for
+the **second** phase of a reboot only — after PID 1 has been replaced by
+`systemd-shutdown`. Stopping Docker and its containers happens in phase *one*,
+still governed by `runtime_sec` and each unit's own `TimeoutStopSec`.
+
+Phase two, before it issues its **first** `watchdog_ping()`:
+
+| step | worst case |
+| --- | --- |
+| `sync_with_progress()` | effectively unbounded — resets its own attempt counter while dirty pages keep shrinking |
+| `broadcast_signal(SIGTERM)` | 90 s |
+| `broadcast_signal(SIGKILL)` | 90 s |
+
+That is **≥210 s and open-ended**, which is why upstream defaults to 10 minutes.
+A shorter value fires mid-`unmount_all()` with filesystems dirty. Hence the
+schema floor of `240` and the shipped value of `600` — upstream's own default.
 
 ---
 

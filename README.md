@@ -138,8 +138,8 @@ gh workflow run build.yml --ref vX.Y.Z
 | Variant | Description | Hostname | Extras |
 | --- | --- | --- | --- |
 | [`base`](config/variants/base.json) | Generic Raspberry Pi image, Docker-ready, no application-specific hardware. | `bg-rpi` | — |
-| [`canbus-plattform`](config/variants/canbus-plattform.json) | Base + Waveshare 17912 dual isolated CAN HAT (MCP2515 on SPI). | `bg-canbus` | `can0` + `can1` at 500 kbit/s with 100 ms bus-off auto-recovery, `can-utils`, dialout/gpio/i2c/spi groups |
-| [`canbusfd-plattform`](config/variants/canbusfd-plattform.json) | Base + Waveshare 17075 2-CH isolated **CAN FD** HAT (2× MCP2518FD), factory "mode A" jumpering. | `bg-canbusfd` | `can0` + `can1` at 500 kbit/s arbitration / **2 Mbit/s data phase**, 100 ms bus-off auto-recovery, `can-utils`, dialout/gpio/i2c/spi groups |
+| [`canbus-plattform`](config/variants/canbus-plattform.json) | Base + Waveshare 17912 dual isolated CAN HAT (MCP2515 on SPI). | `bg-canbus` | `can0` + `can1` at 500 kbit/s with 100 ms bus-off auto-recovery, `can-utils`, hardware watchdog, dialout/gpio/i2c/spi groups |
+| [`canbusfd-plattform`](config/variants/canbusfd-plattform.json) | Base + Waveshare 17075 2-CH isolated **CAN FD** HAT (2× MCP2518FD), factory "mode A" jumpering. | `bg-canbusfd` | `can0` + `can1` at 500 kbit/s arbitration / **2 Mbit/s data phase**, 100 ms bus-off auto-recovery, `can-utils`, hardware watchdog, dialout/gpio/i2c/spi groups |
 
 Adding a new variant is a 10-line JSON file — see
 [`docs/variants.md`](docs/variants.md).

@@ -43,9 +43,16 @@ import io as _io
 from rich.console import Console as _Console
 gen.err_console = _Console(file=_io.StringIO())
 
-BASE = json.load(open("config/variants/base.json", encoding="utf-8"))
-FD = json.load(open("config/variants/canbusfd-plattform.json", encoding="utf-8"))
-CLASSIC = json.load(open("config/variants/canbus-plattform.json", encoding="utf-8"))
+# Loaded through the generator's own loader, not json.load: it follows the
+# `extends` chain and strips the `$schema` / `extends` meta keys. Reading the
+# files raw leaves those in place, and the schema's additionalProperties:false
+# then rejects EVERY config - which does not look like a broken harness, it
+# looks like all the guards passing.
+from pathlib import Path
+
+BASE = gen.load_variant(Path("config/variants/base.json"))
+FD = gen.load_variant(Path("config/variants/canbusfd-plattform.json"))
+CLASSIC = gen.load_variant(Path("config/variants/canbus-plattform.json"))
 
 passed = failed = 0
 
@@ -63,8 +70,8 @@ def report(good, label, detail=""):
 
 
 def resolve(child, mutate=None):
-    """Merge child onto base exactly as generate.py does, then mutate."""
-    cfg = gen.deep_merge(copy.deepcopy(BASE), copy.deepcopy(child))
+    """Take an already extends-resolved config and apply a mutation to it."""
+    cfg = copy.deepcopy(child)
     if mutate:
         mutate(cfg)
     return cfg
@@ -185,6 +192,59 @@ refuses("a data phase slower than arbitration",
 refuses("dbitrate on a Classic-CAN-only MCP2515 board",
         lambda c: ifc(c)[0].__setitem__("dbitrate", 2000000),
         "Classic-CAN-only", child=CLASSIC)
+
+print()
+print("=== watchdog: the two settings that reboot-loop or corrupt a device ===")
+
+# These are schema bounds rather than _semantic_validate() rules, so they are
+# asserted through the schema the way `make validate` reaches it. Both bounds
+# guard a silent failure, which is exactly the kind of rule that gets "tidied"
+# by someone who reads them as ordinary tuning ranges.
+import jsonschema
+
+SCHEMA = json.load(open("config/schema.json", encoding="utf-8"))
+
+
+def schema_refuses(label, watchdog, why):
+    cfg = copy.deepcopy(FD)
+    cfg["watchdog"] = watchdog
+    try:
+        jsonschema.validate(cfg, SCHEMA)
+        report(False, label, f"schema accepted it - {why}")
+    except jsonschema.ValidationError:
+        report(True, label)
+
+
+def schema_accepts(label, watchdog):
+    cfg = copy.deepcopy(FD)
+    cfg["watchdog"] = watchdog
+    try:
+        jsonschema.validate(cfg, SCHEMA)
+        report(True, label)
+    except jsonschema.ValidationError as exc:
+        report(False, label, f"schema refused it: {exc.message}")
+
+
+# bcm2835_wdt_start() masks: (t << 16) & 0xfffff, so the armed timeout is
+# t mod 16. 16 arms ZERO seconds and the board resets forever, and since the
+# 6.8 backport the ioctl does not even fail. Only this bound stops it.
+schema_refuses("runtime_sec 16 (would arm 0s - reset loop)",
+               {"enabled": True, "runtime_sec": 16, "reboot_sec": 600},
+               "16 mod 16 = 0")
+schema_refuses("runtime_sec 20 (would arm 4s)",
+               {"enabled": True, "runtime_sec": 20, "reboot_sec": 600},
+               "20 mod 16 = 4")
+schema_accepts("runtime_sec 15 (the hardware maximum)",
+               {"enabled": True, "runtime_sec": 15, "reboot_sec": 600})
+
+# systemd-shutdown may spend 210s+ before its first watchdog_ping(): an
+# unbounded sync, then SIGTERM (90s), then SIGKILL (90s). A shorter value
+# resets the board mid-unmount_all().
+schema_refuses("reboot_sec 120 (inside the systemd-shutdown window)",
+               {"enabled": True, "runtime_sec": 15, "reboot_sec": 120},
+               "fires during sync/SIGTERM/SIGKILL")
+schema_accepts("reboot_sec 600 (upstream default)",
+               {"enabled": True, "runtime_sec": 15, "reboot_sec": 600})
 
 print()
 print(f"{passed} passed, {failed} failed")
