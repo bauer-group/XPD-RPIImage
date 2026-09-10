@@ -403,6 +403,74 @@ grep -q "rolling back" /tmp/stale \
     && ok "and the payload the bundle carries is still installed" \
     || bad "replacing the payload dir removed files the bundle carries"
 
+sect "13. a release this variant has no bundle for"
+# What v0.13.4 looked like from a device: the release exists, `check`
+# advertises it, but no confbundle was published for this variant - so the
+# download 404s. The run has to stop THERE, naming that reason.
+#
+# It did not. download_bundle reports failure with `die`, which is `exit 1`,
+# and prepare() is only ever called as `dir=$(prepare)`. Bash CLEARS the -e
+# option inside a command-substitution subshell when not in posix mode, so
+# errexit was not in force anywhere inside prepare(): the die exited its own
+# subshell, the empty string was assigned to $tarball, and extract_bundle ran
+# tar on "" three times. The operator's LAST message - the one they act on -
+# was "bundle has no manifest.json", which blames the bundle for a 404.
+seed_device 0.0.1
+printf '{"tag_name":"v%s"}\n' "99.99.99" > "$WEB/repos/$REPO/releases/latest"
+
+$U apply --yes >/tmp/nb 2>&1; rc=$?
+[ $rc -ne 0 ] && ok "apply refuses when there is no bundle (rc=$rc)" \
+              || { bad "apply reported success with no bundle"; tail -5 /tmp/nb; }
+grep -q "no bundle for" /tmp/nb \
+    && ok "and names the missing bundle as the reason" \
+    || { bad "did not report the missing bundle"; tail -5 /tmp/nb; }
+grep -qE 'tar \(child\)|Cannot open' /tmp/nb \
+    && { bad "tar ran on an empty path"; grep -cE 'tar \(child\)' /tmp/nb; } \
+    || ok "and no tar cascade reached the operator"
+grep -qi "no manifest.json" /tmp/nb \
+    && bad "blames a missing manifest for what was a 404" \
+    || ok "and does not blame the manifest"
+# The reason the operator acts on is the last one printed, not the first.
+[ "$(grep -cE '^\[x\]|\[x\]' /tmp/nb)" -le 1 ] \
+    && ok "exactly one failure is reported" \
+    || { bad "more than one failure reported - the last one misleads"; grep '\[x\]' /tmp/nb; }
+[ ! -f /etc/bgrpiimage-applied ] && ok "and nothing was applied" || bad "state was written"
+
+# A device that cannot reach the release API must fail the same way: one
+# reason, the true one. Same root cause, different entry point.
+seed_device 0.0.1
+BGRPIIMAGE_UPDATE_API=https://127.0.0.1:9 $U apply --yes >/tmp/nr 2>&1; rc=$?
+[ $rc -ne 0 ] && ok "apply refuses when the release API is unreachable" \
+              || bad "apply continued without resolving a version"
+grep -qi "could not reach" /tmp/nr \
+    && ok "and says so" || { bad "did not name the unreachable API"; tail -3 /tmp/nr; }
+grep -qi "not a release version" /tmp/nr \
+    && bad "follows the real error with a misleading empty-version message" \
+    || ok "and does not follow it with a misleading empty-version message"
+
+printf '{"tag_name":"v%s"}\n' "$VERSION" > "$WEB/repos/$REPO/releases/latest"
+
+sect "14. an archive tar cannot read must fail closed"
+# The two guards above the extract - "nothing outside root/ and manifest.json"
+# and "no absolute or traversing paths" - used to run `tar tzf | grep ... ||
+# true`, which hides tar's own exit status behind grep's. An archive tar
+# cannot read produces no lines, so grep matches nothing and BOTH guards
+# passed: an archive nothing had inspected was certified clean. This serves a
+# file whose checksum is correct - so the transfer check cannot catch it - but
+# which is not an archive at all.
+seed_device 0.0.1
+head -c 4096 /dev/urandom > "$DL/$(basename "$BUNDLE")"
+( cd "$DL" && sha256sum "$(basename "$BUNDLE")" > "$(basename "$BUNDLE").sha256" )
+$U apply --yes >/tmp/na 2>&1; rc=$?
+[ $rc -ne 0 ] && ok "apply refuses an unreadable archive (rc=$rc)" \
+              || bad "an unreadable archive was accepted"
+grep -qi "cannot read" /tmp/na \
+    && ok "and says the archive could not be read" \
+    || { bad "did not report an unreadable archive"; tail -4 /tmp/na; }
+[ ! -f /etc/bgrpiimage-applied ] && ok "and nothing was applied" || bad "state was written"
+cp "$BUNDLE" "$DL/"
+( cd "$DL" && sha256sum "$(basename "$BUNDLE")" > "$(basename "$BUNDLE").sha256" )
+
 echo
 echo "================ $PASS passed, $FAIL failed ================"
 [ "$FAIL" -eq 0 ]

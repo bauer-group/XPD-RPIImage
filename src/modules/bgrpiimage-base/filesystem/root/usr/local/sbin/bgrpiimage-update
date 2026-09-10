@@ -17,6 +17,18 @@
 #   --allow-interrupt=LIST      permit brief loss of: network, can
 #   --reapply                   re-apply the version already installed
 #
+# EXIT CODES FROM `check`
+#
+#   0   up to date
+#   1   an update is available and applies to this device - run apply
+#   2   published, but no configuration bundle for this variant (yet)
+#   3   published, but it needs a reflash rather than an update
+#   4   could not reach the release host to decide
+#
+# Only 1 means "apply it". Fleet tooling that treats every non-zero as work to
+# do will schedule applies that cannot succeed, which is what 2 and 3 exist to
+# prevent.
+#
 # WHAT THIS DOES AND DOES NOT DO
 #
 # It replaces the files this project generates: systemd units, the config.txt
@@ -81,6 +93,10 @@ MIN_BUNDLE_FORMAT=1
 OPT_VERSION=""; OPT_FILE=""; OPT_YES=0; OPT_REAPPLY=0
 OPT_INTERRUPT=""
 
+# Results of the functions that can also refuse. Set, never echoed - see the
+# note above resolve_latest() for why that distinction is load-bearing here.
+LATEST_VERSION=""; BUNDLE_TARBALL=""; BUNDLE_DIR=""; BUNDLE_VERSION=""
+
 fetch() {
     curl --proto '=https' --tlsv1.2 -fsSL \
          --connect-timeout 15 --max-time 300 --max-filesize 8388608 "$@"
@@ -118,14 +134,33 @@ applied_set() {
 # ---------------------------------------------------------------------------
 # Fetch + verify
 # ---------------------------------------------------------------------------
-resolve_latest() {
+# WHY THESE RETURN THROUGH A GLOBAL INSTEAD OF ECHOING THEIR RESULT
+#
+# `die` is `exit 1`, and inside $( ) that exits the subshell only. Worse, bash
+# CLEARS the -e option in a command-substitution subshell when it is not in
+# posix mode - so `dir=$(prepare)` switched errexit off for the whole of
+# prepare() and everything it called. A 404 on the bundle therefore printed its
+# refusal, assigned "" to the tarball, and carried on into tar three times; the
+# last thing the operator saw was "bundle has no manifest.json", blaming the
+# bundle for a download that never happened. The refusals are the product here,
+# so a refusal that does not stop the run is the worst defect this can have.
+#
+# preflight() already hands BUNDLE_VERSION back this way. Doing the same for the
+# other three means every `die` runs in the main shell, where exit 1 ends the
+# transaction where it failed and the last message is the true reason.
+#
+# The `|| true` added to the value-then-check assignments below is not
+# cosmetic. Now that errexit really is in force in these functions, an
+# unguarded failing substitution would abort the script silently and take its
+# own error message with it - trading a misleading message for no message.
+resolve_latest() { # -> LATEST_VERSION
     command -v jq >/dev/null || die "jq is required to resolve the latest release"
     local body tag
     body=$(fetch "${UPDATE_API}/repos/${UPDATE_REPO}/releases/latest") \
         || die "could not reach ${UPDATE_API} - check DNS and outbound HTTPS"
-    tag=$(printf '%s' "$body" | jq -r '.tag_name // empty')
+    tag=$(printf '%s' "$body" | jq -r '.tag_name // empty' || true)
     [[ -n "$tag" ]] || die "release API returned no tag_name"
-    printf '%s' "${tag#v}"
+    LATEST_VERSION="${tag#v}"
 }
 
 # Downloads the manifest only. `check` must be able to answer without pulling
@@ -136,7 +171,7 @@ remote_manifest() {
     fetch "${UPDATE_DL}/${UPDATE_REPO}/releases/download/v${version}/bgrpiimage-${VARIANT}-v${version}.bundle.manifest.json"
 }
 
-download_bundle() {
+download_bundle() { # -> BUNDLE_TARBALL
     local version="$1" dest="$2" base name
     base="${UPDATE_DL}/${UPDATE_REPO}/releases/download/v${version}"
     name="bgrpiimage-${VARIANT}-v${version}.confbundle.tar.gz"
@@ -147,20 +182,34 @@ download_bundle() {
         || die "no checksum for $name - refusing to apply an unverified bundle"
     ( cd "$dest" && sha256sum -c "$name.sha256" >/dev/null 2>&1 ) \
         || die "checksum mismatch - the download is corrupt or not what the release published"
-    printf '%s' "$dest/$name"
+    BUNDLE_TARBALL="$dest/$name"
 }
 
 # Extraction is where a hostile archive would act, so it is checked before it
 # is trusted: no absolute paths, no traversal, no symlinks, no device nodes,
 # nothing outside root/ and manifest.json.
 extract_bundle() {
-    local tarball="$1" dest="$2" bad
-    bad=$(tar tzf "$tarball" | grep -vE '^(manifest\.json(\.sig)?|root/)' || true)
+    local tarball="$1" dest="$2" bad members
+
+    # List the archive ONCE, and insist that listing succeeded.
+    #
+    # Piping `tar tzf` straight into grep hid tar's exit status behind grep's.
+    # An archive tar cannot read yields no lines, so grep matches nothing, the
+    # `|| true` swallows the failure, and both guards below pass - certifying
+    # as clean an archive nothing ever inspected. These two checks are what
+    # stand between a hostile bundle and the filesystem, so they have to fail
+    # closed. Reading the listing into a variable also means a tarball is not
+    # decompressed three times to answer two questions.
+    members=$(tar tzf "$tarball") \
+        || die "cannot read $tarball as an archive - refusing to extract it"
+
+    bad=$(printf '%s\n' "$members" | grep -vE '^(manifest\.json(\.sig)?|root/)' || true)
     [[ -z "$bad" ]] || die "bundle contains unexpected members: $(printf '%s' "$bad" | head -3 | tr '\n' ' ')"
-    bad=$(tar tzf "$tarball" | grep -E '(^/|\.\.)' || true)
+    bad=$(printf '%s\n' "$members" | grep -E '(^/|\.\.)' || true)
     [[ -z "$bad" ]] || die "bundle contains absolute or traversing paths"
     mkdir -p "$dest"
-    tar xzf "$tarball" -C "$dest" --no-same-owner --no-same-permissions
+    tar xzf "$tarball" -C "$dest" --no-same-owner --no-same-permissions \
+        || die "could not unpack $tarball - it is not a readable archive"
     [[ -f "$dest/manifest.json" ]] || die "bundle has no manifest.json"
 
     # BEFORE anything reads the manifest. A SHA-256 published beside the
@@ -174,7 +223,7 @@ extract_bundle() {
     # the tar checksum proves the transfer, this proves the contents.
     local rel sha actual
     while IFS=$'\t' read -r rel sha; do
-        actual=$(sha256sum "$dest/root/$rel" 2>/dev/null | cut -d' ' -f1)
+        actual=$(sha256sum "$dest/root/$rel" 2>/dev/null | cut -d' ' -f1 || true)
         [[ "$actual" == "$sha" ]] || die "bundle file $rel does not match its manifest hash"
     done < <(jq -r '.files[] | "\(.path)\t\(.sha256)"' "$dest/manifest.json")
 }
@@ -576,7 +625,7 @@ verify() {
 # ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
-prepare() { # -> echoes the extracted bundle directory
+prepare() { # -> BUNDLE_DIR (the extracted bundle directory)
     local version dir
     mkdir -p "$WORK"
     if [[ -n "$OPT_FILE" ]]; then
@@ -584,37 +633,64 @@ prepare() { # -> echoes the extracted bundle directory
         dir="$WORK/local"; rm -rf "$dir"; mkdir -p "$dir"
         extract_bundle "$OPT_FILE" "$dir"
     else
-        version="${OPT_VERSION:-$(resolve_latest)}"
+        if [[ -n "$OPT_VERSION" ]]; then
+            version="$OPT_VERSION"
+        else
+            resolve_latest; version="$LATEST_VERSION"
+        fi
         version="${version#v}"
         [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "not a release version: '$version'"
         dir="$WORK/$version"; rm -rf "$dir"; mkdir -p "$dir"
-        local tarball
-        tarball=$(download_bundle "$version" "$dir")
-        extract_bundle "$tarball" "$dir"
+        download_bundle "$version" "$dir"
+        extract_bundle "$BUNDLE_TARBALL" "$dir"
     fi
-    printf '%s' "$dir"
+    BUNDLE_DIR="$dir"
 }
 
 cmd_check() {
-    local latest manifest remote
-    latest="${OPT_VERSION:-$(resolve_latest)}"
+    local latest manifest remote rc=0
+    if [[ -n "$OPT_VERSION" ]]; then
+        latest="${OPT_VERSION#v}"
+    else
+        resolve_latest; latest="$LATEST_VERSION"
+    fi
     echo "${CY}installed:${NC} ${EFFECTIVE_VERSION}   ${CY}published:${NC} ${latest}"
     if [[ "$latest" == "$EFFECTIVE_VERSION" ]]; then
         ok "up to date"; return 0
     fi
-    if manifest=$(remote_manifest "$latest" 2>/dev/null); then
-        remote=$(printf '%s' "$manifest" | jq -r '.applies_to.base_image_sha256 // empty')
-        if [[ -n "$remote" && -n "$BASE_SHA" && "$remote" != "$BASE_SHA" ]]; then
-            warn "v$latest rebased onto a different Raspberry Pi OS - it needs a reflash, not an update"
-            return 1
-        fi
+
+    # A release exists from the moment it is tagged, but its per-variant assets
+    # are attached by a later job - on this project up to half an hour later,
+    # because that attach waits on the image builds. In that window
+    # /releases/latest answers with a version whose bundle 404s, and telling
+    # the operator to apply it sends them into a download that cannot succeed.
+    # So the manifest fetch is not a nicety here: its absence IS the answer,
+    # and it costs a few hundred bytes to ask. `check` must never advertise an
+    # apply it has not confirmed this device could actually perform.
+    manifest=$(remote_manifest "$latest" 2>/dev/null) || rc=$?
+    case "$rc" in
+        0)  ;;
+        22) warn "v$latest is published but carries no configuration bundle for ${VARIANT} yet.
+    Release assets are attached after the release itself and can lag it by
+    around half an hour. There is nothing to apply until they land - if this
+    persists, the release was published without assets and needs a rebuild."
+            return 2 ;;
+        *)  warn "cannot reach ${UPDATE_DL} to confirm v$latest applies to this device -
+    not advising an apply on a release nothing has been able to verify."
+            return 4 ;;
+    esac
+
+    remote=$(printf '%s' "$manifest" | jq -r '.applies_to.base_image_sha256 // empty' || true)
+    if [[ -n "$remote" && -n "$BASE_SHA" && "$remote" != "$BASE_SHA" ]]; then
+        warn "v$latest rebased onto a different Raspberry Pi OS - it needs a reflash, not an update"
+        return 3
     fi
     warn "v$latest available - run: sudo $PROG apply"
     return 1
 }
 
 cmd_plan() {
-    local dir; dir=$(prepare)
+    local dir; prepare; dir="$BUNDLE_DIR"
     preflight "$dir"
     check_shadowing "$dir"
     info "planning ${EFFECTIVE_VERSION} -> ${BUNDLE_VERSION}"
@@ -631,7 +707,7 @@ cmd_plan() {
 cmd_apply() {
     exec 9>"$LOCK"; flock -n 9 || die "another $PROG is already running"
 
-    local dir since; dir=$(prepare)
+    local dir since; prepare; dir="$BUNDLE_DIR"
     preflight "$dir"
     check_shadowing "$dir"
 
