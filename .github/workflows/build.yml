@@ -93,8 +93,17 @@ jobs:
           # That is where the bugs have actually been: five of the last twenty
           # releases were shell fixes in exactly these files.
           shellcheck --version
+          # apply.sh + apply-lib.sh were NOT in this list until they were added
+          # here, which is the wrong way round: the chroot scripts only ever run
+          # against a blank rootfs in a build, while apply-lib.sh is the only
+          # code in the project that writes to a CONFIGURED, deployed system.
+          # The globs simply predated the apply.sh refactor, so the step's own
+          # comment about covering "everything that runs ON a device" had been
+          # untrue for six files.
           files=$(git ls-files \
             'src/modules/*/start_chroot_script' \
+            'src/modules/*/apply.sh' \
+            'src/modules/*/apply-lib.sh' \
             'src/modules/*/filesystem/root/usr/local/sbin/*' \
             'src/modules/*/filesystem/root/etc/profile.d/*.sh' \
             'scripts/*.sh' \
