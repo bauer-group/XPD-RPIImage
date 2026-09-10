@@ -75,10 +75,13 @@ jobs:
     needs: release
     if: needs.release.outputs.release-created == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v7
+
       - name: 🚀 Trigger build on the release tag
         env:
           GH_TOKEN: ${{ secrets.PAT_READWRITE_ORGANISATION }}
@@ -94,3 +97,50 @@ jobs:
           echo "dispatching build.yml on ${TAG}"
           gh workflow run build.yml --repo "${GITHUB_REPOSITORY}" --ref "${TAG}"
           echo "### 🖼️ Image build dispatched on \`${TAG}\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: ⏳ Confirm every config bundle reached the release
+        env:
+          GH_TOKEN: ${{ secrets.PAT_READWRITE_ORGANISATION }}
+          TAG: ${{ needs.release.outputs.tag-name }}
+        run: |
+          set -euo pipefail
+          # `gh workflow run` returns as soon as the dispatch is accepted, so
+          # this job went green whatever happened next. That is how v0.11.1
+          # came to have no config bundle at all: the attach never ran, no
+          # step failed, and the gap surfaced only later as a 404 on a device
+          # in a cabinet. A release is visible to /releases/latest the instant
+          # it exists and devices act on it immediately, so "released" has to
+          # mean "installable" before this workflow may report success.
+          #
+          # Only the bundles are waited on, not the images. build.yml's
+          # attach-bundle job depends on `bundle` alone and publishes within a
+          # couple of minutes; the ~26-minute image build is not something a
+          # flashed device needs in order to update.
+          mapfile -t variants < <(ls config/variants/*.json | xargs -n1 basename | sed 's/\.json$//')
+          echo "expecting ${#variants[@]} bundle(s): ${variants[*]}"
+          deadline=$(( SECONDS + 780 ))
+          while :; do
+              assets=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+                         --json assets --jq '.assets[].name' 2>/dev/null || true)
+              missing=()
+              for v in "${variants[@]}"; do
+                  printf '%s\n' "$assets" \
+                    | grep -qx "bgrpiimage-${v}-${TAG}.confbundle.tar.gz" || missing+=("$v")
+              done
+              if [[ ${#missing[@]} -eq 0 ]]; then
+                  echo "all ${#variants[@]} config bundles are attached"
+                  break
+              fi
+              if (( SECONDS >= deadline )); then
+                  echo "::error::${TAG} is published but carries no config bundle for:" \
+                       "${missing[*]}. Devices that see this release will 404 on apply." \
+                       "Re-run: gh workflow run build.yml --ref ${TAG}"
+                  exit 1
+              fi
+              echo "waiting for: ${missing[*]}"
+              sleep 20
+          done
+          {
+            echo "### ✅ Config bundles attached to \`${TAG}\`"
+            printf -- '- `%s`\n' "${variants[@]}"
+          } >> "$GITHUB_STEP_SUMMARY"
