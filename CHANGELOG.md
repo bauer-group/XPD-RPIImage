@@ -4,6 +4,12 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.11.1](https://github.com/bauer-group/XPD-RPIImage/compare/v0.11.0...v0.11.1) (2026-09-10)
+
+### 🐛 Bug Fixes
+
+* **setup:** replaced an ls|grep with a glob in the CAN bus check ([07dcbc3](https://github.com/bauer-group/XPD-RPIImage/commit/07dcbc30292e1b8d8e716097f526bf089909d375))
+
 ## [0.11.0](https://github.com/bauer-group/XPD-RPIImage/compare/v0.10.2...v0.11.0) (2026-09-10)
 
 ### 🚀 Features
