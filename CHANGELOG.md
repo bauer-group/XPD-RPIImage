@@ -4,6 +4,16 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.13.0](https://github.com/bauer-group/XPD-RPIImage/compare/v0.12.0...v0.13.0) (2026-09-10)
+
+### 🚀 Features
+
+* **watchdog:** enabled the hardware watchdog on both CAN variants ([ccb4e49](https://github.com/bauer-group/XPD-RPIImage/commit/ccb4e4975c294335f79b6bb6cef7fe1b25344cf2))
+
+### 🐛 Bug Fixes
+
+* **pages:** stopped the config bundle manifest from breaking the site ([523550e](https://github.com/bauer-group/XPD-RPIImage/commit/523550ea653188538868484643d28c70bf8b497c))
+
 ## [0.12.0](https://github.com/bauer-group/XPD-RPIImage/compare/v0.11.2...v0.12.0) (2026-09-10)
 
 ### 🚀 Features
