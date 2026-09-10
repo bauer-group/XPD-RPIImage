@@ -21,9 +21,11 @@
 #
 #   0   up to date
 #   1   an update is available and applies to this device - run apply
-#   2   published, but no configuration bundle for this variant (yet)
+#   2   published, but not applicable: no bundle for this variant yet, older
+#       than what is installed, or a bundle format this updater cannot read
 #   3   published, but it needs a reflash rather than an update
-#   4   could not reach the release host to decide
+#   4   could not decide - release host unreachable, or a manifest signed by
+#       a key this device does not trust
 #
 # Only 1 means "apply it". Fleet tooling that treats every non-zero as work to
 # do will schedule applies that cannot succeed, which is what 2 and 3 exist to
@@ -102,6 +104,24 @@ fetch() {
          --connect-timeout 15 --max-time 300 --max-filesize 8388608 "$@"
 }
 
+# One lock for every subcommand that reads or writes device state, not just
+# apply. `plan` extracts a bundle into $WORK and refreshes /opt, and `rollback`
+# restores files wholesale - either one racing a running apply corrupts it.
+# apply already held this; the other two took no lock at all.
+#
+# Idempotent because apply calls do_rollback while still holding it.
+LOCK_HELD=0
+take_lock() {
+    [[ "$LOCK_HELD" -eq 1 ]] && return 0
+    mkdir -p "$STATE"
+    # `exec 9>` failing left bash's own raw diagnostic and a line number as
+    # the operator's whole error message: the old `|| die` guarded flock, not
+    # the open.
+    exec 9>"$LOCK" || die "cannot open $LOCK - is $STATE writable?"
+    flock -n 9 || die "another $PROG is already running"
+    LOCK_HELD=1
+}
+
 # ---------------------------------------------------------------------------
 # Device identity
 # ---------------------------------------------------------------------------
@@ -115,8 +135,15 @@ load_identity() {
     CONTRACT="${BGRPIIMAGE_APPLY_CONTRACT:-0}"
     CONFIG_VERSION=""
     if [[ -r "$APPLIED" ]]; then
+        # A file that does not source makes this substitution non-zero, and
+        # under errexit that killed EVERY subcommand with no output - `status`
+        # included, which is the one an operator runs to find out what is
+        # wrong. Treat an unreadable state file as "no update applied" and say
+        # so, rather than taking the whole tool down with it.
         # shellcheck disable=SC1090
-        CONFIG_VERSION=$( . "$APPLIED" 2>/dev/null && printf '%s' "${BGRPIIMAGE_CONFIG_VERSION:-}" )
+        CONFIG_VERSION=$( . "$APPLIED" 2>/dev/null && printf '%s' "${BGRPIIMAGE_CONFIG_VERSION:-}" ) \
+            || { warn "$APPLIED could not be read - treating this device as not yet updated"
+                 CONFIG_VERSION=""; }
     fi
     EFFECTIVE_VERSION="${CONFIG_VERSION:-$IMAGE_VERSION}"
 }
@@ -166,9 +193,47 @@ resolve_latest() { # -> LATEST_VERSION
 # Downloads the manifest only. `check` must be able to answer without pulling
 # the bundle, so a device on a metered link can ask "is there anything new"
 # for a few hundred bytes.
-remote_manifest() {
-    local version="$1"
-    fetch "${UPDATE_DL}/${UPDATE_REPO}/releases/download/v${version}/bgrpiimage-${VARIANT}-v${version}.bundle.manifest.json"
+# Writes to a file rather than echoing, because the signature is over the
+# published BYTES and $( ) strips trailing newlines - reconstructing the
+# manifest from a captured string produces a document one 0x0a short of what
+# was signed, and every verification fails for a reason nothing explains.
+remote_manifest() { # $1=version $2=output path
+    local version="$1" out="$2"
+    fetch -o "$out" \
+        "${UPDATE_DL}/${UPDATE_REPO}/releases/download/v${version}/bgrpiimage-${VARIANT}-v${version}.bundle.manifest.json"
+}
+
+# The manifest `check` reads to decide what to advise was unauthenticated.
+# Anything able to serve content for the download host can put one there, and
+# a forged manifest either fabricates a reflash verdict - stopping a fleet
+# taking configuration updates, including security ones - or hides a real one.
+# The detached signature is published beside the manifest for exactly this
+# purpose (bundle.py writes it so `check` can verify what it reads without
+# pulling the whole bundle) and was never fetched.
+#
+# Advisory rather than fatal, deliberately. Hardware from before signing has
+# no trust store, and refusing to answer `check` there would take the one
+# command that tells an operator what to do next away from the devices most
+# likely to need it. So a manifest that FAILS verification is not trusted,
+# while one that cannot be checked at all is used and labelled unverified.
+# `apply` is unchanged: there, an unsigned or unknown-key bundle is refused.
+manifest_trust() { # $1=version $2=dir with manifest.json -> 0 trusted, 1 unverifiable, 2 forged
+    local version="$1" dest="$2" key
+    local url="${UPDATE_DL}/${UPDATE_REPO}/releases/download/v${version}"
+    local stem="bgrpiimage-${VARIANT}-v${version}.bundle.manifest.json"
+    fetch -o "$dest/manifest.json.sig" "${url}/${stem}.sig" 2>/dev/null || return 1
+    shopt -s nullglob
+    local keys=("$TRUSTED_KEYS"/*.pub)
+    shopt -u nullglob
+    (( ${#keys[@]} > 0 )) || return 1
+    for key in "${keys[@]}"; do
+        if openssl pkeyutl -verify -rawin -pubin -inkey "$key" \
+               -sigfile "$dest/manifest.json.sig" -in "$dest/manifest.json" >/dev/null 2>&1
+        then
+            return 0
+        fi
+    done
+    return 2
 }
 
 download_bundle() { # -> BUNDLE_TARBALL
@@ -221,11 +286,20 @@ extract_bundle() {
 
     # Per-file verification against the manifest, not just the tarball hash:
     # the tar checksum proves the transfer, this proves the contents.
-    local rel sha actual
+    # Read the list first, and refuse an empty one. Consumed straight from
+    # `< <(jq ...)`, jq's failure was invisible: the loop ran zero times, not
+    # one file was checked, and extract_bundle returned success on a bundle
+    # whose contents nothing had verified. The signature above covers the
+    # manifest; this is what ties the manifest to the files on disk.
+    local files rel sha actual
+    files=$(jq -r '.files[] | "\(.path)\t\(.sha256)"' "$dest/manifest.json") \
+        || die "manifest.json does not list files - refusing to trust this bundle"
+    [[ -n "$files" ]] || die "manifest.json lists no files - refusing to trust this bundle"
     while IFS=$'\t' read -r rel sha; do
+        [[ -n "$rel" ]] || continue
         actual=$(sha256sum "$dest/root/$rel" 2>/dev/null | cut -d' ' -f1 || true)
         [[ "$actual" == "$sha" ]] || die "bundle file $rel does not match its manifest hash"
-    done < <(jq -r '.files[] | "\(.path)\t\(.sha256)"' "$dest/manifest.json")
+    done <<< "$files"
 }
 
 # Ed25519 over the manifest, checked with openssl - which is on every device
@@ -283,7 +357,8 @@ preflight() {
     [[ "$b_format" -ge "$MIN_BUNDLE_FORMAT" ]] \
         || die "bundle format $b_format is older than this updater understands"
     [[ "$b_format" -le "$SUPPORTED_BUNDLE_FORMAT" ]] \
-        || die "bundle format $b_format is newer than this updater - run: $PROG self-update"
+        || die "bundle format $b_format is newer than this updater.
+    Update the helper first: sudo bgrpiimage-setup update --self"
 
     # An image predating the identity contract carries none of the fields the
     # checks below need. Guessing is not better than saying so.
@@ -315,8 +390,14 @@ preflight() {
     fi
 
     [[ -f /var/run/reboot-required ]] && warn "a reboot is already pending from a package upgrade"
-    if command -v dpkg >/dev/null && [[ -n "$(dpkg --audit 2>/dev/null)" ]]; then
-        die "dpkg reports a broken package state - fix that before changing configuration"
+    # dpkg's own failure counted as a clean result: only its stdout was
+    # consulted, so `dpkg --audit` erroring out looked exactly like "nothing
+    # to report" and the gate passed.
+    if command -v dpkg >/dev/null; then
+        local audit
+        audit=$(dpkg --audit 2>/dev/null)             || die "dpkg --audit could not run - refusing to change configuration on a
+    package database this cannot inspect"
+        [[ -z "$audit" ]]             || die "dpkg reports a broken package state - fix that before changing configuration"
     fi
     local free
     free=$(df -Pk / | awk 'NR==2{print $4}')
@@ -325,22 +406,34 @@ preflight() {
     # Do not start while unattended-upgrades' reboot window can fire: that
     # script issues `shutdown -r +1`, and a reboot landing mid-apply is how a
     # half-written config.txt happens.
-    if in_maintenance_window; then
-        die "inside the unattended-upgrades maintenance window - wait, or pass --yes if you accept the overlap"
-    fi
+    local window=0
+    in_maintenance_window || window=$?
+    case "$window" in
+        0) die "inside the unattended-upgrades maintenance window - wait, or pass --yes if you accept the overlap" ;;
+        2) die "a reboot-window timer is installed but its schedule cannot be read from
+    /usr/local/sbin/bgrpiimage-reboot-window.sh. A reboot landing mid-apply is
+    how a half-written config.txt happens, so this will not guess. Repair that
+    script, or pass --yes if you accept the overlap." ;;
+    esac
 
     BUNDLE_VERSION="$b_version"
 }
 
-in_maintenance_window() {
+in_maintenance_window() { # 0 = inside, 1 = outside, 2 = a window exists but is unreadable
     [[ "$OPT_YES" -eq 1 ]] && return 1
     local now start end
+    # No timer means no reboot-window machinery on this device at all, which
+    # is the one case where "outside the window" is a fact and not a guess.
     [[ -r /etc/systemd/system/bgrpiimage-reboot-window.timer ]] || return 1
     start=$(awk -F= '/^WINDOW_START=/{gsub(/"/,"",$2); print $2}' \
             /usr/local/sbin/bgrpiimage-reboot-window.sh 2>/dev/null || true)
     end=$(awk -F= '/^WINDOW_END=/{gsub(/"/,"",$2); print $2}' \
           /usr/local/sbin/bgrpiimage-reboot-window.sh 2>/dev/null || true)
-    [[ -n "$start" && -n "$end" ]] || return 1
+    # A timer that is installed but whose schedule cannot be read is the
+    # dangerous case, and returning "outside" here let apply start into a
+    # reboot that could still fire. That is precisely the half-written
+    # config.txt this guard exists to prevent.
+    [[ -n "$start" && -n "$end" ]] || return 2
     now=$(date +%H:%M)
     if [[ "$start" < "$end" ]]; then
         [[ "$now" > "$start" || "$now" == "$start" ]] && [[ "$now" < "$end" ]]
@@ -660,11 +753,22 @@ allow_interrupt() { [[ ",${OPT_INTERRUPT}," == *",$1,"* ]]; }
 verify() {
     local since="$1" problems=0 iface f
 
-    if journalctl -u systemd-networkd --since "$since" -p warning --no-pager 2>/dev/null \
-            | grep -qiE 'ignoring|invalid|failed to parse'; then
-        warn "systemd-networkd logged parse warnings since the apply:"
-        journalctl -u systemd-networkd --since "$since" -p warning --no-pager 2>/dev/null \
-            | grep -iE 'ignoring|invalid|failed to parse' | tail -5 | sed 's/^/      /'
+    # Piping journalctl straight into grep hid its exit status: where the
+    # journal could not be read, grep saw nothing, nothing was reported, and
+    # the apply was recorded as verified. This check is the main detector for
+    # this project's signature failure - a unit that parses cleanly and does
+    # nothing - so skipping it silently reports success on exactly the case it
+    # exists to catch.
+    local nlog
+    if nlog=$(journalctl -u systemd-networkd --since "$since" -p warning --no-pager 2>/dev/null); then
+        if printf '%s\n' "$nlog" | grep -qiE 'ignoring|invalid|failed to parse'; then
+            warn "systemd-networkd logged parse warnings since the apply:"
+            printf '%s\n' "$nlog" | grep -iE 'ignoring|invalid|failed to parse' \
+                | tail -5 | sed 's/^/      /'
+            problems=1
+        fi
+    else
+        warn "could not read the systemd-networkd journal - the parse-warning check did not run"
         problems=1
     fi
 
@@ -682,10 +786,17 @@ verify() {
     # Every dtoverlay must have a matching .dtbo, or the next boot comes up
     # without the hardware. Cheap to check now, expensive to discover later.
     if [[ -f /boot/firmware/config.txt ]]; then
+        # sed, not `grep -oP ... || true`. -P is a GNU extension, and where it
+        # is missing that `|| true` turned "this grep cannot answer" into "no
+        # overlays to check" - the whole check passed without looking at
+        # anything, on the boot-critical question of whether the hardware
+        # comes back.
         while read -r ov; do
+            [[ -n "$ov" ]] || continue
             [[ -f "/boot/firmware/overlays/${ov}.dtbo" ]] \
                 || { warn "config.txt references overlay '$ov' with no .dtbo"; problems=1; }
-        done < <(grep -oP '^dtoverlay=\K[a-zA-Z0-9_-]+' /boot/firmware/config.txt 2>/dev/null || true)
+        done < <(sed -n 's/^dtoverlay=\([A-Za-z0-9_-][A-Za-z0-9_-]*\).*/\1/p' \
+                     /boot/firmware/config.txt 2>/dev/null || true)
     fi
 
     return $problems
@@ -696,6 +807,11 @@ verify() {
 # ---------------------------------------------------------------------------
 prepare() { # -> BUNDLE_DIR (the extracted bundle directory)
     local version dir
+    # Checked here rather than only in resolve_latest: --file and --version
+    # skip that function entirely, and every path below reads the manifest
+    # with jq. Without this the first symptom was a raw jq-not-found from
+    # inside extract_bundle.
+    command -v jq >/dev/null || die "jq is required to read a bundle manifest - install it first"
     mkdir -p "$WORK"
     if [[ -n "$OPT_FILE" ]]; then
         [[ -f "$OPT_FILE" ]] || die "no such bundle: $OPT_FILE"
@@ -717,7 +833,9 @@ prepare() { # -> BUNDLE_DIR (the extracted bundle directory)
 }
 
 cmd_check() {
-    local latest manifest remote rc=0
+    # trust starts at 0 and is only raised by a failure: seeded to 1 it would
+    # stay 1 on success, because `|| trust=$?` never runs when the call works.
+    local latest remote rc=0 work mf trust=0
     if [[ -n "$OPT_VERSION" ]]; then
         latest="${OPT_VERSION#v}"
     else
@@ -736,7 +854,9 @@ cmd_check() {
     # So the manifest fetch is not a nicety here: its absence IS the answer,
     # and it costs a few hundred bytes to ask. `check` must never advertise an
     # apply it has not confirmed this device could actually perform.
-    manifest=$(remote_manifest "$latest" 2>/dev/null) || rc=$?
+    work="$WORK/check"; rm -rf "$work"; mkdir -p "$work"
+    mf="$work/manifest.json"
+    remote_manifest "$latest" "$mf" 2>/dev/null || rc=$?
     case "$rc" in
         0)  ;;
         22) warn "v$latest is published but carries no configuration bundle for ${VARIANT} yet.
@@ -749,16 +869,63 @@ cmd_check() {
             return 4 ;;
     esac
 
-    remote=$(printf '%s' "$manifest" | jq -r '.applies_to.base_image_sha256 // empty' || true)
+    # preflight orders versions with sort -V. check compared strings, so it
+    # advertised a DOWNGRADE as an available update - after a deleted bad
+    # release, or on any `check --version <older>` - and the operator only
+    # found out after the whole bundle had been fetched and verified.
+    if [[ "$(printf '%s\n%s\n' "$EFFECTIVE_VERSION" "$latest" | sort -V | tail -1)" != "$latest" ]]; then
+        warn "v$latest is older than the installed ${EFFECTIVE_VERSION}.
+    To go back deliberately: sudo $PROG apply --version $latest"
+        return 2
+    fi
+
+    manifest_trust "$latest" "$work" || trust=$?
+    if [[ "$trust" -eq 2 ]]; then
+        warn "the manifest published for v$latest is signed by a key this device does not
+    trust. Not drawing any conclusion from it - and do not apply it until you
+    know why. This is what a tampered or intercepted release host looks like."
+        return 4
+    fi
+
+    remote=$(jq -r '.applies_to.base_image_sha256 // empty' "$mf" || true)
     if [[ -n "$remote" && -n "$BASE_SHA" && "$remote" != "$BASE_SHA" ]]; then
         warn "v$latest rebased onto a different Raspberry Pi OS - it needs a reflash, not an update"
         return 3
     fi
-    warn "v$latest available - run: sudo $PROG apply"
+
+    # The other two gates preflight enforces, read from the manifest that is
+    # already in memory. Without them a device that can never apply another
+    # release - one from before the identity contract, say - was told to run
+    # apply every single time, and every apply downloaded the bundle, verified
+    # the signature, and then refused. The verdict never changed and check
+    # never learned it.
+    local b_contract b_format
+    b_contract=$(jq -r '.applies_to.min_apply_contract // 0' "$mf" || true)
+    b_format=$(jq -r '.bundle_format // 0' "$mf" || true)
+    [[ "$b_contract" =~ ^[0-9]+$ ]] || b_contract=0
+    [[ "$b_format"   =~ ^[0-9]+$ ]] || b_format=0
+    if [[ "${CONTRACT:-0}" -lt "$b_contract" ]]; then
+        warn "v$latest needs apply contract $b_contract and this image provides ${CONTRACT:-0} -
+    it predates in-place updates and needs a reflash, not an update"
+        return 3
+    fi
+    if [[ "$b_format" -gt "$SUPPORTED_BUNDLE_FORMAT" ]]; then
+        warn "v$latest uses bundle format $b_format, newer than this updater understands.
+    Update the helper first: sudo bgrpiimage-setup update --self"
+        return 2
+    fi
+
+    if [[ "$trust" -eq 0 ]]; then
+        warn "v$latest available - run: sudo $PROG apply"
+    else
+        warn "v$latest available - run: sudo $PROG apply
+    (could not verify the manifest signature from here; apply checks it properly)"
+    fi
     return 1
 }
 
 cmd_plan() {
+    take_lock
     local dir; prepare; dir="$BUNDLE_DIR"
     preflight "$dir"
     check_shadowing "$dir"
@@ -774,7 +941,7 @@ cmd_plan() {
 }
 
 cmd_apply() {
-    exec 9>"$LOCK"; flock -n 9 || die "another $PROG is already running"
+    take_lock
 
     local dir since; prepare; dir="$BUNDLE_DIR"
     preflight "$dir"
@@ -782,7 +949,17 @@ cmd_apply() {
 
     if [[ "$OPT_YES" -eq 0 ]]; then
         echo "${CY}about to apply${NC} ${EFFECTIVE_VERSION} -> ${BUNDLE_VERSION} on $(hostname)"
-        read -r -p "continue? [y/N] " a
+        # `read` returns 1 at end of input, and under errexit that ended the
+        # run right here - so an apply from cron, Ansible or a pipe exited 1
+        # with no output at all, and "aborted" was unreachable in the one
+        # situation where the operator cannot see the prompt to answer it.
+        local a=""
+        read -r -p "continue? [y/N] " a || true
+        if [[ ! -t 0 ]]; then
+            [[ "$a" =~ ^[Yy]$ ]] \
+                || die "aborted - stdin is not a terminal, so there was nobody to ask.
+    Pass --yes to apply unattended."
+        fi
         [[ "$a" =~ ^[Yy]$ ]] || die "aborted"
     fi
 
@@ -867,7 +1044,7 @@ case "${CMD:-}" in
     plan)     cmd_plan ;;
     apply)    cmd_apply ;;
     status)   cmd_status ;;
-    rollback) do_rollback ;;
+    rollback) take_lock; do_rollback ;;
     history)  cmd_history ;;
     *)        usage 0 ;;
 esac

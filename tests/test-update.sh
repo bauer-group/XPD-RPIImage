@@ -108,6 +108,11 @@ printf '{"tag_name":"v%s"}\n' "$VERSION" > "$WEB/repos/$REPO/releases/latest"
 cp "$BUNDLE" "$DL/"
 cp /repo/dist/*.bundle.manifest.json "$DL/" 2>/dev/null || \
     tar xzOf "$BUNDLE" manifest.json > "$DL/bgrpiimage-${VARIANT}-v${VERSION}.bundle.manifest.json"
+# The detached signature for the standalone manifest. `check` fetches it to
+# decide whether the manifest it is about to believe is genuine, so serving it
+# is what exercises the trusted path rather than the unverifiable one.
+cp /repo/dist/*.bundle.manifest.json.sig "$DL/" 2>/dev/null || \
+    tar xzOf "$BUNDLE" manifest.json.sig > "$DL/bgrpiimage-${VARIANT}-v${VERSION}.bundle.manifest.json.sig"
 ( cd "$DL" && sha256sum "$(basename "$BUNDLE")" > "$(basename "$BUNDLE").sha256" )
 
 # Helpers and trust keys, exactly as the release job publishes them.
@@ -520,6 +525,61 @@ grep -qi "failed part-way" /tmp/rb2 \
 grep -q "BGRPIIMAGE_CONFIG_RESULT='rolled-back'" /etc/bgrpiimage-applied \
     && bad "recorded a rollback that did not happen" \
     || ok "and does not record a rollback that did not happen"
+
+sect "16. check answers applicability, not just novelty"
+# check used to verify one thing: that the published tag differed from the
+# installed one. Everything else that can make an apply impossible - no bundle
+# for this variant, an older version, a contract or format this image cannot
+# take - was left for apply to discover after the full download. Worse, it
+# said "run: sudo bgrpiimage-update apply" in every one of those cases.
+seed_device 0.0.1
+$U check >/tmp/ck 2>&1; rc=$?
+[ $rc -eq 1 ] && ok "an applicable update exits 1" \
+              || { bad "expected 1, got $rc"; tail -3 /tmp/ck; }
+grep -qi "could not verify the manifest signature" /tmp/ck \
+    && { bad "did not verify the published manifest signature"; sed 's/^/      | /' /tmp/ck; } \
+    || ok "and verified the manifest signature before believing it"
+
+# Exactly the v0.13.4 case: the release exists, the bundle does not yet.
+printf '{"tag_name":"v%s"}\n' "99.99.99" > "$WEB/repos/$REPO/releases/latest"
+$U check >/tmp/ck2 2>&1; rc=$?
+[ $rc -eq 2 ] && ok "a release with no bundle for this variant exits 2, not 1" \
+              || { bad "expected 2, got $rc"; tail -3 /tmp/ck2; }
+grep -qi "no configuration bundle" /tmp/ck2 \
+    && ok "and says the bundle has not landed yet" || bad "did not explain why"
+grep -qi "run: sudo.*apply" /tmp/ck2 \
+    && bad "still tells the operator to run an apply that would 404" \
+    || ok "and does not send the operator into a failing apply"
+printf '{"tag_name":"v%s"}\n' "$VERSION" > "$WEB/repos/$REPO/releases/latest"
+
+# A published version older than the installed one is not an update. preflight
+# already refused it - but only after downloading and verifying the bundle.
+seed_device 99.0.0
+$U check >/tmp/ck3 2>&1; rc=$?
+[ $rc -eq 2 ] && ok "an older published version exits 2" \
+              || { bad "expected 2, got $rc"; tail -3 /tmp/ck3; }
+grep -qi "older than the installed" /tmp/ck3 \
+    && ok "and says so instead of advertising a downgrade" || bad "advertised a downgrade"
+
+# An image from before the identity contract can never apply anything. It used
+# to be told to apply, every time, forever.
+seed_device 0.0.1 "$VARIANT" "$BASE_SHA" 0
+$U check >/tmp/ck4 2>&1; rc=$?
+[ $rc -eq 3 ] && ok "a pre-contract image exits 3 (reflash)" \
+              || { bad "expected 3, got $rc"; tail -3 /tmp/ck4; }
+
+sect "17. apply when there is nobody to prompt"
+# `read` returns 1 at end of input, and under errexit that ended the run
+# before the refusal could be printed: apply from cron or Ansible exited 1
+# with no output whatsoever.
+seed_device 0.0.1
+$U apply </dev/null >/tmp/ni 2>&1; rc=$?
+[ $rc -ne 0 ] && ok "refuses without --yes on a closed stdin (rc=$rc)" \
+              || bad "applied with nobody to consent"
+grep -qi "stdin is not a terminal" /tmp/ni \
+    && ok "and explains why, instead of exiting silently" \
+    || { bad "exited without saying anything"; sed 's/^/      | /' /tmp/ni; }
+[ ! -f /etc/bgrpiimage-applied ] && ok "and nothing was applied" || bad "state was written"
 
 echo
 echo "================ $PASS passed, $FAIL failed ================"
