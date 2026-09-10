@@ -70,7 +70,15 @@ fi
 # --- EEPROM bootloader (Pi5 / CM5) ------------------------------------------
 # rpi-eeprom-config cannot reach the target EEPROM from a chroot, so the work is
 # staged as a oneshot that runs on the first real boot.
-if [[ -f "$GEN/eeprom.env" ]]; then
+#
+# IMAGE CONTEXT ONLY, and deliberately so. Everything else in this module is a
+# file an update may freely correct; this one arms a service that rewrites the
+# BOOTLOADER EEPROM. A wrong BOOT_ORDER there is not a failed service, it is a
+# device that does not come back and cannot be reached over SSH to be fixed -
+# the same reasoning that keeps /boot/firmware/cmdline.txt on the apply-lib
+# denylist. Flashing an image is a deliberate act with the board in someone's
+# hand; a config update is not, and must not be able to do this.
+if bg_is_image && [[ -f "$GEN/eeprom.env" ]]; then
     bg_install "$GEN/eeprom.env" /etc/bgrpiimage/eeprom.env 0644
     bg_install "$GEN/bgrpiimage-eeprom-apply.sh" \
                /usr/local/sbin/bgrpiimage-eeprom-apply 0755

@@ -1236,7 +1236,7 @@ def render_hardware(cfg: dict[str, Any]) -> None:
         return
     # shell_var already terminates with "\n"; join without adding extra blanks.
     env_chunks: list[str] = [
-        "# Auto-generated hardware.env - sourced by start_chroot_script\n",
+        "# Auto-generated hardware.env - sourced by apply.sh\n",
     ]
     packages: set[str] = set()
 

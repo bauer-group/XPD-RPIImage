@@ -62,6 +62,14 @@ BUNDLE_MODULES = [
     "bgrpiimage-boot",
     "bgrpiimage-can",
     "bgrpiimage-unattended-upgrades",
+    # Carries the watchdog drop-in, the RTC services and the ALSA sink. Its
+    # config.txt counterpart already travelled in bgrpiimage-boot, so leaving
+    # this one out shipped half of every hardware feature: an update could roll
+    # out `dtoverlay=i2c-rtc` and never enable hwclock.service to go with it.
+    # No credential material - the payload is hardware.env plus generated conf
+    # files - and its EEPROM branch is gated on image context, so an update
+    # cannot arm a bootloader rewrite.
+    "bgrpiimage-hardware",
 ]
 
 # Refuse to publish a bundle containing any of these. The generator resolves
