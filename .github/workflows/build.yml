@@ -137,6 +137,13 @@ jobs:
           python scripts/generate.py config/variants/canbus-plattform.json >/dev/null
           bash tests/test-apply-parity.sh
 
+      - name: 🧪 Apply guard test
+        # Every guard in apply-lib.sh is a negative - "this must NOT
+        # happen" - and negatives rot silently: a refactor that drops a
+        # condition passes every other test in the suite, because nothing
+        # it does is wrong, it just stops declining.
+        run: bash tests/test-apply-guards.sh
+
       - name: 🧪 Apply idempotence test
         # Applies every module twice against a scratch root in device
         # context and asserts the second run changes nothing and queues no

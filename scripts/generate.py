@@ -1762,6 +1762,51 @@ def _semantic_validate(cfg: dict[str, Any]) -> None:
         )
 
 
+def _validate_apply_contract(cfg: dict[str, Any]) -> list[str]:
+    """Assert every rendered payload file is actually installed by its module.
+
+    The failure this catches is quiet and expensive: a renderer starts
+    emitting a file, nobody adds it to apply.sh, and the file rides along in
+    /opt/bgrpiimage on every device without ever reaching the path that makes
+    it do something. Nothing errors. The setting simply has no effect, and the
+    symptom shows up weeks later as "we shipped that fix, why is the bus still
+    dead" - which is exactly how the SamplePoint and TransmitQueueLength bugs
+    presented before them.
+
+    Deliberately a textual reference check rather than a manifest. A manifest
+    would be a second description of the same thing, kept in sync by hand -
+    the duplication that produced the CAN constant drift between generate.py
+    and bgrpiimage-setup. Here the apply script stays the single description,
+    and this only asserts it mentions everything the renderer produced.
+    """
+    problems: list[str] = []
+    for module in ACTIVE_MODULES:
+        if not _module_enabled(module, cfg):
+            continue
+        apply_sh = MODULES_DIR / module / "apply.sh"
+        if not apply_sh.exists():
+            continue
+        body = apply_sh.read_text(encoding="utf-8")
+        gen = MODULES_DIR / module / "filesystem" / "root" / "opt" / "bgrpiimage" / module
+        if not gen.is_dir():
+            continue
+        for path in sorted(gen.rglob("*")):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(gen)
+            if rel.as_posix() == "apply.sh":
+                continue  # staged by the generator, not consumed by the script
+            # A file may be named outright, or covered by its directory when
+            # the module mirrors a whole tree with bg_install_tree.
+            names = {rel.as_posix(), path.name}
+            parent = rel.parent.as_posix()
+            if parent != ".":
+                names.add(parent)
+            if not any(n in body for n in names):
+                problems.append(f"{module}: renders {rel.as_posix()} but apply.sh never mentions it")
+    return problems
+
+
 def _window_minutes(start_hhmm: str, end_hhmm: str) -> int:
     """Minutes between two HH:MM timestamps, wrapping past midnight if needed."""
     def to_min(s: str) -> int:
@@ -1988,6 +2033,19 @@ def main() -> int:
 
     render_variant_config(resolved)
     console.print(table)
+
+    # After rendering, not before: the check compares what was actually
+    # produced against what the apply scripts reference.
+    contract_problems = _validate_apply_contract(resolved)
+    if contract_problems:
+        _error_panel(
+            "apply contract violated",
+            "\n".join(contract_problems),
+            "a rendered file that no apply.sh installs reaches devices but "
+            "never takes effect - add it to the module's apply.sh, or stop "
+            "rendering it",
+        )
+        return 1
     console.print(
         f"  [green]{total}[/] artifact{'s' if total != 1 else ''} written to "
         f"[dim]src/modules/*/filesystem/root/[/]\n"

@@ -117,6 +117,58 @@ bg_intent() {
 }
 
 # ---------------------------------------------------------------------------
+# What an update may never write
+# ---------------------------------------------------------------------------
+# Enforced here, in the one function that writes, rather than trusted to each
+# module. A denylist nine scripts are supposed to respect is a code-review
+# convention and will be violated within two releases; a denylist the writer
+# enforces is a property of the system.
+#
+# DEVICE CONTEXT ONLY. Several of these are written legitimately at image
+# build time - /etc/hostname and /etc/hosts are exactly what bgrpiimage-base
+# is for. The list is about what an UPDATE to a configured, deployed machine
+# may touch, and the answer for all of it is "not this".
+#
+# Three kinds of entry:
+#   identity and access    shadow/passwd/sudoers/pam - the only two ways onto
+#                          these boxes are sudo and su, and they are each
+#                          other's only fallback. An update that breaks both
+#                          is a truck roll with an rpiboot jumper.
+#   operator-owned state   the 05- overrides this project's own helper writes,
+#                          wpa_supplicant PSKs, rfkill saved state, static
+#                          resolv.conf, hostname - site data, not platform.
+#   boot and storage       cmdline.txt and fstab, where one typo is an
+#                          unbootable device rather than a failed service.
+BGRPI_DENY_GLOBS=(
+    '/etc/shadow' '/etc/passwd' '/etc/group' '/etc/gshadow'
+    '/etc/subuid' '/etc/subgid'
+    '/etc/sudoers' '/etc/sudoers.d/*'
+    '/etc/pam.d/*'
+    '/etc/ssh/ssh_host_*'
+    '/home/*' '/root/*'
+    '/etc/hostname' '/etc/hosts'
+    '/etc/resolv.conf'
+    '/etc/wpa_supplicant/*'
+    '/var/lib/systemd/rfkill/*'
+    '/etc/systemd/network/05-bgrpiimage-*'
+    '/etc/docker/daemon.json'
+    '/boot/firmware/cmdline.txt'
+    '/etc/fstab' '/etc/crypttab'
+    '/etc/apt/sources.list' '/etc/apt/sources.list.d/*' '/etc/apt/keyrings/*'
+    '/etc/machine-id'
+)
+
+bg_denied() {
+    local dest="$1" g
+    bg_is_image && return 1
+    for g in "${BGRPI_DENY_GLOBS[@]}"; do
+        # shellcheck disable=SC2053  # glob match on the right is the point
+        [[ "$dest" == $g ]] && return 0
+    done
+    return 1
+}
+
+# ---------------------------------------------------------------------------
 # Writing
 # ---------------------------------------------------------------------------
 _bg_sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
@@ -131,6 +183,9 @@ bg_install() {
     BGRPI_LAST_CHANGED=0
 
     [[ -r "$src" ]] || bg_die "bg_install: source not readable: $src"
+    if bg_denied "$dest"; then
+        bg_die "refusing to write $dest on a running system - see BGRPI_DENY_GLOBS"
+    fi
 
     if [[ -f "$target" ]] && [[ "$(_bg_sha "$src")" == "$(_bg_sha "$target")" ]]; then
         # Content matches; still assert the mode, because a wrong mode is a
