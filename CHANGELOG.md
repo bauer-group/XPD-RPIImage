@@ -4,6 +4,16 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.11.0](https://github.com/bauer-group/XPD-RPIImage/compare/v0.10.2...v0.11.0) (2026-09-10)
+
+### 🚀 Features
+
+* **can:** added CAN FD support and the canbusfd-plattform variant ([5442b93](https://github.com/bauer-group/XPD-RPIImage/commit/5442b9354928f5273a409024789be2711aa18a03))
+
+### 🐛 Bug Fixes
+
+* **setup:** made CAN bitrate handling safe on CAN FD links ([e52c624](https://github.com/bauer-group/XPD-RPIImage/commit/e52c624e069c91afa94614b0424172e1663b57b5))
+
 ## [0.10.2](https://github.com/bauer-group/XPD-RPIImage/compare/v0.10.1...v0.10.2) (2026-09-10)
 
 ### 🐛 Bug Fixes
