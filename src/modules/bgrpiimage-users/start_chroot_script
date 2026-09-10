@@ -23,6 +23,18 @@ fi
 bash "$GEN/create-users.sh"
 rm -f /tmp/_bgrpiimage_su_pam
 
+# create-users.sh carries the resolved ${ADMIN_PASSWORD} in cleartext - the
+# generator emits `echo <user>:<pw> | chpasswd` - and `unpack` copied it here
+# with --preserve=mode, i.e. 0755. So every flashed device kept the fleet
+# credential world-readable at a fixed, documented path, where any local
+# account could read it. Public releases were never the problem: build.yml
+# leaves ADMIN_PASSWORD unset so they carry the documented default. The
+# build-time credential workflow for fleets (docs/post-flash-setup.md) was.
+# The script has done its job by the time we get here and nothing else
+# consumes it, so drop it rather than chmod it - a file that is not there
+# cannot be read, and no future module can widen its mode back.
+rm -f "$GEN/create-users.sh"
+
 # --- stock raspios first-boot user wizard ---
 # pi-gen runs `rename-user -f -s` at image export
 # (RPi-Distro/pi-gen export-image/01-user-rename/01-run.sh). That enables

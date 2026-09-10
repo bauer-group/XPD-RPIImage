@@ -59,6 +59,12 @@ if [[ -d "$GEN/wpa_supplicant" ]]; then
         iface=$(basename "$f" .conf); iface=${iface#wpa_supplicant-}
         systemctl enable "wpa_supplicant@${iface}.service"
     done
+    # The chmod above hardens the DESTINATION only. The staging copy under
+    # /opt/bgrpiimage keeps the 0644 the generator wrote and would ship the
+    # plaintext PSK world-readable alongside the 0600 one - same shape as the
+    # create-users.sh exposure in bgrpiimage-users. Nothing reads the staging
+    # copy after this point, so drop it.
+    rm -rf "$GEN/wpa_supplicant"
 fi
 
 # --- rfkill: lift the vendor soft block ---
