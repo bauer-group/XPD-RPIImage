@@ -114,6 +114,16 @@ fi
 # --- release metadata (sourced by MOTD and ops tooling) ---
 if [[ -f "$GEN/release.env" ]]; then
     install -D -m 644 "$GEN/release.env" /etc/bgrpiimage-release
+    # The codename is appended here rather than rendered by generate.py because
+    # only this side knows it: the generator runs on the build host, where
+    # /etc/os-release describes the developer's machine, not the image. In the
+    # chroot it is the target rootfs's own file. An updater compares it against
+    # the bundle's to catch a base that moved from trixie to the next release -
+    # a weaker check than BASE_IMAGE_SHA256, but the only one available on
+    # devices flashed before that hash was recorded.
+    _cn=$(. /etc/os-release 2>/dev/null && printf '%s' "${VERSION_CODENAME:-}")
+    printf 'BGRPIIMAGE_BASE_CODENAME=%s\n' "'${_cn}'" >> /etc/bgrpiimage-release
+    unset _cn
 fi
 
 # --- SSH service (raspios ships ssh.service disabled by default) ---

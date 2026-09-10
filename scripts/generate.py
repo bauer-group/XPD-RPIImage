@@ -85,6 +85,14 @@ CAN_TXQUEUELEN_DEFAULT = 1024
 # controller that uses the generic restart timer.
 CAN_RESTART_MS_DEFAULT = 100
 
+# Version of the on-device identity contract written to /etc/bgrpiimage-release.
+# An in-place updater reads this FIRST: a device whose release file has no
+# BGRPIIMAGE_APPLY_CONTRACT predates the contract, carries none of the identity
+# an update needs to be safe, and must be told to reflash rather than be
+# updated on a best-effort basis. Bump this only when the meaning or the
+# required set of keys changes, never for a new optional key.
+APPLY_CONTRACT_VERSION = 1
+
 # -----------------------------------------------------------------------------
 # Env var resolution
 # -----------------------------------------------------------------------------
@@ -272,12 +280,34 @@ def render_base(cfg: dict[str, Any]) -> None:
     write(gen / "packages.list", "\n".join(packages) + ("\n" if packages else ""))
 
     # /etc/bgrpiimage-release - sourced by the MOTD banner and any ops tooling.
+    #
+    # The last three keys are for in-place updates, not for display.
+    #
+    # BASE_IMAGE_SHA256 is the line between a config update and an OS update.
+    # A release that rebases onto a new Raspberry Pi OS changes it, and an
+    # updater whose bundle records a different value must refuse rather than
+    # apply configuration built against a base the device is not running.
+    # The schema requires only url and arch, so this can legitimately be
+    # empty - which means "unknown", never "matches".
+    #
+    # BASE_IMAGE_URL is kept beside it because the hash alone identifies
+    # nothing to a human reading the file during a support call.
+    #
+    # APPLY_CONTRACT is the marker an updater tests before touching anything.
+    # Absent means the image predates the contract, so the honest answer is
+    # "reflash", not a best-effort apply. It is written here rather than
+    # derived from BGRPIIMAGE_VERSION because a version number says when an
+    # image was built, not what guarantees it makes.
     variant = cfg["variant"]
+    base_image = cfg.get("base_image") or {}
     release_lines = [
-        f'BGRPIIMAGE_DIST="bgrpiimage"\n',
+        'BGRPIIMAGE_DIST="bgrpiimage"\n',
         f'BGRPIIMAGE_VARIANT={shlex.quote(variant["name"])}\n',
         f'BGRPIIMAGE_VERSION={shlex.quote(variant.get("version", "0.0.0"))}\n',
         f'BGRPIIMAGE_DESCRIPTION={shlex.quote(variant.get("description", ""))}\n',
+        f'BGRPIIMAGE_BASE_IMAGE_URL={shlex.quote(base_image.get("url", ""))}\n',
+        f'BGRPIIMAGE_BASE_IMAGE_SHA256={shlex.quote(base_image.get("sha256", ""))}\n',
+        f'BGRPIIMAGE_APPLY_CONTRACT={APPLY_CONTRACT_VERSION}\n',
     ]
     write(gen / "release.env", "".join(release_lines))
 
