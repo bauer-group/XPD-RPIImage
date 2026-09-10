@@ -120,6 +120,78 @@ sudo bgrpiimage-setup can txqueuelen can0 1024
 sudo bgrpiimage-setup ip eth0 static 10.0.0.5/24 10.0.0.1 1.1.1.1</code></pre>
     </section>
 
+    <section class="updates">
+      <h2>🔄 Keeping a flashed device current</h2>
+      <p>
+        A device does not need reflashing for every release. Three things update
+        independently, and it is worth knowing which is which:
+      </p>
+      <dl class="meta">
+        <dt>Debian &amp; Raspberry Pi packages</dt>
+        <dd>
+          Automatic, inside the configured maintenance window, including a
+          reboot window for kernel updates. Nothing to do.
+        </dd>
+        <dt>Platform configuration</dt>
+        <dd>
+          Everything this project generates - systemd units, the
+          <code>config.txt</code> overlays, the login banner, network and CAN
+          settings. Applied from a ~30 KB bundle published with each release.
+        </dd>
+        <dt>The base Raspberry Pi OS</dt>
+        <dd>
+          <strong>Reflash.</strong> A release built on a newer Raspberry Pi OS
+          is refused by the updater rather than applied on top of a different
+          base.
+        </dd>
+      </dl>
+
+      <p>Over SSH or on the console, as root:</p>
+      <pre><code>sudo bgrpiimage-update check      # is there a newer configuration?
+sudo bgrpiimage-update plan       # exactly what would change, changing nothing
+sudo bgrpiimage-update apply      # apply it
+sudo bgrpiimage-update status     # image version, configuration version, pending reboot
+sudo bgrpiimage-update rollback   # restore the files the last apply replaced</code></pre>
+
+      <p>
+        The operator helper can also replace itself, which is useful because
+        many releases only change it:
+      </p>
+      <pre><code>sudo bgrpiimage-setup update --self</code></pre>
+
+      <h3>What it will not do</h3>
+      <p>
+        The updater refuses more than it performs, and deliberately so. It never
+        touches users, passwords, sudo, PAM, sshd host keys, your stored WiFi
+        credentials, a static <code>/etc/resolv.conf</code>, or any
+        <code>05-bgrpiimage-*</code> network override you wrote yourself. It
+        stops rather than proceeding when:
+      </p>
+      <ul class="steps">
+        <li>the bundle is for a different variant, or older than what is installed</li>
+        <li>the release was built on a different Raspberry Pi OS - that is a reflash</li>
+        <li>
+          one of your own network overrides would silently swallow a setting the
+          release adds; it names the setting instead of applying half of it
+        </li>
+        <li>
+          the unattended-upgrades reboot window is open, so a scheduled reboot
+          cannot land mid-apply
+        </li>
+      </ul>
+      <p>
+        After applying, it reads back running state - which network file systemd
+        actually chose, whether every device-tree overlay exists, whether the
+        journal logged a parse warning - and only then records the new version.
+        The login banner shows the image version and, when they differ, the
+        configuration version applied on top of it.
+      </p>
+      <p>
+        Full reference:
+        <a href="https://github.com/{{ repo }}/blob/main/docs/post-flash-setup.md#-updating-an-installed-system">Updating an installed system</a>.
+      </p>
+    </section>
+
     <section class="meta-links">
       <h2>📚 More</h2>
       <ul>
@@ -127,6 +199,7 @@ sudo bgrpiimage-setup ip eth0 static 10.0.0.5/24 10.0.0.1 1.1.1.1</code></pre>
         <li><a href="https://github.com/{{ repo }}/releases">All releases</a></li>
         <li><a href="https://github.com/{{ repo }}/blob/main/docs/hardware.md">Hardware reference</a></li>
         <li><a href="https://github.com/{{ repo }}/blob/main/docs/flash.md">Flashing guide</a></li>
+        <li><a href="https://github.com/{{ repo }}/blob/main/docs/post-flash-setup.md">Post-flash setup &amp; updates</a></li>
         <li><a href="https://github.com/{{ repo }}/blob/main/docs/configuration.md">JSON configuration reference</a></li>
       </ul>
     </section>

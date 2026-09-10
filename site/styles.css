@@ -253,13 +253,20 @@ h3 { margin-top: 2rem; font-size: 1.15rem; }
 }
 
 /* ---------- Security callout ---------- */
-.security {
+.security,
+.updates {
   background: var(--bg-card);
   border-left: 4px solid var(--accent);
   border-radius: 0 10px 10px 0;
   padding: 1rem 1.25rem;
 }
-.security h2 { border: none; }
+.security h2,
+.updates h2 { border: none; }
+.updates h3 {
+  margin: 1.2rem 0 0.4rem;
+  font-size: 1rem;
+}
+.updates dl.meta { margin: 0.6rem 0 1rem; }
 
 /* ---------- Footer ---------- */
 footer {
