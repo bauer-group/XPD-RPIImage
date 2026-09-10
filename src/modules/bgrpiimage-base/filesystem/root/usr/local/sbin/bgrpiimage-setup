@@ -300,7 +300,7 @@ required_for_online() {
 }
 
 can_status() {
-    local iface cs irq_line gpio trig count rate state qlen found=0
+    local iface cs irq_line gpio trig count rate drate state qlen found=0
     # shellcheck disable=SC2010  # netdev names cannot contain whitespace or
     # newlines (dev_valid_name() in net/core/dev.c rejects them), so the
     # filename safety this warns about cannot apply here. A glob would need
@@ -329,8 +329,20 @@ can_status() {
         # and `set -e` kills the whole process. The result was that `can
         # status` printed NOTHING and exited 1 in precisely the situation it
         # exists to diagnose, which made the "(down)" branch below dead code.
-        rate=$(ip -details link show "$iface" 2>/dev/null | grep -oE 'bitrate [0-9]+' | awk '{print $2}' || true)
+        # Matched as a whole FIELD, not a substring. `grep -oE 'bitrate [0-9]+'`
+        # also matches inside "dbitrate", so on a CAN FD link it returned two
+        # numbers and this became a two-line string - which then went into
+        # $((rate / 1000)) as an arithmetic syntax error. Classic CAN never
+        # exposed it because "dbitrate" only appears once FD is enabled.
+        rate=$(ip -details link show "$iface" 2>/dev/null \
+               | awk '{for(i=1;i<NF;i++) if($i=="bitrate"){print $(i+1); exit}}' || true)
+        drate=$(ip -details link show "$iface" 2>/dev/null \
+                | awk '{for(i=1;i<NF;i++) if($i=="dbitrate"){print $(i+1); exit}}' || true)
         if [[ -n "$rate" ]]; then rate="$((rate / 1000)) kbit/s"; else rate="(down)"; fi
+        # A CAN FD link is only half described by its arbitration rate, and an
+        # FD bus that lost its data phase is the exact failure a 05-*.network
+        # drop-in used to cause - so show both when the data phase exists.
+        [[ -n "$drate" ]] && rate="$rate + $((drate / 1000))k FD"
         state=$(ip -br link show "$iface" 2>/dev/null | awk '{print $2}')
         qlen=$(cat "/sys/class/net/$iface/tx_queue_len" 2>/dev/null || echo "?")
         printf "  %-6s %-8s gpio %-4s %-6s irq %-12s %-12s %-9s txq %s\n" \
@@ -361,7 +373,35 @@ can_status() {
         return 0
     fi
     echo
-    echo "  ${CY}expected:${NC} can0 -> spi0.0, can1 -> spi0.1"
+    # Not hardcoded any more. The MCP2515 HAT puts both chips on spi0 (CE0/CE1),
+    # but the 2-CH CAN FD HAT in its factory "mode A" jumpering puts CAN_1 on
+    # the AUX controller - can1 -> spi1.0 - so a fixed "expected" line was a
+    # diagnostic that lied on half the fleet. The chip select column above is
+    # read from the device link and is the truth; what matters is only that the
+    # mapping is STABLE across reboots, which is what the note below is for.
+    echo "  ${CY}chip select${NC} above is read from /sys - compare it with the"
+    echo "  connector labelling on the HAT, not with a fixed expectation:"
+    echo "  the MCP2515 HAT is spi0.0 + spi0.1, the CAN FD HAT in mode A is"
+    echo "  spi0.0 + spi1.0 (CAN_1 sits on the AUX SPI controller)."
+    # Only warn where the risk is real. Two chips on ONE spi controller are
+    # probed in device-tree child order, which the overlay order already pins.
+    # Two chips on TWO controllers are probed by independent, parallel driver
+    # binds with no ordering between them, so the can0/can1 assignment is a
+    # genuine per-boot race - and one an operator can only discover by looking.
+    if [[ "$(ls /sys/class/net 2>/dev/null | grep -c '^can[0-9]')" -gt 1 ]]; then
+        local buses
+        buses=$(for i in /sys/class/net/can[0-9]*; do
+                    basename "$(readlink -f "$i/device" 2>/dev/null)" 2>/dev/null \
+                        | sed 's/\..*//'
+                done | sort -u | wc -l)
+        if [[ "$buses" -gt 1 ]]; then
+            echo
+            echo "  ${CY}note:${NC} these controllers sit on DIFFERENT SPI buses, so which"
+            echo "  one is can0 is decided by probe order and is NOT stable across"
+            echo "  reboots. Verify the chip select above after every reboot, or pin"
+            echo "  the names with .link files - see docs/hardware.md."
+        fi
+    fi
     echo "  A txq of 10 is the CAN core default from can_setup() - it means the"
     echo "  70-<iface>.link file never reached udev. TransmitQueueLength is a"
     echo "  .link key; in a .network file it is parsed, logged and discarded."
@@ -396,16 +436,39 @@ can_bitrate() {
     # mandatory: networkd parses RestartSec= in SECONDS by default, so a bare
     # 100 would mean 100 s. Keep the value in sync with CAN_RESTART_MS_DEFAULT
     # in scripts/generate.py.
+    # The CAN FD keys are carried over for the same reason RestartSec is, only
+    # the failure is harder: on an FD link, FDMode=yes and DataBitRate= are not
+    # optional extras but a required pair. can_validate() in
+    # drivers/net/can/dev/netlink.c refuses IFLA_CAN_DATA_BITTIMING without
+    # CAN_CTRLMODE_FD and vice versa, with -EOPNOTSUPP on the WHOLE message.
+    # So a drop-in that carried only BitRate= would not downgrade an FD bus to
+    # Classic CAN - which would at least still pass frames - it would leave the
+    # link unconfigured, because the nominal bitrate travels in the same
+    # rejected message. Read them back out of the shipped 40-<iface>.network,
+    # which is the image's own declaration of what this bus is.
+    # `|| true` because grep exits 1 on a Classic-CAN interface, and under
+    # `set -e` with a plain assignment that would kill the process.
+    local fd_keys=""
+    local shipped="/etc/systemd/network/40-${iface}.network"
+    if [[ -r "$shipped" ]]; then
+        fd_keys=$(grep -E '^(FDMode|DataBitRate|DataSamplePoint|FDNonISO)=' "$shipped" || true)
+    fi
+    local can_block="BitRate=$bps"
+    [[ -n "$fd_keys" ]] && can_block+=$'\n'"$fd_keys"
+    can_block+=$'\n'"RestartSec=100ms"
+
     local dropin="/etc/systemd/network/05-bgrpiimage-${iface}.network"
     info "Writing $dropin"
+    if [[ -n "$fd_keys" ]]; then
+        info "  carrying over CAN FD keys: $(echo "$fd_keys" | tr '\n' ' ')"
+    fi
     cat > "$dropin" <<EOF
 # Auto-generated by bgrpiimage-setup - remove to fall back to the image default.
 [Match]
 Name=$iface
 
 [CAN]
-BitRate=$bps
-RestartSec=100ms
+$can_block
 
 [Link]
 RequiredForOnline=no
@@ -420,15 +483,28 @@ EOF
     # printed success and exited 0. Read the value back rather than assuming
     # it took. The link
     # comes back asynchronously, hence the bounded poll instead of a sleep.
-    local live=""
+    # Matched as a whole FIELD. `grep -oE 'bitrate [0-9]+'` also matches inside
+    # "dbitrate", so on a CAN FD link this collected BOTH numbers, never equalled
+    # $bps, and the command died reporting failure after a change that had in
+    # fact applied cleanly.
+    local live="" dlive=""
     for _ in 1 2 3 4 5; do
         live=$(ip -details link show "$iface" 2>/dev/null \
-               | grep -oE 'bitrate [0-9]+' | awk '{print $2}' || true)
+               | awk '{for(i=1;i<NF;i++) if($i=="bitrate"){print $(i+1); exit}}' || true)
         [[ "$live" == "$bps" ]] && break
         sleep 0.3
     done
+    dlive=$(ip -details link show "$iface" 2>/dev/null \
+            | awk '{for(i=1;i<NF;i++) if($i=="dbitrate"){print $(i+1); exit}}' || true)
+    # An FD link whose data phase vanished is the failure this whole carry-over
+    # exists to prevent, and it is invisible from the arbitration rate alone.
+    if [[ -n "$fd_keys" && -z "$dlive" ]]; then
+        warn "$iface came back WITHOUT a CAN FD data phase"
+        warn "  $shipped declares FD, so the drop-in should have carried it over"
+        die  "  remove $dropin and check: journalctl -u systemd-networkd -n 20"
+    fi
     if [[ "$live" == "$bps" ]]; then
-        ok "$iface bitrate set to $bps bit/s"
+        ok "$iface bitrate set to $bps bit/s${dlive:+ (data phase $dlive bit/s)}"
     else
         warn "$iface reports bitrate '${live:-none}' after applying $bps"
         warn "  the controller likely rejected it (see: journalctl -u systemd-networkd -n 20)"
