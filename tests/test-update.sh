@@ -47,6 +47,18 @@ VERSION=$(basename "$BUNDLE" | sed 's/.*-v\(.*\)\.confbundle\.tar\.gz/\1/')
 VARIANT=$(basename "$BUNDLE" | sed 's/^bgrpiimage-\(.*\)-v.*/\1/')
 BASE_SHA=$(tar xzOf "$BUNDLE" manifest.json | jq -r '.applies_to.base_image_sha256')
 
+# Every networkd file this bundle ships, by basename. Used both to assert
+# the apply landed and to pick an interface for the shadowing test, so the
+# suite means the same thing for a variant with CAN and one without.
+NET_FILES=$(tar tzf "$BUNDLE" | grep '/systemd-networkd/' | xargs -r -n1 basename | sort)
+# Prefer a CAN interface when the variant has one: that is the hazard this
+# check exists for, and the one docs/post-flash-setup.md documents.
+SHADOW_SRC=$(printf '%s\n' "$NET_FILES" | grep -E '^[0-9]+-can.*\.network$' | head -1)
+[ -n "$SHADOW_SRC" ] || SHADOW_SRC=$(printf '%s\n' "$NET_FILES" | grep '\.network$' | head -1)
+SHADOW_IFACE=$(printf '%s' "$SHADOW_SRC" | sed 's/^[0-9]*-//; s/\.network$//')
+echo "bundle: $VARIANT v$VERSION   networkd files: $(printf '%s' "$NET_FILES" | tr '\n' ' ')"
+echo "shadowing test will use: ${SHADOW_IFACE:-none}"
+
 # --- stubs: the updater asks systemd about effect, not files ---------------
 mkdir -p /stub
 for c in systemctl udevadm sshd; do printf '#!/bin/sh\nexit 0\n' > "/stub/$c"; chmod +x "/stub/$c"; done
@@ -146,7 +158,12 @@ grep -q "BGRPIIMAGE_CONFIG_VERSION='$VERSION'" /etc/bgrpiimage-applied \
 grep -q "BGRPIIMAGE_VERSION='0.0.1'" /etc/bgrpiimage-release \
     && ok "release file still reports the FLASHED image" \
     || bad "release file was overwritten - the base-image check would be destroyed"
-[ -f /etc/systemd/network/40-can0.network ] && ok "CAN config installed" || bad "CAN config missing"
+missing=""
+for n in $NET_FILES; do
+    [ -f "/etc/systemd/network/$n" ] || missing="$missing $n"
+done
+[ -z "$missing" ] && ok "every networkd file the bundle carries landed" \
+                  || bad "not installed:$missing"
 grep -q 'bgrpiimage AUTO-GENERATED' /boot/firmware/config.txt \
     && ok "config.txt fence written" || bad "config.txt not updated"
 [ -f /var/run/reboot-required ] && ok "reboot handed to the existing window machinery" || bad "no reboot flag"
@@ -177,23 +194,27 @@ $U apply --yes >/tmp/r 2>&1; grep -qi "older than the installed" /tmp/r \
 
 sect "6. an operator override that would swallow a new setting"
 seed_device 0.0.1
-# Exactly the v0.7.2-helper shape: a bitrate override with no RestartSec.
-cat > /etc/systemd/network/05-bgrpiimage-can0.network <<'EOF'
-[Match]
-Name=can0
-
-[CAN]
-BitRate=250000
-
-[Link]
-RequiredForOnline=no
-EOF
-$U apply --yes >/tmp/s 2>&1
-if grep -qi "silently discard" /tmp/s; then
-    ok "refused because the override lacks keys the release adds"
-    grep -qi "RestartSec" /tmp/s && ok "names the setting that would be lost" || bad "did not name the lost key"
+if [ -z "$SHADOW_IFACE" ]; then
+    ok "skipped: this variant ships no .network file to shadow"
 else
-    bad "applied over a shadowing override"; tail -6 /tmp/s
+    # The shape a helper older than the release would have written: the
+    # [Match] section and one setting, missing whatever the release added.
+    # For CAN that is exactly the v0.7.2 case - a bitrate override with no
+    # RestartSec, which silently turns bus-off recovery back off.
+    lost=$(tar xzOf "$BUNDLE" "$(tar tzf "$BUNDLE" | grep "/${SHADOW_SRC}\$" | head -1)" \
+           | grep -oE '^[A-Za-z]+=' | tr -d '=' | grep -vE '^(Name)$' | tail -1)
+    cat > "/etc/systemd/network/05-bgrpiimage-${SHADOW_IFACE}.network" <<EOF
+[Match]
+Name=${SHADOW_IFACE}
+EOF
+    $U apply --yes >/tmp/s 2>&1
+    if grep -qi "silently discard" /tmp/s; then
+        ok "refused because the override lacks keys the release adds"
+        grep -qi "$lost" /tmp/s && ok "names a setting that would be lost ($lost)" \
+                                || bad "did not name the lost key"
+    else
+        bad "applied over a shadowing override"; tail -6 /tmp/s
+    fi
 fi
 
 sect "7. what an update must never touch"
