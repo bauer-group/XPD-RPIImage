@@ -48,14 +48,32 @@ TARGET_TO_IMAGER_DEVICES: dict[str, list[str]] = {
 
 
 def load_manifests(directory: Path) -> list[dict[str, Any]]:
+    """Collect the per-variant IMAGE manifests from a release.
+
+    Filtered on content, not on the filename. A release carries more than one
+    kind of manifest now - the config bundles publish
+    *.bundle.manifest.json beside the images - and both match the same glob.
+    Selecting by shape means a future manifest kind cannot break this page
+    just by being named consistently with the others; it simply is not an
+    image manifest and is skipped, with a line saying so.
+    """
     paths = sorted(directory.glob("*.manifest.json"))
-    if not paths:
-        print(f"error: no *.manifest.json in {directory}", file=sys.stderr)
-        sys.exit(2)
     out: list[dict[str, Any]] = []
+    skipped: list[str] = []
     for p in paths:
         with p.open("r", encoding="utf-8") as f:
-            out.append(json.load(f))
+            data = json.load(f)
+        if isinstance(data, dict) and "image" in data:
+            out.append(data)
+        else:
+            skipped.append(p.name)
+    if skipped:
+        print(f"note: skipped {len(skipped)} non-image manifest(s): "
+              f"{', '.join(skipped)}", file=sys.stderr)
+    if not out:
+        print(f"error: no image manifest (*.manifest.json with an \"image\" key) "
+              f"in {directory}", file=sys.stderr)
+        sys.exit(2)
     return out
 
 
