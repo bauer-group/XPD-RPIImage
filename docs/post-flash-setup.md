@@ -488,8 +488,56 @@ dependency of `ca-certificates` — a signature format needing a package the
 device cannot install without an update would be circular.
 
 > **Images from before signing carry no trust directory** and will refuse every
-> bundle, saying so explicitly. Those devices need one reflash to a signed
-> image; after that they update in place like the rest.
+> bundle, saying so explicitly. They can be brought up by hand once — see
+> below — or reflashed.
+
+### Bootstrapping a device from before in-place updates
+
+A unit flashed before this mechanism existed is missing four things: the
+updater itself, the trust directory, a current helper, and the identity fields
+the safety checks read. All four can be installed once, over SSH, without
+reflashing. Everything fetched here is a published release asset.
+
+```bash
+R=https://github.com/bauer-group/XPD-RPIImage/releases/latest/download
+
+sudo curl -fsSL --proto '=https' -o /usr/local/sbin/bgrpiimage-update "$R/bgrpiimage-update"
+sudo curl -fsSL --proto '=https' -o /usr/local/sbin/bgrpiimage-setup  "$R/bgrpiimage-setup"
+sudo chmod 0755 /usr/local/sbin/bgrpiimage-update /usr/local/sbin/bgrpiimage-setup
+
+sudo install -d /usr/share/bgrpiimage/trusted-keys.d
+sudo curl -fsSL --proto '=https' \
+     -o /usr/share/bgrpiimage/trusted-keys.d/bgrpiimage-recovery.pub \
+     "$R/bgrpiimage-recovery.pub"
+```
+
+Then record what the image was built from, which the old release file does not
+say:
+
+```bash
+sudo tee -a /etc/bgrpiimage-release >/dev/null <<'EOF'
+BGRPIIMAGE_BASE_IMAGE_SHA256='acff736ca7945e3b305f07cda4abdb870910e12634991da69783611756e381b3'
+BGRPIIMAGE_APPLY_CONTRACT=1
+EOF
+
+sudo bgrpiimage-update plan     # look before you leap
+sudo bgrpiimage-update apply
+```
+
+**Why that hash is safe to write.** It is the base image every release since
+**v0.5.0** has been built on — the switch to Raspberry Pi OS Lite — and it has
+not changed since. Check the first line of `sudo bgrpiimage-setup status`: if
+the device reports **v0.5.0 or newer**, it is provably on that base and the
+value above is correct for it.
+
+> ⚠️ **A device older than v0.5.0 is on a different base OS.** Do not write
+> that hash there. Reflash instead — the whole point of the check is that
+> configuration built for one base must not be applied on top of another.
+
+Nothing here is a special code path: after the four files are in place the
+device is indistinguishable from one flashed with a current image, and every
+refusal and verification described above applies to it unchanged. The procedure
+is exercised end to end in `tests/test-update.sh`.
 
 ### What it never touches
 

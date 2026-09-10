@@ -91,6 +91,12 @@ cp /repo/dist/*.bundle.manifest.json "$DL/" 2>/dev/null || \
     tar xzOf "$BUNDLE" manifest.json > "$DL/bgrpiimage-${VARIANT}-v${VERSION}.bundle.manifest.json"
 ( cd "$DL" && sha256sum "$(basename "$BUNDLE")" > "$(basename "$BUNDLE").sha256" )
 
+# Helpers and trust keys, exactly as the release job publishes them.
+B=/repo/src/modules/bgrpiimage-base/filesystem/root
+install -m 0755 "$B/usr/local/sbin/bgrpiimage-setup"  "$DL/bgrpiimage-setup"
+install -m 0755 "$B/usr/local/sbin/bgrpiimage-update" "$DL/bgrpiimage-update"
+install -m 0644 "$B"/usr/share/bgrpiimage/trusted-keys.d/*.pub "$DL/"
+
 cd "$WEB" || exit 1
 python3 -c "
 import http.server, ssl, socketserver, os
@@ -317,6 +323,55 @@ $U apply --yes >/tmp/sg5 2>&1
 grep -qi "no trusted keys" /tmp/sg5 \
     && ok "a device with no trust store refuses and explains" \
     || { bad "device without trust store did not refuse clearly"; tail -4 /tmp/sg5; }
+
+sect "11. bootstrapping hardware from before in-place updates"
+# What a device flashed at, say, v0.7.7 actually looks like: no updater, no
+# trust store, and a release file with none of the identity the checks need.
+# The documented procedure has to take it from there to a working update, or
+# an existing fleet can never join without a reflash.
+seed_device 0.0.1
+rm -rf /usr/share/bgrpiimage/trusted-keys.d /usr/local/sbin/bgrpiimage-update
+cat > /etc/bgrpiimage-release <<EOF
+BGRPIIMAGE_DIST="bgrpiimage"
+BGRPIIMAGE_VARIANT='$VARIANT'
+BGRPIIMAGE_VERSION='0.7.7'
+EOF
+
+# It must refuse before the bootstrap - otherwise this proves nothing.
+if [ -x /usr/local/sbin/bgrpiimage-update ]; then
+    bad "fixture is wrong: the updater is still installed"
+else
+    ok "a pre-update device has no updater at all"
+fi
+
+# --- the documented procedure, run verbatim --------------------------------
+R="$BGRPIIMAGE_UPDATE_DL/$REPO/releases/download/v$VERSION"
+curl -fsSL --proto '=https' -o /usr/local/sbin/bgrpiimage-update "$R/bgrpiimage-update"
+chmod 0755 /usr/local/sbin/bgrpiimage-update
+curl -fsSL --proto '=https' -o /usr/local/sbin/bgrpiimage-setup  "$R/bgrpiimage-setup"
+chmod 0755 /usr/local/sbin/bgrpiimage-setup
+install -d /usr/share/bgrpiimage/trusted-keys.d
+curl -fsSL --proto '=https' \
+     -o /usr/share/bgrpiimage/trusted-keys.d/bgrpiimage-recovery.pub \
+     "$R/bgrpiimage-recovery.pub"
+# base_image.sha256 has been the same since v0.5.0, so any device from that
+# release onwards is provably on this base - see the note in the docs.
+{
+  echo "BGRPIIMAGE_BASE_IMAGE_SHA256='$BASE_SHA'"
+  echo "BGRPIIMAGE_APPLY_CONTRACT=1"
+} >> /etc/bgrpiimage-release
+
+$U apply --yes >/tmp/bs 2>&1; rc=$?
+[ $rc -eq 0 ] && ok "bootstrapped device applies the update" \
+              || { bad "apply failed after bootstrap"; tail -12 /tmp/bs; }
+grep -qi "signature verified" /tmp/bs \
+    && ok "and verifies the signature against the fetched key" \
+    || bad "signature was not verified after bootstrap"
+grep -q "BGRPIIMAGE_CONFIG_VERSION='$VERSION'" /etc/bgrpiimage-applied \
+    && ok "configuration version recorded" || bad "version not recorded"
+grep -q "BGRPIIMAGE_VERSION='0.7.7'" /etc/bgrpiimage-release \
+    && ok "still reports the originally flashed image" \
+    || bad "the flashed version was overwritten"
 
 echo
 echo "================ $PASS passed, $FAIL failed ================"

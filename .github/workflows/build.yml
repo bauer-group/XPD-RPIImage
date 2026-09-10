@@ -738,10 +738,19 @@ jobs:
         # It is variant-independent, so one copy serves every image.
         run: |
           set -euo pipefail
-          src=src/modules/bgrpiimage-base/filesystem/root/usr/local/sbin/bgrpiimage-setup
-          install -m 0755 "$src" release-assets/bgrpiimage-setup
-          ( cd release-assets && sha256sum bgrpiimage-setup > bgrpiimage-setup.sha256 )
-          sha256sum release-assets/bgrpiimage-setup
+          base=src/modules/bgrpiimage-base/filesystem/root
+          install -m 0755 "$base/usr/local/sbin/bgrpiimage-setup"  release-assets/bgrpiimage-setup
+          install -m 0755 "$base/usr/local/sbin/bgrpiimage-update" release-assets/bgrpiimage-update
+          # The trust keys too. They are public by definition, and publishing
+          # them beside the bundle means a device from before signing can be
+          # bootstrapped from the same release URL as everything else, instead
+          # of needing a raw.githubusercontent path nobody can verify at a
+          # glance.
+          install -m 0644 "$base"/usr/share/bgrpiimage/trusted-keys.d/*.pub release-assets/
+          ( cd release-assets \
+            && sha256sum bgrpiimage-setup  > bgrpiimage-setup.sha256 \
+            && sha256sum bgrpiimage-update > bgrpiimage-update.sha256 )
+          sha256sum release-assets/bgrpiimage-setup release-assets/bgrpiimage-update
 
       # The GitHub release itself is created by release.yml (semantic-release)
       # when the version is bumped on main. Here we only *append* the image
@@ -757,7 +766,9 @@ jobs:
             release-assets/*.manifest.json
             release-assets/*.confbundle.tar.gz
             release-assets/*.bundle.manifest.json.sig
+            release-assets/*.pub
             release-assets/bgrpiimage-setup
+            release-assets/bgrpiimage-update
           fail_on_unmatched_files: true
           append_body: true
           body: |
