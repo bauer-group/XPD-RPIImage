@@ -4,6 +4,20 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.10.2](https://github.com/bauer-group/XPD-RPIImage/compare/v0.10.1...v0.10.2) (2026-09-10)
+
+### 🐛 Bug Fixes
+
+* **secrets:** committed the public key so the secret can be verified ([df5e762](https://github.com/bauer-group/XPD-RPIImage/commit/df5e762cab70d14cc82fe3ee53d5040ba1c72835))
+
+### ♻️ Code Refactoring
+
+* **secrets:** rewrote the secret push as a Python script ([7465b98](https://github.com/bauer-group/XPD-RPIImage/commit/7465b9829f5e4110002ccf384a7e63db3b0442fe))
+
+### 🔧 Maintenance
+
+* **secrets:** kept signing keys out of git and added a push script ([c8e9765](https://github.com/bauer-group/XPD-RPIImage/commit/c8e9765ad859380bf7c61a3f329fae3b297556e5))
+
 ## [0.10.1](https://github.com/bauer-group/XPD-RPIImage/compare/v0.10.0...v0.10.1) (2026-09-10)
 
 ### 🐛 Bug Fixes
