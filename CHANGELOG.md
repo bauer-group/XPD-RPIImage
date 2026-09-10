@@ -4,6 +4,15 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.13.5](https://github.com/bauer-group/XPD-RPIImage/compare/v0.13.4...v0.13.5) (2026-09-10)
+
+### 🐛 Bug Fixes
+
+* **update:** kept the recorded helper version tied to the helper on disk ([d016b2d](https://github.com/bauer-group/XPD-RPIImage/commit/d016b2da8d667ef5dc1d5e92f827cb123ed99ec3))
+* **update:** made check answer applicability and closed the fail-open gates ([b225b9b](https://github.com/bauer-group/XPD-RPIImage/commit/b225b9bba5f1b189529f5a4f1824d9d1223e4498))
+* **update:** made every failure on the apply path stop the apply ([33563d0](https://github.com/bauer-group/XPD-RPIImage/commit/33563d0e21b732dddac30ee50a0c5078796de03f))
+* **update:** stopped a refused download from continuing the apply ([542f627](https://github.com/bauer-group/XPD-RPIImage/commit/542f6273045543324e6dc90999a5f7399bd087a8))
+
 ## [0.13.4](https://github.com/bauer-group/XPD-RPIImage/compare/v0.13.3...v0.13.4) (2026-09-10)
 
 ### 🐛 Bug Fixes
