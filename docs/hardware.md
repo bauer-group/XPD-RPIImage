@@ -23,7 +23,7 @@ Two output paths exist:
 | --- | --- | --- | --- | --- | --- |
 | `boot_config` | I2C/SPI/I2S/UART, WiFi off, raw `dtoverlays`, `extra_lines` | ✅ | ✅ | ✅ | ✅ |
 | `bluetooth` | Onboard BT radio: bluez + `bluetooth.service`, or `disable-bt` | ✅ | ✅ | ✅ | ✅ |
-| `can` | MCP2515 CAN HAT: overlay order, INT GPIOs, bitrate | ✅ | ✅ | ✅ | ✅ |
+| `can` | MCP2515 / MCP251XFD CAN HAT: overlay order, chip selects, INT GPIOs, bitrate, CAN FD data phase | ✅ | ✅ | ✅ | ✅ |
 | `camera` | CSI autodetect + explicit sensor overlays | ✅ | ✅ | ✅ | ✅ |
 | `hdmi` | Per-output group/mode/audio/rotation/boost | ✅ | ✅ | ✅ | ✅ |
 | `display` | fbcon rotation, DSI LCD rotation | ✅ | ✅ | ✅ | ✅ |
@@ -620,6 +620,320 @@ the contrast between `restart-ms 0` and `restart-ms 100` is unambiguous.
 
 ---
 
+## 🚌 `can` FD (Waveshare 17075 dual MCP2518FD)
+
+Used by the [`canbusfd-plattform`](../config/variants/canbusfd-plattform.json)
+variant. This is **not** the MCP2515 HAT with a faster chip on it — almost every
+detail differs, and each difference has its own silent-failure mode.
+
+```json
+"boot_config": {
+  "core_freq_fixed": true,
+  "enable_spi": true,
+  "dtoverlays": [
+    { "name": "spi1-3cs" },
+    { "id": "canfd0", "name": "mcp251xfd", "params": { "spi0-0": true, "interrupt": "25", "oscillator": "40000000", "speed": "20000000" } },
+    { "id": "canfd1", "name": "mcp251xfd", "params": { "spi1-0": true, "interrupt": "24", "oscillator": "40000000", "speed": "20000000" } }
+  ]
+},
+"can": {
+  "interfaces": [
+    { "name": "can0", "bitrate": 500000, "dbitrate": 2000000, "auto_up": true, "txqueuelen": 1024, "restart_ms": 100 }
+  ]
+}
+```
+
+### What changed against the MCP2515 HAT
+
+| | 17912 (MCP2515) | 17075 (MCP2518FD) |
+| --- | --- | --- |
+| Overlay | `mcp2515-can0` / `mcp2515-can1` — one per channel | **`mcp251xfd`** — one overlay, loaded twice |
+| Chip select | encoded in the overlay *name* | boolean param `spi0-0` / `spi1-0`, marked *"(boolean, required)"* |
+| SPI clock param | `spimaxfrequency` | **`speed`** |
+| Crystal | 16 MHz | **40 MHz** (schematic X1/X2, both channels) |
+| Buses used | spi0 CE0 + spi0 CE1 | **spi0 CE0 + spi1 CE0** in factory "mode A" |
+| Frame format | Classic CAN only | CAN FD (`dbitrate`) |
+
+Two consequences fall straight out of the first two rows, and both used to be
+silent:
+
+- **Two entries named `mcp251xfd` merge into one.** `dtoverlays` merges by name,
+  which is correct for every overlay that appears once. Here it collapsed both
+  channels into a single overlay carrying `spi0-0` *and* `spi1-0` with
+  `interrupt` resolved last-wins — one interface, wrong INT pin, `make validate`
+  green. Hence the `id` key: a merge key that is never rendered.
+- **`spimaxfrequency` is accepted by JSON and ignored by the firmware.**
+  `dtoverlay` drops parameter names it does not recognise, so the SPI clock would
+  quietly stay at the overlay default. It is now refused at build time.
+
+### SPI clock: 20 MHz is a request, 17 MHz is the bus
+
+> **20 MHz is not a value this hardware can run.** It is a request the driver
+> discards.
+
+The upstream overlay defaults to `spi-max-frequency = <20000000>`, and real boot
+logs do print `m:20.00MHz` — but `m:` is `priv->spi_max_speed_hz_orig`, the
+device-tree value echoed back **before clamping**. The fields that describe
+reality sit next to it. From a Pi 5 with this exact HAT
+([raspberrypi/linux#6644](https://github.com/raspberrypi/linux/issues/6644)):
+
+```text
+mcp251xfd spi0.1 can0: MCP2518FD rev0.0 (... o:40.00MHz c:40.00MHz
+    m:20.00MHz rs:17.00MHz es:16.66MHz rf:17.00MHz ef:16.66MHz) successfully initialized.
+```
+
+| Field | Meaning |
+| --- | --- |
+| `o:` / `c:` | oscillator / CAN system clock |
+| `m:` | SPI clock **as requested in DT** — pre-clamp |
+| `rs:` / `rf:` | requested slow / fast clock, **post-clamp** |
+| `es:` / `ef:` | **effective** clock measured by the SPI controller |
+
+The clamp is in `mcp251xfd-core.c`:
+
+```c
+priv->spi_max_speed_hz_slow = min(spi->max_speed_hz, freq / 2 / 1000 * 850);
+```
+
+`40000000 / 2 / 1000 * 850` = **17 000 000**. The 0.85 factor is Microchip's own
+fix for silicon errata DS80000789 item 4 — *"The SPI may write corrupted data to
+the RAM at fast SPI speeds … Ensure that FSCK is less than or equal to 0.85 \*
+(FSYSCLK/2)"* — a **data-corruption** erratum, not a signal-integrity margin.
+Microchip applied it to the datasheet too: revision B (December 2020) cut the
+`FSCK` maximum in Table 7-6 from 20 MHz to **17 MHz**. The overlay's `<20000000>`
+is a leftover from revision A (April 2019).
+
+**The variant ships `speed=20000000`** — upstream's own default, and what
+Waveshare's published lines inherit by omitting the parameter. The driver clamps
+it to 17 MHz, so the bus behaves identically to writing 17000000 outright; the
+only cost is that `config.txt` states a clock nothing honours, which is why
+`make render` prints a note about it. Writing `speed=17000000` instead is equally
+valid and makes the config, this page and the boot banner agree on one number —
+pick whichever you would rather explain to the next reader.
+
+What matters is that neither choice changes the hardware: **17 MHz is the
+ceiling either way.** `_semantic_validate()` therefore notes an over-spec `speed`
+rather than refusing it — `min()` has already made it safe, and refusing would
+reject upstream's own value.
+
+> **Do not de-rate below 17 MHz** the way the MCP2515 is de-rated from 10 to
+> 8 MHz. That de-rate is load-bearing because `mcp251x` applies *no* clamp of its
+> own — whatever DT says reaches the pins. Here the manufacturer's margin is
+> already applied, and the BCM2835/RP1 divisor quantisation applies a second one
+> on top (`DIV_ROUND_UP` on the divisor only ever rounds the clock *down*):
+> ≈15.6 MHz on Pi 4, ≈16.7 MHz on Pi 5.
+
+### Chip selects and the AUX SPI bus
+
+In the factory jumper setting Waveshare calls **mode A**, the two channels sit on
+*different* SPI controllers:
+
+| Terminal | Chip select | INT | Notes |
+| --- | --- | --- | --- |
+| CAN_0 | `SPI0_CE0` → `spi0.0` (GPIO 8) | GPIO 25 | main SPI controller |
+| CAN_1 | `SPI1_CE0` → `spi1.0` (GPIO 18) | GPIO 24 | **AUX** SPI controller |
+
+Alternative jumper positions (0 Ω links, verified against the Rev2.1 schematic):
+CAN_0 chip select `CE1` (GPIO 7) with INT GPIO 13; CAN_1 chip select `SPI1_CE1`
+(GPIO 17) / `SPI1_CE2` (GPIO 16) with INT GPIO 23 / 22. The fourth, unlabelled
+CAN_1 combination — chip select GPIO 26, INT GPIO 16 — is the pre-Rev2.1
+compatibility position; GPIO 26 is not an SPI chip select at all but a software
+`cs-gpios`.
+
+`spi1` has to be switched on separately — the `mcp251xfd` overlay only enables
+`spi0`. The dependency is stronger than a status flag and the **order is
+load-bearing**: `mcp251xfd` disables the conflicting `spidev` with
+`target-path = "spi1/spidev@0"`, and a `target-path` only resolves against a node
+that already exists. Listed after the CAN entries, that fragment is a no-op and
+`spidev` keeps the chip select. `_semantic_validate()` enforces both the presence
+and the ordering, and that `spi1-<N>cs` exposes enough chip selects for the ones
+in use.
+
+> ⚠️ **`dtoverlay=spi1-3cs` claims GPIO 16 and GPIO 17** as CS1/CS2 even though
+> mode A uses only CS0. It is what Waveshare publishes, so it is what ships — but
+> if something else in a derived variant wants those pins, `spi1-1cs` is
+> sufficient for mode A.
+
+There is one in-tree overlay that looks like it should do all of this in a single
+line, and it is a trap:
+
+> 🚨 **Do not use `dtoverlay=waveshare-can-fd-hat-mode-a`.** The in-tree overlay
+> of that name hardcodes CAN_1 at chip select GPIO 26 and INT GPIO 16 — the
+> *pre-Rev2.1* resistor placement. On a current board it produces a `can1` that
+> never probes or never receives, and its name actively suggests otherwise.
+> Explicit `mcp251xfd` lines are the only safe form.
+
+### ⚠️ Which connector is `can0` is NOT fixed on this variant
+
+> **This image ships the race, deliberately and knowingly.** On any given boot,
+> `can0` may be either physical connector. Read this section before wiring a
+> production bus.
+
+The MCP2515 HAT gets a stable mapping from the overlay order trick documented
+[above](#overlay-order-is-load-bearing), because both chips are children of the
+*same* `&spi0` node and device-tree child order decides probe order. **That
+argument does not survive mode A**, where the chips sit on two different SPI
+controllers.
+
+The kernel assigns the number first-come-first-served. `alloc_candev()` passes
+the literal format string:
+
+```c
+dev = alloc_netdev_mqs(size, "can%d", NET_NAME_UNKNOWN, can_setup, txqs, rxqs);
+```
+
+and the `%d` is only resolved inside `register_netdevice()` → `__dev_alloc_name()`,
+which hands out the **lowest free index** to whichever chip calls
+`register_candev()` first. Four independent things decide that order, none of
+them ordered:
+
+| Source | Why it is not deterministic |
+| --- | --- |
+| Two driver *modules* | `spi-bcm2835.ko` (SPI0) and `spi-bcm2835aux.ko` (SPI1) are loaded from `MODALIAS` uevents by **parallel udev workers**. No dependency edge between them. |
+| Two controller probes | `of_register_spi_devices()` walks children *per controller*. `spi0.0` and `spi1.0` are walked in two separate invocations. |
+| Deferred probe | `mcp251xfd_probe()` can return `-EPROBE_DEFER` from `devm_clk_get_optional()` / `devm_regulator_get_optional()`. A device that defers loses its place entirely — and SPI1 depends on the `aux` clock while SPI0 does not, so asymmetric deferral is expected. |
+| Waveshare's own FAQ | *"Every time I turn it on, I find that the order of CAN0 and CAN1 is random"* — the vendor documents it as a known property. |
+
+**Renaming to `can0`/`can1` does not fix it either**, which is why nothing here
+tries. systemd issues a single `RTM_SETLINK` with no swap handling, and the
+kernel refuses a name another interface still holds:
+
+```c
+} else if (netdev_name_in_use(net, want_name)) {
+        return -EEXIST;
+}
+```
+
+On the unlucky boot *both* renames target the name the other interface holds, so
+both fail and the channels stay swapped. It is at least loud about it —
+`log_device_error_errno(… "Failed to rename network interface %i from '%s' to
+'%s'")` — but a journal line is not a working bus. `systemd.link(5)` says as
+much: *"specifying a name that the kernel might use for another interface … is
+dangerous … It is best to use some different prefix."*
+
+#### Living with it
+
+Check the mapping on the device rather than assuming it — the chip select column
+is read from `/sys` and is the truth:
+
+```console
+$ bgrpiimage-setup can status
+  can0   spi0.0   gpio 25 ...
+  can1   spi1.0   gpio 24 ...
+```
+
+`spi0.0` is the connector labelled **CAN_0**, `spi1.0` is **CAN_1**. If they are
+the other way round, they swapped on this boot.
+
+#### Pinning it yourself (opt-in, not shipped)
+
+If a deployment needs a fixed mapping, `.link` files matched on the SPI device
+path do it properly. `Path=` matches `ID_PATH`, and udev's `path_id` builtin has
+had an SPI handler since **systemd 246** (Trixie ships 257). Note `cs-N` is the
+*chip select*, not the bus — both channels are `cs-0`, and the discriminator is
+the platform device address.
+
+```ini
+# /etc/systemd/network/60-can10.link      → CAN_0, spi0.0, INT GPIO 25
+[Match]
+Driver=mcp251xfd
+Path=platform-3f204000.spi-cs-0 platform-fe204000.spi-cs-0
+
+[Link]
+Name=can10
+TransmitQueueLength=1024
+```
+
+```ini
+# /etc/systemd/network/60-can11.link      → CAN_1, spi1.0, INT GPIO 24
+[Match]
+Driver=mcp251xfd
+Path=platform-3f215080.spi-cs-0 platform-fe215080.spi-cs-0
+
+[Link]
+Name=can11
+TransmitQueueLength=1024
+```
+
+`3f…` is BCM2836/2837 (Pi 2/3), `fe…` is BCM2711 (Pi 4/CM4). Read the real value
+with `udevadm test /sys/class/net/can0 2>&1 | grep ID_PATH=` and paste it in.
+
+Three things make this work, and each is a way to get it wrong:
+
+- **Rename into a different namespace.** `can10`/`can11` can never be assigned
+  automatically, because `__dev_alloc_name()` returns the *lowest* free index —
+  with two (or even four, stacked) channels the kernel never reaches 10.
+- **Sort before `70-can<N>.link`.** Only the **first** matching `.link` applies,
+  so a `60-` file replaces the shipped one entirely — hence
+  `TransmitQueueLength=` is repeated above. Omit it and the queue silently falls
+  back to the CAN core default of 10.
+- **Retarget the `.network` files too**, to `Name=can10` / `Name=can11`, or the
+  `[CAN]` block stops matching and the bus comes up unconfigured.
+
+> **Pi 5 / CM5 is different hardware here.** BCM2712 has no AUX block at all —
+> `spi0`–`spi5` all come from RP1 over PCIe as `snps,dw-apb-ssi` *with* DMA. The
+> `platform-…` `ID_PATH` shape above therefore does not apply and these files
+> will not match. The variant still targets Pi 5, it simply has no pinning there
+> either; anyone wanting it must read the real `ID_PATH` off the board. See also
+> [raspberrypi/linux#6644](https://github.com/raspberrypi/linux/issues/6644),
+> an open Pi 5 issue with this exact HAT.
+
+### The AUX SPI controller is the asymmetric half
+
+Broadcom's own datasheet calls SPI1/SPI2 *"secondary **low throughput** SPI
+interfaces"* and adds: *"doing so requires significant CPU involvement as they
+have shallow FIFOs and **no DMA support**."* The official Raspberry Pi docs list
+DMA for SPI0 and SPI3–6 and omit SPI1/2. In the driver, `grep -c dma`
+`spi-bcm2835aux.c` returns **0**, and transfers move three bytes at a time with
+at most twelve in flight (`pending < 12`, i.e. the 4×32-bit FIFO).
+
+Practically: **CAN_1 costs roughly an order of magnitude more SPI interrupts than
+CAN_0 for the same CAN load.** Bandwidth is not the constraint — 2 Mbit/s of FD
+traffic is a small fraction of ~16.7 MHz SPI — interrupt rate and latency are.
+Expect the two channels to behave *asymmetrically* under load; that is the
+defining property of mode A.
+
+It is not all cost. `spi_sync()` runs inline when the controller queue is empty,
+and two chips on one controller serialise on `ctlr->io_mutex`. Splitting across
+SPI0 and SPI1 gives each chip its own controller and removes that head-of-line
+blocking, so **do not "fix" this by consolidating both channels onto spi0.**
+
+Three operational consequences worth knowing:
+
+- **`core_freq_fixed=1` matters more here than anywhere else**, and it is already
+  set. Without it the SPI divisor is computed against the turbo core rate while
+  the core idles lower, so the bus runs *slower* than intended — up to 2.5× on a
+  Pi 4. It cannot violate the errata (SCK only ever ends up too slow), but it
+  costs latency and jitter.
+- **Do not enable the mini-UART on a board using spi1.** `uart1`, `spi1` and
+  `spi2` all carry `interrupts = <1 29>` — one shared IRQ for the whole AUX
+  block — and the AUX SPI driver registers `IRQF_SHARED`. `enable_uart=1` on a
+  Bluetooth model, or `dtoverlay=miniuart-bt`, puts UART traffic on CAN_1's
+  interrupt path. Prefer `dtoverlay=disable-bt`.
+- **Keep `cs-gpios`.** Native chip select is broken on AUX — the driver says so
+  itself (*"Native CS is not supported - please configure cs-gpio in
+  device-tree"*), and `mcp251xfd` relies on `cs_change` across up to 32 transfers
+  per message. The stock `spi1-3cs` overlay supplies them, which is the real
+  reason to use it rather than hand-rolling an spi1 node.
+
+#### Measuring it
+
+The AUX driver exposes exactly the right counters:
+
+```console
+$ ls /sys/kernel/debug/spi-bcm2835aux-fe215080.spi/
+count_transfer_polling  count_transfer_irq  count_transfer_irq_after_poll
+```
+
+`count_transfer_irq_after_poll` climbing is the direct fingerprint of the core
+clock running below the rate the divisor assumed — i.e. proof that
+`core_freq_fixed=1` is *not* doing its job. The single most diagnostic
+measurement, though, is simpler: run symmetric traffic on both channels and
+compare `overrun` in `ip -s -d link show`. A divergence between `can0` and `can1`
+is the AUX bottleneck showing itself.
+
+---
+
 ## 🚨 Cross-field validation
 
 Enforced in [`scripts/generate.py`](../scripts/generate.py) `_semantic_validate()`:
@@ -631,6 +945,12 @@ Enforced in [`scripts/generate.py`](../scripts/generate.py) `_semantic_validate(
 | `rtc.enabled` ⇒ `rtc.model` | Each chip has its own `i2c-rtc` overlay param. |
 | every `can.interfaces[].name` ⇒ a matching `mcp2515-<name>` overlay | The two blocks describe one piece of hardware and were rendered independently. |
 | each `mcp2515-*` overlay ⇒ its own `params.interrupt` | Both overlays default to GPIO 25; two chips on one line is a pinctrl conflict, not an error message. |
+| one `mcp251xfd` overlay per `can.interfaces[]` | The overlay carries no interface name, so counts are the only cross-check. Catches two entries collapsing into one for want of an `id`. |
+| each `mcp251xfd` ⇒ exactly one real `spi<n>-<m>` | Marked *"(boolean, required)"*; with none the overlay stays on its default target. SPI0 has no `spi0-2`, and an unknown param name is dropped without complaint. |
+| each `mcp251xfd` ⇒ its own `params.interrupt`, and no `spimaxfrequency` | Every instance defaults to GPIO 25. `spimaxfrequency` is the MCP2515 spelling and would be silently ignored here. |
+| `spi1`/`spi2` in use ⇒ `spi<n>-<N>cs` present, wide enough, and listed **first** | `mcp251xfd` disables `spidev` by `target-path`, which only resolves if that node already exists. |
+| `speed` above `oscillator / 2 × 0.85` → **note, not refusal** | The driver clamps to it (errata DS80000789 #4), so a higher value is safe — and upstream's own overlay default exceeds it. The note says `config.txt` states a clock nothing honours. |
+| `dbitrate` ⇒ not an `mcp2515-*` board, and `dbitrate ≥ bitrate` | The MCP2515 is Classic-CAN only. A data phase slower than arbitration is a swapped pair. |
 | `bluetooth.enabled` ⇒ no manual `disable-bt` in `extra_lines` | A hand-written overlay would silently win over the block. |
 
 ---

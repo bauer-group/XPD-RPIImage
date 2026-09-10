@@ -149,9 +149,11 @@
             "additionalProperties": false,
             "properties": {
               "name": { "type": "string" },
+              "id": { "type": "string", "description": "Disambiguator used ONLY as the merge key when a child variant extends a parent; never rendered. Needed when one overlay is loaded more than once, which is how the MCP251XFD family works: mcp2515 ships one overlay per channel (mcp2515-can0 / mcp2515-can1), but mcp251xfd ships ONE overlay for every channel and picks the chip with a boolean spi<n>-<m> parameter. Two entries both named 'mcp251xfd' merge by name into a single overlay carrying both chip-select selectors, with 'interrupt' resolved last-wins - one CAN interface instead of two, bound to the other channel's INT GPIO, with nothing failing at build time. Omit it and the merge key stays 'name', which is what every single-instance overlay wants." },
               "params": {
                 "type": "object",
-                "additionalProperties": { "type": ["string", "number", "boolean"] }
+                "additionalProperties": { "type": ["string", "number", "boolean"] },
+                "description": "Rendered as comma-separated dtoverlay parameters. A boolean true renders as a BARE token (dtoverlay=mcp251xfd,spi0-0) because the firmware treats overlay booleans as present-is-true/absent-is-false; false omits the key entirely, since 'k=false' would still make the parameter present."
               }
             }
           }
@@ -354,7 +356,13 @@
               "txqueuelen": { "type": "integer", "minimum": 1, "maximum": 4294967294,
                               "description": "Rendered into 70-<name>.link as TransmitQueueLength (a .link key applied by systemd-udevd, NOT a .network key). Unset leaves the CAN core default of 10." },
               "restart_ms": { "type": "integer", "minimum": 0, "maximum": 4294967295,
-                              "description": "Milliseconds after a bus-off before the controller rejoins the bus, rendered into 40-<name>.network as [CAN] RestartSec=<n>ms. Unset takes the house default of 100. 0 means no automatic recovery - the kernel and systemd default, which leaves a bus-off link dead until someone cycles it by hand." }
+                              "description": "Milliseconds after a bus-off before the controller rejoins the bus, rendered into 40-<name>.network as [CAN] RestartSec=<n>ms. Unset takes the house default of 100. 0 means no automatic recovery - the kernel and systemd default, which leaves a bus-off link dead until someone cycles it by hand." },
+              "dbitrate": { "type": "integer", "minimum": 1000,
+                            "description": "CAN FD DATA-phase bitrate in bit/s. Setting it turns the interface into a CAN FD interface: the renderer emits [CAN] FDMode=yes alongside DataBitRate=, and the two are inseparable. can_validate() in drivers/net/can/dev/netlink.c rejects IFLA_CAN_DATA_BITTIMING without CAN_CTRLMODE_FD with -EOPNOTSUPP, and that error kills the WHOLE netlink message - the nominal bitrate, the sample point and the restart time are all lost with it, so a half-configured FD interface is not a degraded link but an unconfigured one. Requires a controller that actually does FD (MCP2518FD yes, MCP2515 no); the arbitration phase keeps using `bitrate`. Omit for classic CAN." },
+              "data_sample_point": { "type": "number", "minimum": 50, "maximum": 95,
+                                     "description": "CAN FD data-phase sample point in PERCENT, rendered as [CAN] DataSamplePoint=<v>%. Same parse_permille() rules and the same fraction-vs-percent trap as sample_point, and likewise ignored by systemd unless dbitrate is set (networkd only copies it into the bittiming struct inside the can_data_bitrate > 0 branch). LEAVE IT UNSET unless every node on the bus is documented to use a specific value - the sample point is a property of the bus that all nodes must agree on, not a per-board tuning knob, and the kernel already picks a sane one per bitrate in can_update_sample_point(): 75% above 800 kbit/s, 80% above 500 kbit/s, 87.5% at or below 500 kbit/s. So a 2 Mbit/s data phase defaults to 75% and a 500 kbit/s arbitration phase to 87.5% with nothing set at all." },
+              "fd_non_iso": { "type": "boolean",
+                              "description": "Emits [CAN] FDNonISO=yes, selecting the pre-standard Bosch CAN FD frame format (different CRC and stuff-bit counter) instead of ISO 11898-1:2015. Needed ONLY to talk to first-generation FD silicon that predates the ISO standard, and the two formats do not interoperate: a non-ISO node on an ISO bus produces CRC errors, not silence. Leave unset unless a device on the bus is documented as non-ISO." }
             }
           }
         }

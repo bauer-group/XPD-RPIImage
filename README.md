@@ -139,6 +139,7 @@ gh workflow run build.yml --ref vX.Y.Z
 | --- | --- | --- | --- |
 | [`base`](config/variants/base.json) | Generic Raspberry Pi image, Docker-ready, no application-specific hardware. | `bg-rpi` | — |
 | [`canbus-plattform`](config/variants/canbus-plattform.json) | Base + Waveshare 17912 dual isolated CAN HAT (MCP2515 on SPI). | `bg-canbus` | `can0` + `can1` at 500 kbit/s with 100 ms bus-off auto-recovery, `can-utils`, dialout/gpio/i2c/spi groups |
+| [`canbusfd-plattform`](config/variants/canbusfd-plattform.json) | Base + Waveshare 17075 2-CH isolated **CAN FD** HAT (2× MCP2518FD), factory "mode A" jumpering. | `bg-canbusfd` | `can0` + `can1` at 500 kbit/s arbitration / **2 Mbit/s data phase**, 100 ms bus-off auto-recovery, `can-utils`, dialout/gpio/i2c/spi groups |
 
 Adding a new variant is a 10-line JSON file — see
 [`docs/variants.md`](docs/variants.md).
@@ -207,6 +208,17 @@ More detail: [`docs/architecture.md`](docs/architecture.md).
 > Details and the migration check in
 > [`docs/hardware.md`](docs/hardware.md#-can-waveshare-17912-dual-mcp2515).
 
+The CAN FD variant has the opposite problem — no stable mapping to migrate to:
+
+> 🚨 **`canbusfd-plattform`: which connector is `can0` is not fixed.** In the
+> HAT's factory "mode A" jumpering the two controllers sit on *different* SPI
+> buses (`spi0.0` and `spi1.0`), and the kernel hands out `can0` to whichever
+> probes first — which nothing orders. Waveshare documents the same behaviour.
+> Check the mapping on the device with `bgrpiimage-setup can status` (the chip
+> select column) rather than assuming it, and see
+> [`docs/hardware.md`](docs/hardware.md#️-which-connector-is-can0-is-not-fixed-on-this-variant)
+> for a ready-made `.link` recipe if a deployment needs it pinned.
+
 ### Change credentials at build time (preferred for production)
 
 Bake real values into the image during the build:
@@ -273,7 +285,8 @@ subcommand reference.
 │   ├── schema.json                        # JSON schema for variant config
 │   └── variants/
 │       ├── base.json                      # generic base variant
-│       └── canbus-plattform.json          # extends base + CAN additions
+│       ├── canbus-plattform.json          # extends base + CAN additions
+│       └── canbusfd-plattform.json        # extends base + CAN FD additions
 ├── scripts/
 │   ├── generate.py                        # JSON → CustomPiOS module files
 │   ├── bootstrap.sh                       # clones CustomPiOS into ./CustomPiOS

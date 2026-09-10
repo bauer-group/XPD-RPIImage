@@ -207,10 +207,24 @@ def deep_merge(parent: Any, child: Any) -> Any:
                     deduped.append(x)
             return deduped
         if all(isinstance(x, dict) and "name" in x for x in combined):
+            # `name` is the merge key only when it is actually unique. It is not
+            # for dtoverlays: mcp2515 ships one overlay PER CHANNEL
+            # (mcp2515-can0 / mcp2515-can1), but mcp251xfd ships ONE overlay for
+            # every channel and selects the chip with a boolean spi<n>-<m>
+            # parameter - so a two-channel CAN FD HAT needs two entries that are
+            # both named "mcp251xfd". Merging those by name collapsed them into a
+            # single overlay carrying both spi selectors, with `interrupt`
+            # resolved last-wins: one CAN interface instead of two, pointed at
+            # the other channel's INT GPIO. Nothing failed - `make validate`
+            # passed, the image built, and only the hardware disagreed.
+            # `id` is the opt-in disambiguator. It is a merge key ONLY: it is
+            # never rendered, so `{"id": "can1", "name": "mcp251xfd"}` still
+            # emits `dtoverlay=mcp251xfd,...`. Absent, the key is `name`, so
+            # every existing variant merges exactly as before.
             by_name: dict[str, dict[str, Any]] = {}
             order: list[str] = []
             for item in combined:
-                n = item["name"]
+                n = item.get("id") or item["name"]
                 if n in by_name:
                     by_name[n] = deep_merge(by_name[n], item)
                 else:
@@ -827,11 +841,29 @@ def render_network(cfg: dict[str, Any]) -> None:
 
 
 def _overlay_line(name: str, params: dict[str, Any] | None = None) -> str:
-    """Render a `dtoverlay=...` line with optional comma-joined params."""
+    """Render a `dtoverlay=...` line with optional comma-joined params.
+
+    A JSON `true` renders as a BARE token, not `k=true`. The firmware treats a
+    boolean overlay parameter as present-is-true / absent-is-false (dtoverlay.c,
+    DTOVERRIDE_BOOLEAN: "The target is a boolean parameter (present->true,
+    absent->false)"), and upstream's own example is the bare form:
+    `dtoverlay=mcp251xfd,spi0-0,interrupt=25`. The old renderer interpolated
+    every value with f"{k}={v}", so a JSON `true` arrived as Python's repr and
+    emitted `spi0-0=True` - not a value the parser accepts, so the chip-select
+    selector was dropped and the overlay fell back to its default target.
+    `false` is therefore rendered by OMITTING the key: writing `k=false` would
+    still make the parameter present.
+    """
     params = params or {}
     if not params:
         return f"dtoverlay={name}"
-    parts = [name] + [f"{k}={v}" for k, v in params.items()]
+    parts = [name]
+    for k, v in params.items():
+        if isinstance(v, bool):
+            if v:
+                parts.append(k)
+            continue
+        parts.append(f"{k}={v}")
     return "dtoverlay=" + ",".join(parts)
 
 
@@ -1318,6 +1350,41 @@ def render_can(cfg: dict[str, Any]) -> None:
         # 80 quietly becomes 75 and anything above 87.5 becomes 87.5.
         if "sample_point" in iface:
             content.append(f"SamplePoint={iface['sample_point']:.1f}%")
+        # FDMode=yes and DataBitRate= are emitted together or not at all, and
+        # that is not tidiness - it is the difference between a configured link
+        # and an unconfigured one. can_validate() in
+        # drivers/net/can/dev/netlink.c reads:
+        #     if (data[IFLA_CAN_DATA_BITTIMING] || data[IFLA_CAN_TDC]) {
+        #             if (!is_can_fd)
+        #                     return -EOPNOTSUPP;
+        #     }
+        # and the converse for is_can_fd without both bittimings. That -EOPNOTSUPP
+        # rejects the ENTIRE RTM_NEWLINK message, so a DataBitRate= written
+        # without FDMode=yes does not merely skip the data phase: BitRate=,
+        # SamplePoint= and RestartSec= travel in the same message and are lost
+        # with it. The link then keeps whatever the driver powered up with.
+        # systemd will not catch this for us - it has no coupling between the
+        # two keys (CAN_CTRLMODE_FD is set only by FDMode=), so the mistake is
+        # only visible as a netlink error in the journal.
+        if "dbitrate" in iface:
+            content.append("FDMode=yes")
+            # Written as a plain integer on purpose. networkd parses this with
+            # parse_size(rvalue, 1000), whose suffixes are UPPERCASE only - "2M"
+            # works, "2m" is rejected with a warning and the key is dropped,
+            # leaving an FD link that negotiated no data phase. Digits avoid the
+            # whole class of mistake.
+            content.append(f"DataBitRate={iface['dbitrate']}")
+            if "data_sample_point" in iface:
+                content.append(
+                    f"DataSamplePoint={iface['data_sample_point']:.1f}%"
+                )
+            # Absent means "kernel default" (ISO 11898-1:2015). Emitted only when
+            # explicitly asked for, because FDNonISO=no is NOT the same as
+            # omitting it: networkd sets the mask bit either way, so writing it
+            # unconditionally would force ISO mode over a driver that had a
+            # reason to default otherwise.
+            if iface.get("fd_non_iso"):
+                content.append("FDNonISO=yes")
         # The "ms" suffix is load bearing. networkd parses RestartSec= with
         # parse_sec(), whose default unit is SECONDS - a bare "100" would mean
         # 100 s, i.e. restart-ms 100000, and the bus would stay dead for a
@@ -1702,6 +1769,213 @@ def render_unattended(cfg: dict[str, Any]) -> None:
         write(gen / "bgrpiimage-reboot-window.timer", tmr)
 
 
+# The chip selects mcp251xfd-overlay.dts actually implements, as the eight
+# `spi<n>-<m>` booleans in its __overrides__ block. spi0-2 is deliberately
+# absent: SPI0 has two hardware chip selects. A typo here is not a build error
+# on the device - the dtoverlay parameter matcher ignores names it does not
+# know, so `spi0-2` would leave the overlay on its default target (spi0.0) and
+# quietly stack a second controller onto the first one's chip select.
+_MCP251XFD_CS = {
+    "spi0-0": (0, 0), "spi0-1": (0, 1),
+    "spi1-0": (1, 0), "spi1-1": (1, 1), "spi1-2": (1, 2),
+    "spi2-0": (2, 0), "spi2-1": (2, 1), "spi2-2": (2, 2),
+}
+# spi1-1cs / spi1-2cs / spi1-3cs (and the spi2 twins) - the overlays that turn
+# the AUX SPI controllers on. The digit is how many chip selects they expose.
+_SPI_AUX_OVERLAY_RE = re.compile(r"^spi([12])-([123])cs$")
+
+
+def _validate_mcp251xfd(cfg: dict[str, Any], overlays: list[dict[str, Any]]) -> None:
+    """Cross-check mcp251xfd overlays against can.interfaces and each other.
+
+    The MCP251XFD family is configured very differently from the MCP2515 and
+    every difference is a fresh way to ship a silently dead channel:
+
+    - ONE overlay named `mcp251xfd` serves every channel, so the entries carry
+      no interface name to match against. The only structural check available
+      is that there is exactly one overlay per interface.
+    - The chip select is a BOOLEAN parameter (`spi0-0`), not part of the overlay
+      name. The README marks it "(boolean, required)"; omit it and the overlay
+      silently lands on its default target.
+    - `speed` sets the SPI clock here. `spimaxfrequency` is the MCP2515
+      spelling, and the dtoverlay parameter matcher drops unknown names without
+      complaint, so writing it costs the setting and says nothing.
+    """
+    fd = [o for o in overlays if o["name"] == "mcp251xfd"]
+    ifaces = (cfg.get("can") or {}).get("interfaces", [])
+
+    if not fd:
+        # dbitrate on a board whose overlays are all MCP2515 is not a slow FD
+        # link, it is a dead one: mcp251x has no FD support at all, so the
+        # kernel rejects CAN_CTRLMODE_FD and takes the whole netlink message
+        # with it - including the nominal bitrate.
+        classic = [i["name"] for i in ifaces if "dbitrate" in i]
+        if classic and any(_MCP2515_OVERLAY_RE.match(o["name"]) for o in overlays):
+            raise ValueError(
+                f"can.interfaces {classic} set dbitrate (CAN FD) but the overlays are "
+                "mcp2515-*, and the MCP2515 is a Classic-CAN-only controller - the "
+                "kernel refuses CAN_CTRLMODE_FD and the whole link configuration "
+                "fails with it. Use an mcp251xfd (MCP2517FD/MCP2518FD) board, or "
+                "drop dbitrate."
+            )
+        return
+
+    if len(fd) != len(ifaces):
+        raise ValueError(
+            f"boot_config.dtoverlays has {len(fd)} mcp251xfd overlay(s) but "
+            f"can.interfaces declares {len(ifaces)} interface(s). One overlay "
+            "creates exactly one controller, and mcp251xfd carries no interface "
+            "name to match on - so the counts are the only cross-check there is. "
+            "If two entries were meant to be distinct, give each its own `id`: "
+            "without it they merge by name into a single overlay."
+        )
+
+    seen_cs: dict[str, str] = {}
+    seen_int: dict[str, str] = {}
+    buses: dict[int, int] = {}          # spi bus -> highest chip select used
+    first_use: dict[int, int] = {}      # spi bus -> index of its first overlay
+
+    for idx, ovl in enumerate(overlays):
+        if ovl["name"] != "mcp251xfd":
+            continue
+        params = ovl.get("params") or {}
+        label = f"mcp251xfd#{idx}" + (f" (id={ovl['id']})" if ovl.get("id") else "")
+
+        if "spimaxfrequency" in params:
+            raise ValueError(
+                f"boot_config.dtoverlays: {label} sets params.spimaxfrequency, which "
+                "is the mcp2515-can0/can1 spelling. The mcp251xfd overlay calls it "
+                "`speed`, and dtoverlay silently ignores parameter names it does not "
+                "recognise - the SPI clock would stay at the overlay default and "
+                "nothing would say so."
+            )
+
+        selectors = [k for k, v in params.items() if k in _MCP251XFD_CS and v]
+        unknown = [
+            k for k in params
+            if k.startswith("spi") and "-" in k and k not in _MCP251XFD_CS
+        ]
+        if unknown:
+            raise ValueError(
+                f"boot_config.dtoverlays: {label} sets {unknown}, which the "
+                f"mcp251xfd overlay does not implement. Valid chip selects are "
+                f"{sorted(_MCP251XFD_CS)} - note SPI0 has no third chip select."
+            )
+        if len(selectors) != 1:
+            raise ValueError(
+                f"boot_config.dtoverlays: {label} must set exactly one spi<n>-<m> "
+                f"chip-select parameter (found {selectors or 'none'}). The overlay "
+                "README marks it '(boolean, required)'; with none the overlay stays "
+                "on its default target and two channels collide on spi0.0."
+            )
+        cs = selectors[0]
+        if cs in seen_cs:
+            raise ValueError(
+                f"boot_config.dtoverlays: {label} and {seen_cs[cs]} both select {cs}; "
+                "two controllers cannot share one chip select"
+            )
+        seen_cs[cs] = label
+
+        bus, cs_idx = _MCP251XFD_CS[cs]
+        buses[bus] = max(buses.get(bus, -1), cs_idx)
+        first_use.setdefault(bus, idx)
+
+        pin = params.get("interrupt")
+        if pin is None:
+            raise ValueError(
+                f"boot_config.dtoverlays: {label} must set params.interrupt - the "
+                "mcp251xfd overlay defaults to GPIO 25 for every instance, so a "
+                "second channel without it collides with the first. A wrong or "
+                "missing INT is silent: the driver requests the IRQ late, so the "
+                "interface still appears and simply never receives."
+            )
+        if str(pin) in seen_int:
+            raise ValueError(
+                f"boot_config.dtoverlays: {label} and {seen_int[str(pin)]} both use "
+                f"interrupt={pin}; each controller needs its own INT GPIO"
+            )
+        seen_int[str(pin)] = label
+
+        # The driver clamps the SPI clock to 0.85 x (osc / 2) to honour silicon
+        # errata DS80000789 item 4 (SPI writes corrupt RAM at high SCK while the
+        # CAN bus is active):
+        #     priv->spi_max_speed_hz_slow = min(spi->max_speed_hz,
+        #                                       freq / 2 / 1000 * 850);
+        # A value above that ceiling is therefore SAFE - min() discards it, and
+        # the upstream overlay itself defaults to 20 MHz, which exceeds the
+        # ceiling for the usual 40 MHz crystal (the 20 MHz figure is a leftover
+        # from datasheet revision A of April 2019; revision B, December 2020,
+        # cut FSCK to 17 MHz). Writing it is a documentation choice, not a
+        # hazard, so this notes the discrepancy instead of refusing the build:
+        # config.txt then says 20 MHz where the bus runs at 17, and the boot
+        # banner prints both ("m:20.00MHz rs:17.00MHz").
+        osc = params.get("oscillator")
+        speed = params.get("speed")
+        if osc is not None and speed is not None:
+            ceiling = int(osc) // 2 // 1000 * 850
+            if int(speed) > ceiling:
+                console.print(
+                    f"[yellow]note:[/] {label} sets speed={speed}, which the "
+                    f"mcp251xfd driver clamps to {ceiling} Hz for a {osc} Hz "
+                    "oscillator (0.85 x osc/2, silicon errata DS80000789 item 4). "
+                    "Harmless - the bus runs at the clamped rate - but config.txt "
+                    "then states a clock nothing honours."
+                )
+
+    # An mcp251xfd on spi1/spi2 needs that controller switched on separately -
+    # the overlay only enables spi0. The dependency is stronger than a status
+    # flag: mcp251xfd disables the conflicting spidev node with
+    # `target-path = "spi1/spidev@0"`, and a target-path can only resolve
+    # against a node that already exists. Applied before spi1-Ncs has created
+    # that node the fragment silently does nothing, and spidev then claims the
+    # same chip select as the CAN controller.
+    aux: dict[int, int] = {}
+    aux_at: dict[int, int] = {}
+    for idx, ovl in enumerate(overlays):
+        m = _SPI_AUX_OVERLAY_RE.match(ovl["name"])
+        if m:
+            aux[int(m.group(1))] = int(m.group(2))
+            aux_at.setdefault(int(m.group(1)), idx)
+
+    for bus, highest in sorted(buses.items()):
+        if bus == 0:
+            continue
+        need = highest + 1
+        have = aux.get(bus)
+        if have is None:
+            raise ValueError(
+                f"boot_config.dtoverlays: an mcp251xfd sits on spi{bus} but no "
+                f"spi{bus}-<N>cs overlay enables that controller. Add "
+                f"{{\"name\": \"spi{bus}-{need}cs\"}} before it."
+            )
+        if have < need:
+            raise ValueError(
+                f"boot_config.dtoverlays: spi{bus}-{have}cs exposes {have} chip "
+                f"select(s) but an mcp251xfd uses CS{highest} on spi{bus}; use "
+                f"spi{bus}-{need}cs"
+            )
+        if aux_at[bus] > first_use[bus]:
+            raise ValueError(
+                f"boot_config.dtoverlays: spi{bus}-{have}cs must be listed BEFORE "
+                f"the mcp251xfd entries that use spi{bus}. mcp251xfd disables the "
+                f"conflicting spidev with target-path \"spi{bus}/spidev@N\", which "
+                "only resolves once that node exists - applied first, the fragment "
+                "is a no-op and spidev keeps the chip select."
+            )
+
+    # FDMode=yes and DataBitRate= are emitted as a pair, so a data rate below
+    # the arbitration rate is always a swapped pair of numbers rather than an
+    # intent: CAN FD exists to run the data phase FASTER once arbitration is won.
+    for iface in ifaces:
+        dbr = iface.get("dbitrate")
+        if dbr is not None and dbr < iface["bitrate"]:
+            raise ValueError(
+                f"can.interfaces {iface['name']}: dbitrate={dbr} is below "
+                f"bitrate={iface['bitrate']}. The FD data phase is the fast one - "
+                "these two look swapped."
+            )
+
+
 def _semantic_validate(cfg: dict[str, Any]) -> None:
     """Cross-field validation beyond what JSON Schema expresses.
 
@@ -1766,6 +2040,8 @@ def _semantic_validate(cfg: dict[str, Any]) -> None:
                     f"interrupt={pin}; each MCP2515 needs its own INT GPIO"
                 )
             seen[str(pin)] = name
+
+    _validate_mcp251xfd(cfg, overlays)
 
     # bluetooth.enabled is the single source of truth; a hand-written
     # disable-bt in extra_lines would silently win over it at boot.

@@ -38,9 +38,18 @@ Merge rules are implemented in [`scripts/generate.py`](../scripts/generate.py)
 | --- | --- |
 | Two objects (`dict`) | Recursive merge, child keys win on conflict. |
 | Two lists of primitives | `parent + child`, stable-order dedupe. |
-| Two lists of `{name: …}` records | Merge by `name`; entries with matching names deep-merge. |
+| Two lists of `{name: …}` records | Merge by `id` when present, else by `name`; entries with a matching key deep-merge. |
 | Two lists (mixed / no `name`) | Plain concatenation. |
 | Anything else | Child value replaces parent value. |
+
+> **`id` is the escape hatch for records that legitimately repeat.** Merging by
+> `name` is right for anything that appears once, and wrong the moment a variant
+> needs the same overlay twice — as a two-channel CAN FD HAT does, where both
+> entries are `mcp251xfd` and only the `spi<n>-<m>` parameter tells them apart.
+> Without `id` they merge into one entry carrying both chip selects, and the
+> config renders one device instead of two with no error anywhere. `id` is a
+> merge key only; it is never rendered into `config.txt`. See
+> [`hardware.md`](hardware.md#-can-fd-waveshare-17075-dual-mcp2518fd).
 
 ---
 

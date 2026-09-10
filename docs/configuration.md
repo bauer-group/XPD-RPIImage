@@ -218,8 +218,25 @@ dtoverlay=mcp2515-can0,oscillator=16000000,interrupt=23,spimaxfrequency=8000000
 | `dtoverlays[]` | `dtoverlay=<name>[,k=v,k=v]` per entry |
 | `extra_lines[]` | Raw lines appended verbatim |
 
-`dtoverlays` is an array of `{name, params}` objects — merged **by name**
-when a child variant extends a parent.
+`dtoverlays` is an array of `{name, id?, params}` objects — merged **by `id` when
+present, otherwise by `name`**.
+
+> **A boolean param renders as a bare token, not `k=true`.** The firmware treats
+> overlay booleans as present-is-true / absent-is-false, which is why upstream
+> writes `dtoverlay=mcp251xfd,spi0-0,interrupt=25`. So `"spi0-0": true` emits
+> `spi0-0`, and `false` omits the key entirely — writing `k=false` would still
+> make the parameter *present*.
+
+The `id` key is what makes two entries of the *same* overlay survive the merge:
+
+> **`id` exists for overlays loaded more than once.** `mcp2515` ships one overlay
+> per channel (`mcp2515-can0`, `mcp2515-can1`), so `name` is a unique key. The
+> MCP251XFD family ships **one** overlay for every channel and picks the chip
+> with a `spi<n>-<m>` parameter — so a two-channel CAN FD HAT needs two entries
+> both named `mcp251xfd`. Merged by name those collapse into a single overlay
+> carrying *both* chip selects, with `interrupt` resolved last-wins: one CAN
+> interface instead of two, bound to the other channel's INT GPIO. `id` is a
+> merge key only and is never rendered.
 
 ---
 
@@ -238,10 +255,55 @@ Writes two files per interface, because systemd splits ownership of them:
 
 | File | Read by | Carries |
 | ---- | ------- | ------- |
-| `/etc/systemd/network/40-can<N>.network` | `systemd-networkd` | `[CAN] BitRate=`, `SamplePoint=`, `RestartSec=`, `RequiredForOnline=` |
+| `/etc/systemd/network/40-can<N>.network` | `systemd-networkd` | `[CAN] BitRate=`, `SamplePoint=`, `FDMode=`, `DataBitRate=`, `RestartSec=`, `RequiredForOnline=` |
 | `/etc/systemd/network/70-can<N>.link` | `systemd-udevd` | `[Link] TransmitQueueLength=` |
 
 `can-utils` is added to the package list automatically.
+
+### CAN FD
+
+Adding `dbitrate` turns the interface into a CAN FD interface — the arbitration
+phase keeps running at `bitrate`, the payload is sent at `dbitrate`:
+
+```json
+{ "name": "can0", "bitrate": 500000, "dbitrate": 2000000, "restart_ms": 100 }
+```
+
+```ini
+[CAN]
+BitRate=500000
+FDMode=yes
+DataBitRate=2000000
+RestartSec=100ms
+```
+
+> **`FDMode=yes` and `DataBitRate=` are emitted together or not at all — and
+> that is correctness, not tidiness.** `can_validate()` in
+> `drivers/net/can/dev/netlink.c` refuses `IFLA_CAN_DATA_BITTIMING` without
+> `CAN_CTRLMODE_FD` (and the reverse) with `-EOPNOTSUPP`, and that error rejects
+> the **whole** `RTM_NEWLINK` message. So a `DataBitRate=` written without
+> `FDMode=yes` does not merely skip the data phase — `BitRate=`, `SamplePoint=`
+> and `RestartSec=` travel in the same message and are lost with it, leaving the
+> link on whatever the driver powered up with. systemd will not catch it either:
+> it has no coupling between the two keys, so the only trace is a netlink error
+> in the journal.
+
+The controller has to be able to do it, too:
+
+> **`dbitrate` needs an FD controller.** The MCP2515 is Classic-CAN only, so
+> `dbitrate` on a `mcp2515-*` board is refused at build time rather than
+> producing an interface that fails to configure at boot.
+
+`data_sample_point` is available but **should normally stay unset**, for the same
+reason `sample_point` does: it describes the *bus*, which every node has to agree
+on, not the board. Unset, `can_update_sample_point()` picks per bitrate — 75%
+above 800 kbit/s, 80% above 500 kbit/s, 87.5% at or below. A 500 kbit/s
+arbitration phase with a 2 Mbit/s data phase therefore lands on 87.5% / 75% with
+nothing configured at all.
+
+`fd_non_iso` selects the pre-standard Bosch frame format and exists only for
+first-generation FD silicon. The two formats do **not** interoperate — a non-ISO
+node on an ISO bus produces CRC errors, not silence.
 
 > **`TransmitQueueLength` is not a `.network` key.** Both file types have a
 > section literally named `[Link]`, but with disjoint key sets — networkd parses
@@ -282,11 +344,24 @@ of 87.5% at 500 kbit/s is almost always the right answer.
 > and the kernel then refuses outright, so the unit would boot with a CAN link
 > that never came up. Failing in `make validate` beats failing in the field.
 
-The renderer cross-checks this block against `boot_config.dtoverlays`: every
-`can<N>` needs a matching `mcp2515-can<N>` overlay, and each overlay needs its
-own `params.interrupt`. Both defaults would otherwise land on GPIO 25. See
+The renderer cross-checks this block against `boot_config.dtoverlays`. For
+MCP2515 boards: every `can<N>` needs a matching `mcp2515-can<N>` overlay, and
+each overlay needs its own `params.interrupt` — both defaults would otherwise
+land on GPIO 25. See
 [`hardware.md`](hardware.md#-can-waveshare-17912-dual-mcp2515) for why the
 emitted overlay order is reversed.
+
+For MCP251XFD boards the overlay carries no interface name, so the checks are
+structural instead: one `mcp251xfd` overlay per declared interface, exactly one
+`spi<n>-<m>` chip select each (and a real one — SPI0 has no third chip select),
+a distinct `params.interrupt` each, and an `spi1-<N>cs`/`spi2-<N>cs` overlay
+listed **before** any entry that uses that bus. A `speed` above the clamp the
+driver applies for the given `oscillator` is *noted* rather than refused — the
+driver's `min()` has already made it harmless, and upstream's own overlay
+default exceeds it. Writing the MCP2515 spelling
+`spimaxfrequency` is refused outright — `dtoverlay` drops parameter names it does
+not recognise, so it would cost the setting and say nothing. See
+[`hardware.md`](hardware.md#-can-fd-waveshare-17075-dual-mcp2518fd).
 
 ---
 

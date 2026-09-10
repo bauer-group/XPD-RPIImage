@@ -41,7 +41,11 @@ render: ## resolve env vars + render generated module files
 	$(PY) scripts/generate.py $(CONFIG) $(if $(ENV_FILE),--env-file $(ENV_FILE),)
 
 .PHONY: test
-test: test-selfupdate test-parity test-idempotence test-guards test-update ## run all tests (needs docker)
+test: test-config-guards test-selfupdate test-parity test-idempotence test-guards test-update ## run all tests (needs docker)
+
+.PHONY: test-config-guards
+test-config-guards: ## assert _semantic_validate() refuses broken variants (no docker)
+	bash tests/test-config-guards.sh
 
 .PHONY: test-selfupdate
 test-selfupdate: ## exercise `bgrpiimage-setup update --self`

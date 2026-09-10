@@ -163,11 +163,28 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: 🚫 Config guards refuse broken variants
+        # `Validate all variants` only ever proves the happy path. These are the
+        # negative assertions: a chip select that does not exist, two CAN
+        # channels on one interrupt, an SPI clock the driver would clamp away.
+        # A refactor that drops one of those conditions breaks no other test in
+        # the suite - it just stops declining.
+        run: bash tests/test-config-guards.sh
+
       - name: 🚬 Render smoke test (canbus-plattform)
         env:
           ADMIN_PASSWORD: ci-placeholder-pw
           WIFI_PSK: ci-placeholder-psk
         run: python scripts/generate.py config/variants/canbus-plattform.json
+
+      - name: 🚬 Render smoke test (canbusfd-plattform)
+        # The FD variant exercises code paths the MCP2515 one cannot reach:
+        # the `id` merge key, bare-boolean dtoverlay params, and the CAN FD
+        # keys in 40-can<N>.network.
+        env:
+          ADMIN_PASSWORD: ci-placeholder-pw
+          WIFI_PSK: ci-placeholder-psk
+        run: python scripts/generate.py config/variants/canbusfd-plattform.json
 
       - name: 🎯 Compute build matrix
         id: matrix
