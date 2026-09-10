@@ -716,6 +716,110 @@ jobs:
           if-no-files-found: error
 
   # =========================================================================
+  # 📎  Attach the config bundle to the release AS SOON AS IT IS PACKED.
+  #
+  #     needs: [bundle] and nothing else. The `bundle` job already avoided
+  #     `needs: build` so a config-only release would not wait ~26 minutes on
+  #     two image builds - but the only job that ATTACHED anything was
+  #     `release`, which needs [build, bundle], so the wait came back at the
+  #     last step and took the bundle with it.
+  #
+  #     Two things went wrong because of that, both observed:
+  #
+  #       * v0.13.4 was published at 19:29:59Z and its canbus-plattform
+  #         bundle was attached at 19:58:50Z. For 29 minutes /releases/latest
+  #         answered v0.13.4 while the bundle URL 404'd, and every device that
+  #         ran `check` in that window was told to apply an update that could
+  #         not be downloaded.
+  #       * v0.11.1 has no confbundle assets at all, permanently, because the
+  #         release job never ran. A device pinned to it 404s forever.
+  #
+  #     Attaching here cuts the first to ~2 minutes and makes the second
+  #     impossible: an image build cannot withhold a 30 KB tarball it has
+  #     nothing to do with.
+  #
+  #     Each asset is uploaded exactly once - see the note in `release` about
+  #     why re-uploading is not harmless.
+  # =========================================================================
+  attach-bundle:
+    name: 📎 Attach bundle
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      # Checkout first: actions/checkout cleans the workspace by default,
+      # which would delete release-assets/ if it ran after the download.
+      - name: 📥 Checkout
+        uses: actions/checkout@v7
+
+      - name: 📥 Download bundle artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: bgrpiimage-bundle-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: 🧰 Stage the on-device helper
+        # Published on its own, next to the images, because it is the one
+        # device-facing file a flashed unit can replace by itself
+        # (`bgrpiimage-setup update --self`). Three of the last five releases
+        # changed only this file, and reaching a CM4 to reflash it costs a
+        # jumper, a USB-C cable and a trip to the cabinet.
+        # It is variant-independent, so one copy serves every image - and it
+        # belongs here rather than with the images for the same reason the
+        # bundle does: a device needs it whether or not an image was built.
+        run: |
+          set -euo pipefail
+          base=src/modules/bgrpiimage-base/filesystem/root
+          install -m 0755 "$base/usr/local/sbin/bgrpiimage-setup"  release-assets/bgrpiimage-setup
+          install -m 0755 "$base/usr/local/sbin/bgrpiimage-update" release-assets/bgrpiimage-update
+          # The trust keys too. They are public by definition, and publishing
+          # them beside the bundle means a device from before signing can be
+          # bootstrapped from the same release URL as everything else, instead
+          # of needing a raw.githubusercontent path nobody can verify at a
+          # glance.
+          install -m 0644 "$base"/usr/share/bgrpiimage/trusted-keys.d/*.pub release-assets/
+          ( cd release-assets \
+            && sha256sum bgrpiimage-setup  > bgrpiimage-setup.sha256 \
+            && sha256sum bgrpiimage-update > bgrpiimage-update.sha256 )
+          sha256sum release-assets/bgrpiimage-setup release-assets/bgrpiimage-update
+
+      - name: 📎 Attach the bundle to the GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            release-assets/*.confbundle.tar.gz
+            release-assets/*.confbundle.tar.gz.sha256
+            release-assets/*.bundle.manifest.json
+            release-assets/*.bundle.manifest.json.sig
+            release-assets/*.pub
+            release-assets/bgrpiimage-setup
+            release-assets/bgrpiimage-setup.sha256
+            release-assets/bgrpiimage-update
+            release-assets/bgrpiimage-update.sha256
+          fail_on_unmatched_files: true
+          # No `body` here, and append_body so the action does not treat an
+          # absent body as an empty one. semantic-release wrote the changelog
+          # into this release before this job existed; the note in `release`
+          # about append_body applies here for the same reason. This job adds
+          # assets and says nothing.
+          append_body: true
+
+      - name: 📋 Summary
+        run: |
+          {
+            echo "### 📎 Config bundle attached to \`${GITHUB_REF_NAME}\`"
+            echo
+            echo "Devices can update now - without waiting for the image build."
+            echo '```'
+            ls -1 release-assets/*.confbundle.tar.gz | xargs -n1 basename
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # =========================================================================
   # 🚀  Tag push -> create GitHub release with all built image artifacts.
   # =========================================================================
   release:
@@ -738,28 +842,31 @@ jobs:
           path: release-assets
           merge-multiple: true
 
-      - name: 🧰 Stage the on-device helper
-        # Published on its own, next to the images, because it is the one
-        # device-facing file a flashed unit can replace by itself
-        # (`bgrpiimage-setup update --self`). Three of the last five
-        # releases changed only this file, and reaching a CM4 to reflash it
-        # costs a jumper, a USB-C cable and a trip to the cabinet.
-        # It is variant-independent, so one copy serves every image.
+      - name: 🧹 Drop what attach-bundle already published
+        # The bundle, the helper and the trust keys reach the release minutes
+        # after the tag, from the attach-bundle job above. They are downloaded
+        # here too, because download-artifact merges every artifact in the run
+        # - so they have to be removed before the upload.
+        #
+        # Not merely to avoid wasted work: action-gh-release replaces an
+        # existing asset by DELETING it and uploading again, so re-attaching a
+        # file that is already correct opens a fresh window in which a device
+        # fetching that exact URL gets a 404. That is the bug this whole job
+        # split exists to close, and doing it here would reopen it ~26 minutes
+        # into the run.
         run: |
           set -euo pipefail
-          base=src/modules/bgrpiimage-base/filesystem/root
-          install -m 0755 "$base/usr/local/sbin/bgrpiimage-setup"  release-assets/bgrpiimage-setup
-          install -m 0755 "$base/usr/local/sbin/bgrpiimage-update" release-assets/bgrpiimage-update
-          # The trust keys too. They are public by definition, and publishing
-          # them beside the bundle means a device from before signing can be
-          # bootstrapped from the same release URL as everything else, instead
-          # of needing a raw.githubusercontent path nobody can verify at a
-          # glance.
-          install -m 0644 "$base"/usr/share/bgrpiimage/trusted-keys.d/*.pub release-assets/
-          ( cd release-assets \
-            && sha256sum bgrpiimage-setup  > bgrpiimage-setup.sha256 \
-            && sha256sum bgrpiimage-update > bgrpiimage-update.sha256 )
-          sha256sum release-assets/bgrpiimage-setup release-assets/bgrpiimage-update
+          rm -f release-assets/*.confbundle.tar.gz \
+                release-assets/*.confbundle.tar.gz.sha256 \
+                release-assets/*.bundle.manifest.json \
+                release-assets/*.bundle.manifest.json.sig \
+                release-assets/*.pub \
+                release-assets/bgrpiimage-setup \
+                release-assets/bgrpiimage-setup.sha256 \
+                release-assets/bgrpiimage-update \
+                release-assets/bgrpiimage-update.sha256
+          echo "remaining image assets:"
+          ls -1 release-assets/
 
       # The GitHub release itself is created by release.yml (semantic-release)
       # when the version is bumped on main. Here we only *append* the image
@@ -773,11 +880,6 @@ jobs:
             release-assets/*.img.xz
             release-assets/*.sha256
             release-assets/*.manifest.json
-            release-assets/*.confbundle.tar.gz
-            release-assets/*.bundle.manifest.json.sig
-            release-assets/*.pub
-            release-assets/bgrpiimage-setup
-            release-assets/bgrpiimage-update
           fail_on_unmatched_files: true
           append_body: true
           body: |
