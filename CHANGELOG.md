@@ -4,6 +4,12 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.9.0](https://github.com/bauer-group/XPD-RPIImage/compare/v0.8.2...v0.9.0) (2026-09-10)
+
+### 🚀 Features
+
+* **apply:** enforced the update denylist in the writer itself ([c83a09c](https://github.com/bauer-group/XPD-RPIImage/commit/c83a09cdc0f690192fefbe8ee4fd0dc7df53cbe1))
+
 ## [0.8.2](https://github.com/bauer-group/XPD-RPIImage/compare/v0.8.1...v0.8.2) (2026-09-10)
 
 ### 🐛 Bug Fixes
