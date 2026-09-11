@@ -134,12 +134,15 @@ cannot:
    disk.
 3. **Writes `/etc/systemd/network/05-bgrpiimage-wlan0.network` with
    `RequiredForOnline=no`.** Without that line, an AP that is out of range puts
-   a ~2 minute `wait-online` stall back into every boot — and, if the image
-   uses the (non-default) Docker runtime, Docker plus the Portainer
-   first-boot install queue behind `network-online.target` too. Under the
-   default Podman runtime there is no such dependency (`podman.socket` and
-   Portainer's Quadlet unit don't order on `network-online.target`), but the
-   boot stall itself is reason enough on its own.
+   a ~2 minute `wait-online` stall back into every boot. Under the
+   non-default Docker runtime, Docker plus the Portainer first-boot install
+   queue behind `network-online.target` too. Under the default Podman
+   runtime the same dependency exists on Portainer's `portainer.service` —
+   Quadlet injects `After=`/`Wants=network-online.target` into every
+   root-context unit it generates, and this project ships nothing that turns
+   that off — so the stall reaches Portainer under Podman just as it does
+   under Docker. Either way, the boot stall itself is reason enough on its
+   own.
 
 Bluetooth is unaffected by all of this — it is enabled by the image itself.
 
@@ -454,6 +457,40 @@ sudo bgrpiimage-update apply      # do it
 sudo bgrpiimage-update status     # image version, config version, pending reboot
 sudo bgrpiimage-update rollback   # restore the files the last apply replaced
 ```
+
+### Podman / Portainer smoke checks
+
+Three of the Podman-default failure modes are silent — no error, no log
+line, nothing but the wrong behaviour showing up on the next boot or the
+next auto-update. These five commands are the only on-device verification
+available for them:
+
+```bash
+podman inspect portainer --format '{{index .Config.Labels "io.containers.autoupdate"}}'   # registry
+podman inspect portainer --format '{{index .Config.Labels "PODMAN_SYSTEMD_UNIT"}}'        # portainer.service
+podman network inspect podman --format '{{.IPv6Enabled}}'                                 # true
+sudo podman auto-update --dry-run                                                          # what would change, no action
+systemctl list-timers podman-auto-update.timer
+```
+
+- **`io.containers.autoupdate` is not `registry`** — the `AutoUpdate=
+  registry` key did not land in the container's `[Container]` section;
+  `podman-auto-update.timer` will never touch this container even after it
+  fires.
+- **`PODMAN_SYSTEMD_UNIT` is not `portainer.service`** — Quadlet did not
+  generate the unit it should have, so `systemctl status portainer.service`
+  is managing nothing real.
+- **`IPv6Enabled` is not `true`** — netavark silently skipped
+  `/etc/containers/networks/podman.json` (wrong filename, or a malformed
+  `id`) and fell back to its own stock IPv4-only default network.
+- **`podman auto-update --dry-run` errors or lists nothing for Portainer** —
+  the label or the image reference is wrong; check the first two commands
+  above before assuming the timer itself is broken.
+- **`systemctl list-timers podman-auto-update.timer` shows no next-run
+  time, or one inside the `unattended_upgrades`/`auto_reboot` maintenance
+  windows** — the `[Timer]` override in
+  `podman-auto-update.timer.d/override.conf` did not apply, and the stock
+  daily schedule (or no schedule at all) is still active.
 
 ### What it will refuse to do
 

@@ -183,14 +183,19 @@ config.
 Every generated `.network` also gets a `[Link] RequiredForOnline=`: `degraded`
 (systemd's own default) for wired interfaces, and `no` for wireless **and for
 CAN**. There is no config key for it. A link that cannot come up must never
-gate `network-online.target`. Under Podman (the default) there is no
-`docker.service`-shaped dependency to worry about — `podman.socket` is
-socket-activated and Portainer's Quadlet unit orders itself `After=
-podman.socket`, not `network-online.target`. Under the non-default Docker
-runtime, `docker.service` does wait on that target and the Portainer
-first-boot install waits on Docker in turn, so both queue behind it. Either
-way, a CAN interface with no bus attached, or a wireless link that cannot
-associate, is a normal state, not a fault — so it must not hold up boot.
+gate `network-online.target`. Under Podman (the default), Quadlet itself
+injects `After=`/`Wants=network-online.target` into every root-context unit
+it generates — including Portainer's `portainer.service` — unless a
+`[Quadlet]` section sets `DefaultDependencies=false`, which this project does
+not emit (podman-systemd.unit(5)). So that dependency exists under Podman
+too, even though nothing in this repo writes it, and the `RequiredForOnline=
+no` safeguard matters exactly as much as it did under Docker — **do not
+remove it on the assumption that Podman is exempt.** Under the non-default
+Docker runtime, `docker.service` also waits on that target and the Portainer
+first-boot install waits on Docker in turn, so both queue behind it as well.
+Either way, a CAN interface with no bus attached, or a wireless link that
+cannot associate, is a normal state, not a fault — so it must not hold up
+boot.
 
 ---
 
@@ -469,7 +474,11 @@ Schema):
 ## 🐳 `docker`
 
 Supported, **non-default** container runtime — set `docker.enabled: true`
-(and leave `podman.enabled: false`) to use it instead of Podman.
+(and leave `podman.enabled: false`) to use it instead of Podman. Also set
+`portainer.auto_update: false`: `base.json` ships it `true`, and the
+cross-field guard refuses that combination outright — `AutoUpdate=registry`
+is a Podman/Quadlet label and does nothing under Docker, so a config that
+switches to Docker must drop it too, or validation aborts.
 
 ```json
 {
@@ -542,7 +551,11 @@ sudo podman auto-update                       # apply now, all labeled container
   last `keep` archives. This exists because Portainer migrates its database
   one-way on startup — a `portainer.db` written by a newer version won't
   open on an older one, so Podman's own update mechanism can't undo a bad
-  Portainer update by itself.
+  Portainer update by itself. The export runs against the **live** volume —
+  Portainer is not stopped first — so an archive taken while `portainer.db`
+  (SQLite) is mid-write can be torn; verify an archive before relying on it
+  for a restore (`gzip -t portainer-*.tar.gz`, then extract and open the
+  database) rather than assuming the newest one is good.
 
 Under Docker, update / reconfigure workflow is unchanged:
 
