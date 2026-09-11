@@ -21,7 +21,7 @@ done
 [ -n "$PY" ] || { echo "no working python3/python on PATH" >&2; exit 1; }
 
 "$PY" - <<'PYEOF'
-import importlib.util, json, re, sys
+import importlib.util, json, re, shutil, subprocess, sys
 from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -128,6 +128,24 @@ report("nftables" in sc,
        "installs nftables explicitly (netavark only Recommends it)")
 report("podman-auto-update.service" not in sc.replace("podman-auto-update.timer", ""),
        "never enables podman-auto-update.service")
+
+# The assertions above only prove ACTIVE_MODULES, _module_enabled() and
+# BUNDLE_MODULES agree - none of them touch the `steps` dispatch table
+# inside main(), which is a local variable, not an attribute of `gen`.
+# A module present in ACTIVE_MODULES but missing from `steps` builds with
+# an empty payload directory, silently. The only way to catch that is to
+# run the real generator end-to-end and check it repopulates the payload -
+# so wipe it first, or leftovers from the direct render_podman() call above
+# would pass even with `steps` broken.
+shutil.rmtree(GEN, ignore_errors=True)
+_rc = subprocess.run([sys.executable, "scripts/generate.py",
+                      "config/variants/base.json"],
+                     capture_output=True, text=True)
+report(_rc.returncode == 0, "full generator run succeeds",
+       _rc.stderr[-400:] if _rc.returncode else "")
+report(GEN.is_dir() and any(GEN.iterdir()),
+       "steps table actually dispatches render_podman "
+       "(payload repopulated by a real generator run)")
 
 print()
 print(f"{passed} passed, {failed} failed")
