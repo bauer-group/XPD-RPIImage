@@ -21,7 +21,7 @@ done
 [ -n "$PY" ] || { echo "no working python3/python on PATH" >&2; exit 1; }
 
 "$PY" - <<'PYEOF'
-import importlib.util, json, sys
+import importlib.util, json, re, sys
 from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -79,8 +79,9 @@ else:
     report(True, "podman-network.json parses")
 report(net.get("name") == "podman",
        "name is 'podman' (must match the filename or netavark skips it)")
-report(isinstance(net.get("id"), str) and len(net.get("id", "")) == 64,
-       "id is 64 hex chars (a short id is skipped with only a log line)")
+_id = net.get("id", "")
+report(isinstance(net.get("id"), str) and bool(re.fullmatch(r"[0-9a-f]{64}", _id)),
+       "id is exactly 64 lowercase hex chars (netavark silently skips the file otherwise)")
 report(net.get("ipv6_enabled") is True, "ipv6_enabled is true")
 report(any(":" in s.get("subnet", "") for s in net.get("subnets", [])),
        "carries an IPv6 subnet")
@@ -89,11 +90,14 @@ report(any("." in s.get("subnet", "") for s in net.get("subnets", [])),
 
 print()
 print("=== sysctl and journald ===")
-report("vm.max_map_count=4194304" in body("98-podman.conf").replace(" ", ""),
+sc = body("98-podman.conf")
+report("vm.max_map_count=4194304" in sc.splitlines(),
        "vm.max_map_count survived the move off the docker block")
 jd = body("99-bgrpiimage-containers.conf")
 report("[Journal]" in jd and "SystemMaxUse=200M" in jd,
        "journald cap replaces docker's json-file cap")
+report("SystemMaxFileSize=20M" in jd,
+       "journald file-size cap also flowed through from config")
 
 print()
 print(f"{passed} passed, {failed} failed")
