@@ -148,6 +148,50 @@ report(GEN.is_dir() and any(GEN.iterdir()),
        "(payload repopulated by a real generator run)")
 
 print()
+print("=== portainer quadlet units ===")
+gen.render_portainer(cfg)
+PGEN = Path("src/modules/bgrpiimage-portainer/filesystem/root/opt/bgrpiimage/bgrpiimage-portainer")
+
+def pbody(name):
+    p = PGEN / name
+    return p.read_text(encoding="utf-8") if p.is_file() else ""
+
+container = pbody("portainer.container")
+image = pbody("portainer.image")
+
+report(bool(container), "emits portainer.container")
+report(bool(image), "emits portainer.image")
+report(not (PGEN / "docker-compose.yml").exists(),
+       "emits no compose file under podman")
+report(not (PGEN / "bgrpiimage-portainer-install.service").exists(),
+       "emits no first-boot oneshot under podman")
+
+report("[Image]" in image and "docker.io/portainer/portainer-ce:lts" in image,
+       ".image unit pulls the fully qualified :lts tag")
+report("AutoUpdate" not in image,
+       "AutoUpdate is absent from [Image] (it aborts generation there)")
+
+report("Image=portainer.image" in container,
+       ".container references the .image unit")
+report("AutoUpdate=registry" in container, "[Container] carries AutoUpdate=registry")
+report("PodmanArgs=--privileged" in container,
+       "privileged via PodmanArgs (no dedicated key exists at 5.4.2)")
+report("Volume=/run/podman/podman.sock:/var/run/docker.sock" in container,
+       "podman socket bound where Portainer looks for the docker socket")
+report(":z" not in container and ":Z" not in container,
+       "no SELinux relabel suffix (Debian ships no policy)")
+for port in ("8000:8000", "9000:9000", "9443:9443"):
+    report(f"PublishPort={port}" in container, f"publishes {port}")
+
+svc = container.split("[Service]", 1)[-1].split("[Install]", 1)[0]
+cont_section = container.split("[Container]", 1)[-1].split("[Service]", 1)[0]
+report("Restart=always" in svc, "Restart=always is in [Service]")
+report("Restart=" not in cont_section,
+       "Restart= is NOT in [Container] (quadlet would ignore it)")
+report("WantedBy=multi-user.target" in container, "[Install] makes it start on boot")
+report("After=podman.socket" in container, "ordered after podman.socket")
+
+print()
 print(f"{passed} passed, {failed} failed")
 sys.exit(0 if failed == 0 else 1)
 PYEOF

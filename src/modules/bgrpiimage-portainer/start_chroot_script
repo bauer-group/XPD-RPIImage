@@ -23,16 +23,25 @@ unpack /filesystem/root / root
 
 GEN=/opt/bgrpiimage/bgrpiimage-portainer
 
-install -D -m 644 "$GEN/docker-compose.yml" /etc/bgrpiimage/portainer/docker-compose.yml
-install -D -m 644 "$GEN/bgrpiimage-portainer-install.service" \
-    /etc/systemd/system/bgrpiimage-portainer-install.service
+# shellcheck disable=SC1091
+source "$GEN/portainer.env" 2>/dev/null || true
+
 if [[ -f "$GEN/portainer.env" ]]; then
     install -D -m 644 "$GEN/portainer.env" /etc/default/portainer
 fi
 
-# shellcheck disable=SC1091
-source "$GEN/portainer.env" 2>/dev/null || true
+if [[ "${BGRPIIMAGE_PORTAINER_RUNTIME:-docker}" == "podman" ]]; then
+    # Quadlet: systemd's generator builds the units at boot and applies
+    # their [Install] section itself. There is deliberately no
+    # `systemctl enable portainer.service` - that unit does not exist yet.
+    install -D -m 644 "$GEN/portainer.image" /etc/containers/systemd/portainer.image
+    install -D -m 644 "$GEN/portainer.container" /etc/containers/systemd/portainer.container
+else
+    install -D -m 644 "$GEN/docker-compose.yml" /etc/bgrpiimage/portainer/docker-compose.yml
+    install -D -m 644 "$GEN/bgrpiimage-portainer-install.service" \
+        /etc/systemd/system/bgrpiimage-portainer-install.service
 
-if [[ "${BGRPIIMAGE_PORTAINER_AUTOSTART:-yes}" == "yes" ]]; then
-    systemctl enable bgrpiimage-portainer-install.service
+    if [[ "${BGRPIIMAGE_PORTAINER_AUTOSTART:-yes}" == "yes" ]]; then
+        systemctl enable bgrpiimage-portainer-install.service
+    fi
 fi
