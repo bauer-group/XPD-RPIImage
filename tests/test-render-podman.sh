@@ -21,7 +21,7 @@ done
 [ -n "$PY" ] || { echo "no working python3/python on PATH" >&2; exit 1; }
 
 "$PY" - <<'PYEOF'
-import importlib.util, json, re, shutil, subprocess, sys
+import importlib.util, json, os, re, shutil, stat, subprocess, sys, tempfile
 from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -222,14 +222,53 @@ print("=== motd runtime line ===")
 gen.render_base(cfg)
 BGEN = Path("src/modules/bgrpiimage-base/filesystem/root/opt/bgrpiimage/bgrpiimage-base")
 motd = (BGEN / "motd-banner.sh").read_text(encoding="utf-8")
-report('rt_unit="podman.socket"' in motd,
-       "probes podman.socket, not a docker service that will never exist")
-report('command -v podman' in motd,
-       "discriminates on podman, not docker (podman-docker ships a docker shim)")
-report('n=$("$rt_name" ps -q' in motd, "counts containers with the active runtime")
-report("systemctl is-active docker" not in motd,
-       "no hardcoded docker probe remains")
-report('rt_name="docker"' in motd, "still falls back to docker when podman is absent")
+
+# Cheap static guard for the discriminator choice itself - a substring check
+# can't tell a correct branch from an inverted one (see below), but it can
+# still catch a regression back to probing `docker` (which podman-docker's
+# shim would make true under either runtime).
+report("command -v podman" in motd and "systemctl is-active docker" not in motd,
+       "discriminates on podman, not a hardcoded docker service probe")
+
+# Behavioral guard: substring checks on rt_name="podman"/"docker" pass even
+# if the if/else branches are swapped, since both literals are still present
+# somewhere in the static text - only running the block proves which branch
+# actually fires. Extract the detection block from the rendered banner and
+# execute it under bash with a PATH containing only a controlled stub, once
+# with `podman` present and once with only `docker` present.
+_block = re.search(r"# Which runtime is installed\?.*?\nfi\n", motd, re.DOTALL)
+_bash = shutil.which("bash")
+if _block is None or _bash is None:
+    report(False, "runtime-detection block is extractable and bash is on PATH",
+           f"block found={_block is not None} bash={_bash!r}")
+else:
+    _block = _block.group(0)
+
+    def _run_with_stub(*names):
+        with tempfile.TemporaryDirectory(prefix="bgrpiimage-motd-") as _tmp:
+            _tmp = Path(_tmp)
+            for name in names:
+                stub = _tmp / name
+                stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                stub.chmod(stub.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+            script = _tmp / "detect.sh"
+            script.write_text(_block + 'echo "$rt_name $rt_unit"\n', encoding="utf-8")
+            proc = subprocess.run(
+                [_bash, str(script)],
+                env={"PATH": str(_tmp)},
+                capture_output=True, text=True,
+            )
+            return proc.returncode, proc.stdout.strip(), proc.stderr
+
+    rc, out, err = _run_with_stub("podman")
+    report(rc == 0 and out == "podman podman.socket",
+           "with podman on PATH, detects podman + podman.socket",
+           f"rc={rc} stdout={out!r} stderr={err!r}")
+
+    rc, out, err = _run_with_stub("docker")
+    report(rc == 0 and out == "docker docker",
+           "with no podman but docker on PATH, falls back to docker",
+           f"rc={rc} stdout={out!r} stderr={err!r}")
 
 print()
 print(f"{passed} passed, {failed} failed")
