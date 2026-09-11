@@ -134,8 +134,12 @@ cannot:
    disk.
 3. **Writes `/etc/systemd/network/05-bgrpiimage-wlan0.network` with
    `RequiredForOnline=no`.** Without that line, an AP that is out of range puts
-   a ~2 minute `wait-online` stall back into every boot, and Docker plus the
-   Portainer first-boot install queue behind `network-online.target`.
+   a ~2 minute `wait-online` stall back into every boot — and, if the image
+   uses the (non-default) Docker runtime, Docker plus the Portainer
+   first-boot install queue behind `network-online.target` too. Under the
+   default Podman runtime there is no such dependency (`podman.socket` and
+   Portainer's Quadlet unit don't order on `network-online.target`), but the
+   boot stall itself is reason enough on its own.
 
 Bluetooth is unaffected by all of this — it is enabled by the image itself.
 
@@ -337,8 +341,10 @@ The image-default drop-in takes over again.
 
 ## 🎛 Reaching Portainer
 
-Images with `portainer.enabled` install it on first boot and bind it to
-`0.0.0.0`, so it is reachable from the network as soon as Docker is up:
+Images with `portainer.enabled` ship it pre-configured and bind it to
+`0.0.0.0`, so it is reachable from the network as soon as the runtime brings
+the unit up — at boot via Quadlet under Podman (the default), or via the
+first-boot oneshot under the non-default Docker runtime:
 
 | URL | Port |
 | --- | --- |
@@ -351,14 +357,19 @@ itself after a timeout if nobody does. If you are greeted by "your Portainer
 instance timed out for security purposes", restart it:
 
 ```bash
-sudo docker restart portainer
+sudo systemctl restart portainer.service    # Podman (default)
+sudo docker restart portainer               # Docker (non-default)
 ```
 
-Check that the first-boot install actually ran:
+Check that Portainer actually started. Under Podman there is no sentinel
+file and no oneshot — the Quadlet unit is generated fresh from
+`/etc/containers/systemd/portainer.{container,image}` on every boot:
 
 ```bash
-systemctl status bgrpiimage-portainer-install.service
-ls -l /var/lib/bgrpiimage/portainer.installed
+systemctl status portainer.service          # Podman (default) — quadlet-generated unit
+sudo podman ps                              # confirm the container is up
+
+systemctl status bgrpiimage-portainer-install.service   # Docker (non-default) only
 ```
 
 ---
@@ -407,7 +418,7 @@ separately because the two are not interchangeable.
 
 - **Does not modify the underlying image.** Changes persist until you
   delete the drop-in file.
-- **Does not configure Docker, Portainer or unattended-upgrades** — those are
+- **Does not configure Podman, Docker, Portainer or unattended-upgrades** — those are
   variant-level concerns, change them in the JSON and rebuild. For CAN it
   covers diagnosis and bitrate only; wiring, INT GPIOs and interface count stay
   build-time settings.
@@ -429,7 +440,8 @@ Be clear about what can and cannot be updated in place:
 | What | How |
 | --- | --- |
 | Debian and Raspberry Pi packages, including security fixes | Automatic, via `unattended-upgrades` inside the configured maintenance window — see [`banner-and-updates.md`](banner-and-updates.md). |
-| Portainer | `docker compose -f /etc/bgrpiimage/portainer/docker-compose.yml pull && ... up -d` |
+| Portainer (Podman, default) | `sudo podman auto-update` (automatic at 05:30 via `podman-auto-update.timer`); manually: `sudo systemctl start podman-auto-update.service` |
+| Portainer (Docker, non-default) | `docker compose -f /etc/bgrpiimage/portainer/docker-compose.yml pull && ... up -d` |
 | `bgrpiimage-setup` itself | `sudo bgrpiimage-setup update --self` — fetches the helper from the latest release, verifies its checksum, and swaps it in. |
 | Everything else bgRPIImage generates — `config.txt` overlays, systemd units, the MOTD, network and CAN configuration | `sudo bgrpiimage-update apply`. Run `plan` first to see what would change. Needs outbound HTTPS to github.com. |
 | Users, passwords, sudo, PAM, sshd | **Reflash.** Deliberately out of scope — see below. |
@@ -545,7 +557,12 @@ is exercised end to end in `tests/test-update.sh`.
 `/etc/hosts`, `/etc/resolv.conf`, stored WiFi PSKs, rfkill state, your own
 `05-bgrpiimage-*` overrides, `/etc/docker/daemon.json`, `cmdline.txt` and
 `fstab`. The list is enforced inside the one function that writes, not left to
-each module to respect.
+each module to respect. The Podman equivalents (`/etc/containers/*`,
+`/etc/sysctl.d/98-podman.conf`,
+`/etc/systemd/journald.conf.d/99-bgrpiimage-containers.conf`) are image-only
+for the same reason, without needing their own deny-glob entry —
+`bgrpiimage-podman` ships no `apply.sh`, so there is no live-update code path
+that could touch them in the first place.
 
 `/etc/bgrpiimage-release` is on that list too: it records the **flashed**
 image and has to keep doing so, because it is the input to the base-image

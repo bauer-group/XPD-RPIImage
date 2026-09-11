@@ -14,7 +14,7 @@ with defaults and examples. Source of truth is always the schema.
 | `extends` | string | optional | Relative path to parent variant JSON. See [`variants.md`](variants.md). |
 | `variant` | object | ✅ | Variant metadata (name, description, version). |
 | `base_image` | object | ✅ | Upstream `.img.xz` URL + SHA-256 + arch. **Must be a Raspberry Pi OS Lite image** — the schema rejects a `raspios_arm64` / `raspios_full_arm64` URL, because the Desktop edition costs ~3 GiB of rootfs and overflows an 8 GB CM4 eMMC. Bump `url` and `sha256` together or the build aborts on the checksum check. |
-| `targets` | array[enum] | ✅ | Hardware targets: `rpi4`, `rpi5`, `cm4`, `cm5`. (Pi Zero 2 W dropped — 512 MB RAM is insufficient for Docker + Portainer.) |
+| `targets` | array[enum] | ✅ | Hardware targets: `rpi4`, `rpi5`, `cm4`, `cm5`. (Pi Zero 2 W dropped — 512 MB RAM is insufficient for Podman + Portainer.) |
 | `hostname` | string | ✅ | DNS-compatible hostname (lowercase, `[a-z0-9-]`). |
 | `locale` | object | — | Timezone, keyboard, locale. |
 | `users` | array | ✅ | One or more accounts. |
@@ -40,8 +40,9 @@ with defaults and examples. Source of truth is always the schema.
 | `bootloader` | object | — | Pi5/CM5 EEPROM (boot order, wake-on-GPIO, power-off-on-halt). |
 | `watchdog` | object | — | Hardware watchdog (`bcm2835-wdt`) with systemd kick. |
 | `can` | object | — | SocketCAN interfaces (when a CAN HAT is present). |
-| `docker` | object | — | Docker CE install + daemon.json. |
-| `portainer` | object | — | Portainer CE systemd service. |
+| `podman` | object | — | Podman runtime, Docker CLI emulation, container networking (default). |
+| `docker` | object | — | Docker CE install + daemon.json (supported, non-default). |
+| `portainer` | object | — | Portainer CE, deployed as Quadlet units under Podman or compose under Docker. |
 | `unattended_upgrades` | object | — | Auto-updates with maintenance + reboot windows. |
 
 > Details, example snippets and caveats for all hardware blocks live in
@@ -182,10 +183,14 @@ config.
 Every generated `.network` also gets a `[Link] RequiredForOnline=`: `degraded`
 (systemd's own default) for wired interfaces, and `no` for wireless **and for
 CAN**. There is no config key for it. A link that cannot come up must never
-gate `network-online.target`, because `docker.service` waits on that target and
-the Portainer first-boot install waits on Docker — and a CAN interface with no
-bus attached, or a wireless link that cannot associate, is a normal state, not
-a fault.
+gate `network-online.target`. Under Podman (the default) there is no
+`docker.service`-shaped dependency to worry about — `podman.socket` is
+socket-activated and Portainer's Quadlet unit orders itself `After=
+podman.socket`, not `network-online.target`. Under the non-default Docker
+runtime, `docker.service` does wait on that target and the Portainer
+first-boot install waits on Docker in turn, so both queue behind it. Either
+way, a CAN interface with no bus attached, or a wireless link that cannot
+associate, is a normal state, not a fault — so it must not hold up boot.
 
 ---
 
@@ -365,11 +370,110 @@ not recognise, so it would cost the setting and say nothing. See
 
 ---
 
-## 🐳 `docker`
+## 🦭 `podman`
+
+Default container runtime — daemonless, rootful system service. Docker CLI
+emulation means `docker ...` keeps working unchanged for anyone used to it;
+under the hood every call goes to Podman.
 
 ```json
 {
   "enabled": true,
+  "docker_emulation": true,
+  "sysctl": { "vm.max_map_count": 4194304 },
+  "network": {
+    "default_subnet": "10.10.0.0/17",
+    "default_subnet_pools": [
+      { "base": "10.10.128.0/17", "size": 24 }
+    ],
+    "ipv6": true,
+    "subnet_v6": "fdff:0::/64",
+    "firewall_driver": "nftables"
+  },
+  "journald": {
+    "system_max_use": "200M",
+    "system_max_file_size": "20M"
+  },
+  "auto_update": {
+    "enabled": true,
+    "schedule": {
+      "start": "05:30",
+      "randomized_delay_minutes": 30,
+      "persistent": true
+    }
+  }
+}
+```
+
+- `enabled` — installs `podman`, `podman-docker`, `containers-common`,
+  `netavark`, `aardvark-dns`, `nftables`, `uidmap`, `catatonit`, and enables
+  `podman.socket` + `podman-restart.service` (the latter brings back
+  operator-created `--restart=always` containers after a reboot; Portainer's
+  own Quadlet unit doesn't need it — it's `WantedBy=multi-user.target` and
+  systemd starts it directly). Mutually exclusive with `docker.enabled` — a
+  variant that sets both fails validation, because the two runtimes both own
+  `/usr/bin/docker` and the container storage.
+- `docker_emulation` — writes `/etc/containers/nodocker`, which is
+  presence-only: it suppresses the "Emulate Docker CLI using podman" notice
+  `podman-docker` otherwise prints on every `docker(1)` call. It does not
+  toggle emulation itself off — the `docker` shim is always installed once
+  Podman is `enabled`.
+- `sysctl` — written to `/etc/sysctl.d/98-podman.conf`. Carries
+  `vm.max_map_count`, which moved here from `docker.sysctl` when Podman
+  became the default — it's a runtime-agnostic setting (any container
+  workload that mmaps heavily needs it), not a Docker-specific one.
+- `network` — feeds two generated files:
+  - `default_subnet` / `default_subnet_pools` → the `[network]` section of
+    `/etc/containers/containers.conf` (the IPv4 half of the address plan).
+  - `ipv6` / `subnet_v6` → `/etc/containers/networks/podman.json`, netavark's
+    definition of the built-in default network. IPv6 can't be declared in
+    `containers.conf` — the network definition file is the only place it's
+    settable.
+  - `firewall_driver` — one of `iptables`, `nftables`, `none`, `firewalld`.
+    Netavark's own compiled-in default is `nftables`, which is why this
+    image installs the `nftables` package explicitly rather than leaving it
+    an implicit `Recommends` — every install in this project runs with
+    `--no-install-recommends`.
+- `journald` — `system_max_use` / `system_max_file_size`, written to
+  `/etc/systemd/journald.conf.d/99-bgrpiimage-containers.conf`. Podman logs
+  containers to journald (Docker's `json-file` driver capped this image's
+  container logs at 10m × 3 instead), so this cap now bounds the SD card's
+  write/wear budget in place of a per-container log file limit.
+- `auto_update` — `enabled` turns on `podman-auto-update.timer` (the
+  service itself is left disabled; it's `WantedBy=default.target` and would
+  otherwise fire on every boot). `schedule.start` /
+  `randomized_delay_minutes` become a `[Timer]` drop-in that clears and
+  replaces the stock `OnCalendar=`, so the daily default doesn't also fire
+  alongside it. `schedule.persistent` catches up a run that was missed while
+  the device was off. Only containers carrying the
+  `io.containers.autoupdate=registry` label are affected — see
+  `portainer.auto_update` below.
+
+**Cross-field guards** (enforced by `scripts/generate.py`, not just the JSON
+Schema):
+
+- `docker.enabled` and `podman.enabled` cannot both be `true`.
+- `portainer.auto_update: true` requires `podman.enabled: true` — the
+  mechanism does nothing under Docker.
+- `portainer.auto_update: true` requires `podman.auto_update.enabled: true`
+  — without the timer, the `AutoUpdate=registry` label is inert.
+- `portainer.auto_update: true` refuses a digest-pinned `portainer.image`
+  (an `@sha256:...` reference can never resolve to a newer tag).
+- `podman.auto_update.schedule` must not overlap the `unattended_upgrades`
+  maintenance window (02:00-04:00 by default) or the `auto_reboot` window
+  (03:00-05:00) — a scripted reboot mid-Portainer-database-migration is
+  unrecoverable.
+
+---
+
+## 🐳 `docker`
+
+Supported, **non-default** container runtime — set `docker.enabled: true`
+(and leave `podman.enabled: false`) to use it instead of Podman.
+
+```json
+{
+  "enabled": false,
   "daemon": { "bip": "10.10.0.1/17", "ipv6": true, ... },
   "sysctl": { "vm.max_map_count": 4194304 },
   "networks": [ ... ]    // optional; docker network create on first boot
@@ -391,24 +495,56 @@ that runs once on first boot and marks itself done via a sentinel file.
   "enabled": true,
   "edition": "ce",                // "ce" | "ee"
   "bind": "0.0.0.0",              // or 127.0.0.1 for loopback-only
-  "image": "portainer/portainer-ce:2.45.0",
+  "image": "docker.io/portainer/portainer-ce:lts",
   "ports": { "edge": 8000, "http": 9000, "https": 9443 },
-  "auto_start": true
+  "auto_start": true,
+  "auto_update": true,
+  "backup_before_update": { "enabled": true, "keep": 5 }
 }
 ```
 
-Installed **Docker-native** with `restart: unless-stopped` — the Docker
-daemon brings the container back up on every boot. We only ship:
+Deployment shape depends on the runtime:
 
-- `/etc/bgrpiimage/portainer/docker-compose.yml` (declarative config)
-- `bgrpiimage-portainer-install.service` (oneshot, first-boot only)
+- **Podman (default):** two Quadlet files at `/etc/containers/systemd/` —
+  `portainer.image` (pulls `image`) and `portainer.container` (the unit
+  itself; `Requires=`/`After=podman.socket`). systemd's Quadlet generator
+  turns these into a real `portainer.service` at boot and applies its
+  `[Install]` section itself — there is **no** `systemctl enable` step, no
+  compose file, no first-boot oneshot, and no sentinel file.
+- **Docker (non-default):** installed Docker-native with
+  `restart: unless-stopped`. We ship
+  `/etc/bgrpiimage/portainer/docker-compose.yml` (declarative config) and
+  `bgrpiimage-portainer-install.service` (oneshot, first-boot only), which
+  runs `docker compose up -d` once, drops a sentinel in
+  `/var/lib/bgrpiimage/portainer.installed`, and stays out of the way. After
+  that, Docker itself handles the lifecycle.
 
-The oneshot runs `docker compose up -d` once, drops a sentinel in
-`/var/lib/bgrpiimage/portainer.installed` and then stays out of the way.
-After first boot, Docker itself handles the lifecycle — `systemctl status`
-is irrelevant for Portainer.
+Operator workflow under Podman:
 
-Update / reconfigure workflow:
+```bash
+systemctl status portainer.service           # quadlet-generated unit
+sudo systemctl restart portainer.service
+sudo podman auto-update --dry-run             # what would change, no action
+sudo podman auto-update                       # apply now, all labeled containers
+```
+
+- `auto_update` (boolean) — labels the Portainer container
+  `io.containers.autoupdate=registry`, so `podman-auto-update.timer` picks
+  it up once fired. Requires `podman.enabled` and
+  `podman.auto_update.enabled`, and refuses a digest-pinned `image` — see
+  the guards under the `podman` section above. Meaningless under Docker;
+  update it there via the compose pull/up cycle instead.
+- `backup_before_update.enabled` / `.keep` — when `auto_update` is on,
+  `/usr/local/sbin/bgrpiimage-portainer-backup` runs as `ExecStartPre` of
+  `podman-auto-update.service` on **every** timer fire (not only when an
+  update is actually available), exporting the `portainer_data` volume to
+  a timestamped archive under `/var/backups/bgrpiimage/` and pruning to the
+  last `keep` archives. This exists because Portainer migrates its database
+  one-way on startup — a `portainer.db` written by a newer version won't
+  open on an older one, so Podman's own update mechanism can't undo a bad
+  Portainer update by itself.
+
+Under Docker, update / reconfigure workflow is unchanged:
 
 ```bash
 sudo vim /etc/bgrpiimage/portainer/docker-compose.yml    # edit

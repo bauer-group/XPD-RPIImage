@@ -63,8 +63,9 @@ Output breakdown:
 | `bgrpiimage-boot` | `config-bgrpiimage.txt` (dtparam + dtoverlay snippet) |
 | `bgrpiimage-hardware` | `hardware.env`, `packages.list`, `eeprom.env`, EEPROM apply script + oneshot unit — only when RTC, watchdog, bootloader or a non-`auto` audio sink is configured |
 | `bgrpiimage-can` | `systemd-networkd/40-can0.network`, `40-can1.network`, `70-can0.link`, `70-can1.link`, `packages.list` |
-| `bgrpiimage-docker` | `daemon.json`, `98-docker.conf` (sysctl), `docker-support.service`, `create-networks.sh` |
-| `bgrpiimage-portainer` | `docker-compose.yml`, `bgrpiimage-portainer-install.service` (oneshot), `portainer.env` |
+| `bgrpiimage-podman` | `containers.conf`, `podman-network.json`, `98-podman.conf` (sysctl), `99-bgrpiimage-containers.conf` (journald), `nodocker`, `podman.env`, auto-update timer/service drop-ins, `bgrpiimage-portainer-backup` |
+| `bgrpiimage-docker` | `daemon.json`, `98-docker.conf` (sysctl), `docker-support.service`, `create-networks.sh` — non-default runtime |
+| `bgrpiimage-portainer` | Podman (default): `portainer.container` + `portainer.image` Quadlet units. Docker (non-default): `docker-compose.yml` + `bgrpiimage-portainer-install.service` (oneshot). Either way: `portainer.env` |
 | `bgrpiimage-unattended-upgrades` | `50unattended-upgrades`, `20auto-upgrades`, timer overrides, reboot-window service+timer+script |
 
 Modules whose feature is disabled in the JSON are omitted from the generated

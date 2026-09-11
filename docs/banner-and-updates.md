@@ -31,7 +31,7 @@ Three distinct surfaces, three mechanisms:
   can0    UP     500 kbit/s
   can1    UP     500 kbit/s  BUS-OFF          ← only if unhealthy
 ====================================================================
-  ssh: active   docker: active (7 running)   bt: active   unattended-upgrades: active
+  ssh: active   podman: active (7 running)   bt: active   unattended-upgrades: active
   reboot pending (triggered by: linux-image-6.6.x libc6)    ← only if pending
 ====================================================================
 ```
@@ -59,7 +59,11 @@ Source: [`scripts/generate.py`](../scripts/generate.py) → `_MOTD_SCRIPT`.
   Anything dynamic would require a sshd `ForceCommand` trick, which we
   deliberately avoid.
 - **MOTD**: fires after auth, so it can run arbitrary commands (`ip`,
-  `systemctl`, `docker ps`). Always fresh, always accurate.
+  `systemctl`, `podman ps`). Always fresh, always accurate. The runtime label
+  itself is probed, not assumed: `podman.socket` if a `podman` binary is
+  found (the default), else `docker` — `podman-docker` ships `/usr/bin/docker`
+  as a shim, so probing for `docker` alone would report "active" under both
+  runtimes.
 
 ---
 

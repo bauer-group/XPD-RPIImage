@@ -12,10 +12,10 @@ Supported hardware:
 | Raspberry Pi 5 | ✅ |
 | Compute Module 4 (CM4) | ✅ |
 | Compute Module 5 (CM5) | ✅ |
-| Raspberry Pi Zero 2 W | ❌ not supported — 512 MB RAM is insufficient for Docker CE + Portainer + base services |
+| Raspberry Pi Zero 2 W | ❌ not supported — 512 MB RAM is insufficient for Podman + Portainer + base services |
 
 Base OS: Raspberry Pi OS **Lite** arm64 (trixie, 2026-06-18) — headless, no
-desktop. These are appliance images: SSH, Docker CE and Portainer, no GUI.
+desktop. These are appliance images: SSH, Podman and Portainer, no GUI.
 The Desktop edition is not interchangeable here — it adds ~3 GiB of rootfs and
 pushes the image past what a nominally 8 GB CM4 eMMC can hold (see
 [docs/flash.md](docs/flash.md#storage-requirements)).
@@ -35,9 +35,14 @@ pushes the image past what a nominally 8 GB CM4 eMMC can hold (see
   artifact + release asset output, full metadata summary per run.
 - **Baked-in**:
   - SSH enabled with hardened `sshd_config.d` (no root login, no challenge-response)
-  - Docker CE + compose plugin, IPv6 NAT, sensible daemon.json
-  - Portainer CE via docker-compose (`restart: unless-stopped`), installed
-    by a first-boot oneshot — Docker daemon handles lifecycle from then on
+  - Podman (daemonless, default runtime) with Docker CLI emulation and
+    IPv6-capable container networking; Docker CE remains a supported,
+    non-default alternative
+  - Portainer CE as two Quadlet units under `/etc/containers/systemd/` —
+    systemd generates and starts `portainer.service` at boot, no compose
+    file, no first-boot oneshot
+  - `podman-auto-update.timer` keeps Portainer current on a schedule, with a
+    volume backup taken before every update
   - Unattended upgrades with **configurable maintenance + reboot windows**,
     event-driven via `apt-daily-upgrade.service` post-hook
   - Dynamic MOTD banner showing variant, version, kernel, all interfaces
@@ -137,7 +142,7 @@ gh workflow run build.yml --ref vX.Y.Z
 
 | Variant | Description | Hostname | Extras |
 | --- | --- | --- | --- |
-| [`base`](config/variants/base.json) | Generic Raspberry Pi image, Docker-ready, no application-specific hardware. | `bg-rpi` | — |
+| [`base`](config/variants/base.json) | Generic Raspberry Pi image, Podman-ready, no application-specific hardware. | `bg-rpi` | — |
 | [`canbus-plattform`](config/variants/canbus-plattform.json) | Base + Waveshare 17912 dual isolated CAN HAT (MCP2515 on SPI). | `bg-canbus` | `can0` + `can1` at 500 kbit/s with 100 ms bus-off auto-recovery, `can-utils`, hardware watchdog, dialout/gpio/i2c/spi groups |
 | [`canbusfd-plattform`](config/variants/canbusfd-plattform.json) | Base + Waveshare 17075 2-CH isolated **CAN FD** HAT (2× MCP2518FD), factory "mode A" jumpering. | `bg-canbusfd` | `can0` + `can1` at 500 kbit/s arbitration / **2 Mbit/s data phase**, 100 ms bus-off auto-recovery, `can-utils`, hardware watchdog, dialout/gpio/i2c/spi groups |
 
@@ -295,8 +300,8 @@ subcommand reference.
 ├── src/                                   # CustomPiOS distro
 │   ├── config                             # distro-level config
 │   ├── modules/                           # bgrpiimage-{base,users,network,boot,
-│   │                                      #              hardware,can,docker,portainer,
-│   │                                      #              unattended-upgrades}
+│   │                                      #              hardware,can,podman,docker,
+│   │                                      #              portainer,unattended-upgrades}
 │   └── variants/                          # per-variant shell config (generated)
 ├── tools/                                 # portable dev/build runtime
 │   ├── Dockerfile

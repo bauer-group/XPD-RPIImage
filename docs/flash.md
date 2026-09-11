@@ -23,7 +23,7 @@ eMMC that is nominally "8 GB" holds noticeably less.
 
 Rules of thumb for the current images:
 
-- **SD card / USB SSD** — 8 GB nominal is enough, 16 GB recommended so Docker
+- **SD card / USB SSD** — 8 GB nominal is enough, 16 GB recommended so Podman
   images and volumes have room after the first-boot rootfs expansion.
 - **CM4 / CM5 eMMC** — a nominal 8 GB module exposes roughly **7.6–7.82 GB**
   (7.09–7.28 GiB) of user area; the exact figure varies by eMMC vendor by up to

@@ -354,22 +354,26 @@ iteration (`manager_loop()` calls `watchdog_ping()` then sleeps at most
 15999 ms), so PID 1 is the *only* thing kicking and every stall lands directly
 on the budget. systemd issue
 [#7932](https://github.com/systemd/systemd/issues/7932) measured **4.3 s** of
-PID 1 blocked in a single `SIGCHLD` dispatch under a fork storm — and a Docker
-host with container healthchecks produces those routinely. At `runtime_sec: 10`
-that is 4.3 s of a 5 s budget.
+PID 1 blocked in a single `SIGCHLD` dispatch under a fork storm — and Podman
+is daemonless: there is no single supervising process, but a `conmon`
+process per running container plus whatever `podman-auto-update.timer` spawns
+at its 05:30 fire, and every one of those exits (or gets reaped on a
+container restart) through the same `SIGCHLD` path PID 1 has to service. At
+`runtime_sec: 10` that is 4.3 s of a 5 s budget.
 
 > A spurious watchdog reset is not a reboot. It is a power-cycle with no sync,
 > no unmount and no container stop — on an SD-card-rooted device, the fastest
 > route to the corrupted filesystem the watchdog was installed to prevent.
-> Moving Docker's data root off the SD card removes the biggest stall source
-> from under PID 1.
+> Moving Podman's container storage (`/var/lib/containers`) off the SD card
+> removes the biggest stall source from under PID 1.
 
 ### `reboot_sec` — not what the name suggests
 
 It is **not** "time allowed for an orderly shutdown". It arms the watchdog for
 the **second** phase of a reboot only — after PID 1 has been replaced by
-`systemd-shutdown`. Stopping Docker and its containers happens in phase *one*,
-still governed by `runtime_sec` and each unit's own `TimeoutStopSec`.
+`systemd-shutdown`. Stopping the container runtime and its containers happens
+in phase *one*, still governed by `runtime_sec` and each unit's own
+`TimeoutStopSec`.
 
 Phase two, before it issues its **first** `watchdog_ping()`:
 
