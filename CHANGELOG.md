@@ -4,6 +4,23 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.14.0](https://github.com/bauer-group/XPD-RPIImage/compare/v0.13.6...v0.14.0) (2026-09-11)
+
+### 🚀 Features
+
+* **config:** added the podman runtime block to the schema ([d8c11bf](https://github.com/bauer-group/XPD-RPIImage/commit/d8c11bffa2285e6b32ca3da043ea0ce74386e99f))
+* **config:** refused configs that break the podman runtime ([86dcee7](https://github.com/bauer-group/XPD-RPIImage/commit/86dcee751a4daf64c4b8d6b170ab4a88ef6bd4db))
+* **podman:** added the bgrpiimage-podman module ([469905b](https://github.com/bauer-group/XPD-RPIImage/commit/469905b978a894ddc71772536f188c00615c13fc))
+* **podman:** enabled auto-update for the portainer container ([3d45ad3](https://github.com/bauer-group/XPD-RPIImage/commit/3d45ad3704157572802e906010e7b70d79cc4ebf))
+* **podman:** rendered the podman runtime payload ([399b4d7](https://github.com/bauer-group/XPD-RPIImage/commit/399b4d7cc5a6760808f6f1f7aab6ebfae9e06244))
+* **portainer:** deployed portainer via quadlet under podman ([8316a42](https://github.com/bauer-group/XPD-RPIImage/commit/8316a4290aba57ac03bd1bdc531bafc61ee894cd))
+
+### 🐛 Bug Fixes
+
+* **banner:** reported the active runtime in the motd ([452e870](https://github.com/bauer-group/XPD-RPIImage/commit/452e87076adc103d0dd81a7e08398b74cf06caf5))
+* **podman:** closed five silent config/wiring gaps found in review ([a3ed845](https://github.com/bauer-group/XPD-RPIImage/commit/a3ed845aa9b1c1ab445cccf2e0a1552ff8a07fc6))
+* **podman:** secured the portainer backup archive permissions ([3d5da9e](https://github.com/bauer-group/XPD-RPIImage/commit/3d5da9e56013f3596fcf342ce7d007b903957eee))
+
 ## [0.13.6](https://github.com/bauer-group/XPD-RPIImage/compare/v0.13.5...v0.13.6) (2026-09-10)
 
 ### 🐛 Bug Fixes
