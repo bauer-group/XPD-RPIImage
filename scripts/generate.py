@@ -2101,6 +2101,27 @@ def _validate_mcp251xfd(cfg: dict[str, Any], overlays: list[dict[str, Any]]) -> 
             )
 
 
+def _hhmm_to_minutes(value: str) -> int:
+    """"HH:MM" -> minutes since midnight. Raises ValueError on junk."""
+    hh, _, mm = value.partition(":")
+    return int(hh) * 60 + int(mm)
+
+
+def _windows_overlap(a_start: int, a_len: int, b_start: int, b_len: int) -> bool:
+    """Do two [start, start+len) minute windows intersect on a 24h clock?
+
+    Both windows are unrolled onto a 48h axis so a window that wraps past
+    midnight (reboot 23:00-01:00) still compares correctly against one that
+    does not.
+    """
+    for shift in (0, 1440):
+        if a_start + shift < b_start + b_len and b_start < a_start + shift + a_len:
+            return True
+        if b_start + shift < a_start + a_len and a_start < b_start + shift + b_len:
+            return True
+    return False
+
+
 def _semantic_validate(cfg: dict[str, Any]) -> None:
     """Cross-field validation beyond what JSON Schema expresses.
 
@@ -2178,6 +2199,75 @@ def _semantic_validate(cfg: dict[str, Any]) -> None:
             "bluetooth.enabled=true conflicts with a manual dtoverlay=disable-bt in "
             "boot_config.extra_lines - set bluetooth.enabled=false instead"
         )
+
+    # Exactly one container runtime. Both modules install a /usr/bin/docker
+    # and both claim the container storage; the image that ships with both
+    # is not "belt and braces", it is undefined.
+    docker_on = bool((cfg.get("docker") or {}).get("enabled"))
+    podman_on = bool((cfg.get("podman") or {}).get("enabled"))
+    if docker_on and podman_on:
+        raise ValueError(
+            "docker.enabled and podman.enabled are mutually exclusive - pick one "
+            "container runtime per variant"
+        )
+
+    portainer = cfg.get("portainer") or {}
+    podman = cfg.get("podman") or {}
+    au = podman.get("auto_update") or {}
+
+    if portainer.get("auto_update"):
+        if not podman_on:
+            raise ValueError(
+                "portainer.auto_update=true requires podman.enabled=true - "
+                "auto-update is a podman mechanism and does nothing under Docker"
+            )
+        if not au.get("enabled"):
+            raise ValueError(
+                "portainer.auto_update=true requires podman.auto_update.enabled=true "
+                "- without the timer the AutoUpdate=registry label is inert"
+            )
+        if "@sha256:" in str(portainer.get("image", "")):
+            raise ValueError(
+                "portainer.auto_update=true is incompatible with a digest-pinned "
+                "portainer.image - the remote digest can never differ, so the "
+                "update would never fire"
+            )
+
+    # The device reboots itself inside the unattended-upgrades reboot window,
+    # and Portainer migrates its database one-way on startup. An update that
+    # takes a scripted reboot mid-migration leaves a portainer.db that no
+    # version can open - a truck roll, not a retry.
+    if podman_on and au.get("enabled"):
+        sched = au.get("schedule") or {}
+        start = _hhmm_to_minutes(sched.get("start", "05:30"))
+        length = int(sched.get("randomized_delay_minutes", 30))
+        uu = cfg.get("unattended_upgrades") or {}
+        if uu.get("enabled"):
+            uu_sched = uu.get("schedule") or {}
+            uu_start = _hhmm_to_minutes(uu_sched.get("start", "02:00"))
+            uu_len = _window_minutes(
+                uu_sched.get("start", "02:00"), uu_sched.get("end", "04:00")
+            )
+            if _windows_overlap(start, length, uu_start, uu_len):
+                raise ValueError(
+                    f"podman.auto_update.schedule ({sched.get('start')} +{length}m) "
+                    f"overlaps the unattended_upgrades window "
+                    f"({uu_sched.get('start')}-{uu_sched.get('end')})"
+                )
+            reboot = uu.get("auto_reboot") or {}
+            if reboot.get("enabled"):
+                win = reboot.get("window") or {}
+                r_start = _hhmm_to_minutes(win.get("start", "03:00"))
+                r_len = _window_minutes(
+                    win.get("start", "03:00"), win.get("end", "05:00")
+                )
+                if _windows_overlap(start, length, r_start, r_len):
+                    raise ValueError(
+                        f"podman.auto_update.schedule ({sched.get('start')} "
+                        f"+{length}m) overlaps the auto-reboot window "
+                        f"({win.get('start')}-{win.get('end')}) - a reboot during "
+                        "Portainer's one-way database migration is unrecoverable"
+                    )
 
 
 def _validate_apply_contract(cfg: dict[str, Any]) -> list[str]:

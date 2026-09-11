@@ -263,6 +263,55 @@ except jsonschema.ValidationError as exc:
     report(False, "the code defaults satisfy the schema bounds", exc.message)
 
 print()
+print("=== container runtime guards ===")
+
+refuses(
+    "docker and podman both enabled",
+    lambda c: (c.setdefault("docker", {}).__setitem__("enabled", True),
+               c.setdefault("podman", {}).__setitem__("enabled", True)),
+    "mutually exclusive",
+    child=BASE,
+)
+accepts("podman only", child=BASE)
+accepts(
+    "docker only",
+    child=BASE,
+    # BASE ships podman.enabled=true with portainer.auto_update=true (Task 1);
+    # auto_update is a podman-only mechanism, so a config that switches to
+    # docker only must also drop it, or the "portainer auto_update without
+    # the podman timer" guard above correctly refuses this as self-contradictory.
+    mutate=lambda c: (c["docker"].__setitem__("enabled", True),
+                      c["podman"].__setitem__("enabled", False),
+                      c["portainer"].__setitem__("auto_update", False)),
+)
+refuses(
+    "portainer auto_update without the podman timer",
+    lambda c: c["podman"]["auto_update"].__setitem__("enabled", False),
+    "podman.auto_update.enabled",
+    child=BASE,
+)
+refuses(
+    "auto_update against a digest-pinned image",
+    lambda c: c["portainer"].__setitem__(
+        "image", "docker.io/portainer/portainer-ce@sha256:"
+                 "511f3f06c96fe3b993ebeaafde311c1959cae73a7ef825dba6397d51b450dffa"),
+    "digest-pinned",
+    child=BASE,
+)
+refuses(
+    "auto-update window overlaps the unattended-upgrades window",
+    lambda c: c["podman"]["auto_update"]["schedule"].__setitem__("start", "02:30"),
+    "overlaps",
+    child=BASE,
+)
+refuses(
+    "auto-update window overlaps the reboot window",
+    lambda c: c["podman"]["auto_update"]["schedule"].__setitem__("start", "04:30"),
+    "overlaps",
+    child=BASE,
+)
+
+print()
 print(f"{passed} passed, {failed} failed")
 sys.exit(1 if failed else 0)
 PYEOF
