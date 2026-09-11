@@ -125,8 +125,18 @@ report(not (mod / "apply.sh").exists(),
 
 sc = (mod / "start_chroot_script").read_text(encoding="utf-8") \
     if (mod / "start_chroot_script").is_file() else ""
-for pkg in ("podman", "podman-docker", "netavark", "aardvark-dns", "nftables"):
+# Every package the module installs, pinned by its exact DEBIAN name. The
+# list used to cover only five of the eight, which is how `containers-common`
+# shipped: that is the upstream PROJECT name and no such binary package exists
+# in Debian, so the first real image build died on `E: Unable to locate
+# package containers-common` after the test suite had gone green. apt name !=
+# upstream name is not something a build-host test can discover on its own -
+# the only defence is pinning the full list here.
+for pkg in ("podman", "podman-docker", "golang-github-containers-common",
+            "netavark", "aardvark-dns", "nftables", "uidmap", "catatonit"):
     report(pkg in sc, f"installs {pkg}")
+report("containers-common" not in sc.replace("golang-github-containers-common", ""),
+       "does not name the nonexistent Debian package `containers-common`")
 report("nftables" in sc,
        "installs nftables explicitly (netavark only Recommends it)")
 report("systemctl enable podman-auto-update.service" not in sc,

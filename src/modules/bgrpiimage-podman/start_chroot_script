@@ -31,7 +31,7 @@ apt-get update
 # as its compiled-in default firewall driver, so leaving it implicit builds a
 # clean image whose container networking comes up with no firewall rules.
 apt-get install -y --no-install-recommends \
-    podman podman-docker containers-common netavark aardvark-dns \
+    podman podman-docker golang-github-containers-common netavark aardvark-dns \
     nftables uidmap catatonit
 
 # Podman reads this on the next invocation; there is no daemon to restart.

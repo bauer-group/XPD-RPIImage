@@ -410,7 +410,9 @@ under the hood every call goes to Podman.
 }
 ```
 
-- `enabled` — installs `podman`, `podman-docker`, `containers-common`,
+- `enabled` — installs `podman`, `podman-docker`,
+  `golang-github-containers-common` (Debian's name for the containers-common
+  config package — there is no `containers-common` in Debian),
   `netavark`, `aardvark-dns`, `nftables`, `uidmap`, `catatonit`, and enables
   `podman.socket` + `podman-restart.service` (the latter brings back
   operator-created `--restart=always` containers after a reboot; Portainer's
