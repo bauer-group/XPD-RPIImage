@@ -71,4 +71,19 @@ systemctl enable podman.socket
 # multi-user.target and systemd starts it directly.
 systemctl enable podman-restart.service
 
+# Auto-update. Enable the TIMER only: podman-auto-update.service is
+# WantedBy=default.target and would fire on every boot.
+if [[ -f "$GEN/podman-auto-update.timer.d/override.conf" ]]; then
+    install -D -m 644 "$GEN/podman-auto-update.timer.d/override.conf" \
+        /etc/systemd/system/podman-auto-update.timer.d/override.conf
+    systemctl enable podman-auto-update.timer
+fi
+
+if [[ -f "$GEN/bgrpiimage-portainer-backup" ]]; then
+    install -D -m 755 "$GEN/bgrpiimage-portainer-backup" \
+        /usr/local/sbin/bgrpiimage-portainer-backup
+    install -D -m 644 "$GEN/podman-auto-update.service.d/10-backup.conf" \
+        /etc/systemd/system/podman-auto-update.service.d/10-backup.conf
+fi
+
 apt-get clean

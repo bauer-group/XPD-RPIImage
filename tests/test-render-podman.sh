@@ -126,7 +126,7 @@ for pkg in ("podman", "podman-docker", "netavark", "aardvark-dns", "nftables"):
     report(pkg in sc, f"installs {pkg}")
 report("nftables" in sc,
        "installs nftables explicitly (netavark only Recommends it)")
-report("podman-auto-update.service" not in sc.replace("podman-auto-update.timer", ""),
+report("systemctl enable podman-auto-update.service" not in sc,
        "never enables podman-auto-update.service")
 
 # The assertions above only prove ACTIVE_MODULES, _module_enabled() and
@@ -190,6 +190,32 @@ report("Restart=" not in cont_section,
        "Restart= is NOT in [Container] (quadlet would ignore it)")
 report("WantedBy=multi-user.target" in container, "[Install] makes it start on boot")
 report("After=podman.socket" in container, "ordered after podman.socket")
+
+print()
+print("=== auto-update ===")
+tmr = body("podman-auto-update.timer.d/override.conf")
+report(bool(tmr), "emits the timer drop-in")
+report("OnCalendar=\n" in tmr,
+       "resets OnCalendar= first (else the shipped daily value stays active)")
+report("OnCalendar=*-*-* 05:30:00" in tmr, "fires at the configured time")
+report("RandomizedDelaySec=1800" in tmr, "jitter matches randomized_delay_minutes")
+report("Persistent=true" in tmr, "catches up after a power-off")
+
+drop = body("podman-auto-update.service.d/10-backup.conf")
+report("ExecStartPre=/usr/local/sbin/bgrpiimage-portainer-backup" in drop,
+       "backs the volume up before the update runs")
+
+helper = body("bgrpiimage-portainer-backup")
+report("podman volume export portainer_data" in helper, "exports the portainer volume")
+report("exit 0" in helper,
+       "always exits 0 - a failing ExecStartPre would block updates forever")
+report("KEEP=5" in helper or "KEEP=${KEEP:-5}" in helper,
+       "prunes to portainer.backup_before_update.keep archives")
+
+sc = Path("src/modules/bgrpiimage-podman/start_chroot_script").read_text(encoding="utf-8")
+report("systemctl enable podman-auto-update.timer" in sc, "enables the timer")
+report("systemctl enable podman-auto-update.service" not in sc,
+       "never enables the service (WantedBy=default.target fires every boot)")
 
 print()
 print(f"{passed} passed, {failed} failed")
