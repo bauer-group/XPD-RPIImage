@@ -268,6 +268,54 @@ sys.exit(1 if failed else 0)
 PYEOF
 guards_rc=$?
 
+echo
+echo "=== podman config contract ==="
+contract_rc=0
+if "$PY" - <<'PYEOF'
+import importlib.util, sys
+from pathlib import Path
+spec = importlib.util.spec_from_file_location("gen", "scripts/generate.py")
+gen = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(gen)
+cfg = gen.load_variant(Path("config/variants/base.json"))
+
+def need(path, want=None):
+    cur = cfg
+    for part in path.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            print(f"  FAIL  base.json is missing {path}")
+            return False
+        cur = cur[part]
+    if want is not None and cur != want:
+        print(f"  FAIL  {path} is {cur!r}, expected {want!r}")
+        return False
+    print(f"  PASS  {path}")
+    return True
+
+ok = True
+ok &= need("podman.enabled", True)
+ok &= need("podman.docker_emulation", True)
+# NOT via need(): the literal key is "vm.max_map_count", and need() splits
+# the path on "." so it would look for cfg["podman"]["sysctl"]["vm"]["max_map_count"].
+_mm = cfg.get("podman", {}).get("sysctl", {}).get("vm.max_map_count")
+print(("  PASS  " if _mm == 4194304 else "  FAIL  ") + "podman.sysctl.vm.max_map_count")
+ok &= (_mm == 4194304)
+ok &= need("podman.network.default_subnet", "10.10.0.0/17")
+ok &= need("podman.network.ipv6", True)
+ok &= need("podman.network.subnet_v6", "fdff:0::/64")
+ok &= need("podman.journald.system_max_use", "200M")
+ok &= need("podman.auto_update.enabled", True)
+ok &= need("podman.auto_update.schedule.start", "05:30")
+ok &= need("podman.auto_update.schedule.randomized_delay_minutes", 30)
+ok &= need("docker.enabled", False)
+ok &= need("portainer.image", "docker.io/portainer/portainer-ce:lts")
+ok &= need("portainer.auto_update", True)
+ok &= need("portainer.backup_before_update.enabled", True)
+ok &= need("portainer.backup_before_update.keep", 5)
+sys.exit(0 if ok else 1)
+PYEOF
+then :; else contract_rc=1; fi
+
 # --- stdout discipline -------------------------------------------------------
 # `--json` writes the resolved config to stdout so CI can pipe it into jq
 # (build.yml, "Resolve variant metadata": generate.py --json > /tmp/resolved.json
@@ -291,4 +339,4 @@ for cfg in config/variants/*.json; do
     fi
 done
 
-[ "$guards_rc" -eq 0 ] && [ "$json_rc" -eq 0 ]
+[ "$guards_rc" -eq 0 ] && [ "$json_rc" -eq 0 ] && [ "$contract_rc" -eq 0 ]

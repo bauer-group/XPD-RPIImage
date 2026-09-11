@@ -2,7 +2,7 @@
   "$schema": "../schema.json",
   "variant": {
     "name": "base",
-    "description": "BAUER GROUP generic Raspberry Pi base image - Docker-ready, no application-specific hardware configured",
+    "description": "BAUER GROUP generic Raspberry Pi base image - Podman-ready (Docker-compatible), Portainer preinstalled, no application-specific hardware configured",
     "version": "0.13.6"
   },
   "base_image": {
@@ -127,7 +127,7 @@
     "enabled": false
   },
   "docker": {
-    "enabled": true,
+    "enabled": false,
     "daemon": {
       "bip": "10.10.0.1/17",
       "ipv6": true,
@@ -143,13 +143,42 @@
       "vm.max_map_count": 4194304
     }
   },
+  "podman": {
+    "enabled": true,
+    "docker_emulation": true,
+    "sysctl": {
+      "vm.max_map_count": 4194304
+    },
+    "network": {
+      "default_subnet": "10.10.0.0/17",
+      "default_subnet_pools": [
+        { "base": "10.10.128.0/17", "size": 24 }
+      ],
+      "ipv6": true,
+      "subnet_v6": "fdff:0::/64"
+    },
+    "journald": {
+      "system_max_use": "200M",
+      "system_max_file_size": "20M"
+    },
+    "auto_update": {
+      "enabled": true,
+      "schedule": {
+        "start": "05:30",
+        "randomized_delay_minutes": 30,
+        "persistent": true
+      }
+    }
+  },
   "portainer": {
     "enabled": true,
     "edition": "ce",
     "bind": "0.0.0.0",
-    "image": "portainer/portainer-ce:2.45.0",
+    "image": "docker.io/portainer/portainer-ce:lts",
     "ports": { "edge": 8000, "http": 9000, "https": 9443 },
-    "auto_start": true
+    "auto_start": true,
+    "auto_update": true,
+    "backup_before_update": { "enabled": true, "keep": 5 }
   },
   "unattended_upgrades": {
     "enabled": true,
