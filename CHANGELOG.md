@@ -4,6 +4,12 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.14.1](https://github.com/bauer-group/XPD-RPIImage/compare/v0.14.0...v0.14.1) (2026-09-11)
+
+### 🐛 Bug Fixes
+
+* **podman:** corrected the containers-common package name ([f65aee2](https://github.com/bauer-group/XPD-RPIImage/commit/f65aee2a4c034ead5e4e2b1997d987c1070753f3))
+
 ## [0.14.0](https://github.com/bauer-group/XPD-RPIImage/compare/v0.13.6...v0.14.0) (2026-09-11)
 
 ### 🚀 Features
