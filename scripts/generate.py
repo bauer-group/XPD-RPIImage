@@ -626,13 +626,22 @@ done
 echo "${CY}${sep}${NC}"
 
 ssh_s=$(systemctl is-active ssh 2>/dev/null || echo "?")
-dk_s=$(systemctl is-active docker 2>/dev/null || echo "?")
+# Which runtime is installed? podman-docker ships /usr/bin/docker as a
+# shim, so probing for `docker` is true under both - `podman` is the only
+# honest discriminator. Podman is daemonless, so the unit that means
+# "the API is reachable" is the socket, not a service.
+if command -v podman >/dev/null 2>&1; then
+    rt_name="podman"; rt_unit="podman.socket"
+else
+    rt_name="docker"; rt_unit="docker"
+fi
+dk_s=$(systemctl is-active "$rt_unit" 2>/dev/null || echo "?")
 uu_s=$(systemctl is-active unattended-upgrades 2>/dev/null || echo "?")
 bt_s=$(systemctl is-active bluetooth 2>/dev/null || echo "?")
 printf "  ${DIM}ssh:${NC} $(active_color "$ssh_s")%s${NC}" "$ssh_s"
-printf "   ${DIM}docker:${NC} $(active_color "$dk_s")%s${NC}" "$dk_s"
+printf "   ${DIM}%s:${NC} $(active_color "$dk_s")%s${NC}" "$rt_name" "$dk_s"
 if [ "$dk_s" = "active" ]; then
-    n=$(docker ps -q 2>/dev/null | wc -l)
+    n=$("$rt_name" ps -q 2>/dev/null | wc -l)
     printf " ${DIM}(%d running)${NC}" "$n"
 fi
 printf "   ${DIM}bt:${NC} $(active_color "$bt_s")%s${NC}" "$bt_s"

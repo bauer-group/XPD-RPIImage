@@ -218,6 +218,20 @@ report("systemctl enable podman-auto-update.service" not in sc,
        "never enables the service (WantedBy=default.target fires every boot)")
 
 print()
+print("=== motd runtime line ===")
+gen.render_base(cfg)
+BGEN = Path("src/modules/bgrpiimage-base/filesystem/root/opt/bgrpiimage/bgrpiimage-base")
+motd = (BGEN / "motd-banner.sh").read_text(encoding="utf-8")
+report('rt_unit="podman.socket"' in motd,
+       "probes podman.socket, not a docker service that will never exist")
+report('command -v podman' in motd,
+       "discriminates on podman, not docker (podman-docker ships a docker shim)")
+report('n=$("$rt_name" ps -q' in motd, "counts containers with the active runtime")
+report("systemctl is-active docker" not in motd,
+       "no hardcoded docker probe remains")
+report('rt_name="docker"' in motd, "still falls back to docker when podman is absent")
+
+print()
 print(f"{passed} passed, {failed} failed")
 sys.exit(0 if failed == 0 else 1)
 PYEOF
