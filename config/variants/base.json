@@ -155,7 +155,8 @@
         { "base": "10.10.128.0/17", "size": 24 }
       ],
       "ipv6": true,
-      "subnet_v6": "fdff:0::/64"
+      "subnet_v6": "fdff:0::/64",
+      "firewall_driver": "nftables"
     },
     "journald": {
       "system_max_use": "200M",

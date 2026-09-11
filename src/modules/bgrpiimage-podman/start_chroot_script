@@ -57,6 +57,10 @@ fi
 # shellcheck disable=SC1091
 source "$GEN/podman.env" 2>/dev/null || true
 
+if [[ -f "$GEN/podman.env" ]]; then
+    install -D -m 644 "$GEN/podman.env" /etc/default/podman
+fi
+
 # Presence suppresses the "Emulate Docker CLI using podman" notice that
 # podman-docker otherwise prints on every docker(1) call.
 if [[ "${BGRPIIMAGE_PODMAN_DOCKER_EMULATION:-yes}" == "yes" ]]; then

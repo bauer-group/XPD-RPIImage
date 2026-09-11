@@ -21,7 +21,7 @@ done
 [ -n "$PY" ] || { echo "no working python3/python on PATH" >&2; exit 1; }
 
 "$PY" - <<'PYEOF'
-import importlib.util, json, os, re, shutil, stat, subprocess, sys, tempfile
+import copy, importlib.util, json, os, re, shutil, stat, subprocess, sys, tempfile
 from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -67,6 +67,9 @@ report('default_subnet = "10.10.0.0/17"' in cc, "default_subnet is the fleet pla
 report('{"base" = "10.10.128.0/17", "size" = 24}' in cc,
        "default_subnet_pools uses quoted-key inline tables")
 report("[network]" in cc, "has a [network] section")
+report('firewall_driver = "nftables"' in cc,
+       "firewall_driver is declared explicitly (netavark's compile-time "
+       "default is not something to trust)")
 
 print()
 print("=== the netavark network definition ===")
@@ -148,6 +151,32 @@ report(GEN.is_dir() and any(GEN.iterdir()),
        "(payload repopulated by a real generator run)")
 
 print()
+print("=== payload contract (bgrpiimage-podman has no apply.sh) ===")
+# _validate_apply_contract() in generate.py skips every module without an
+# apply.sh, and bgrpiimage-podman is deliberately one of those (runtime
+# config is reflash-only, same as -docker and -portainer) - so all of this
+# module's rendered payload files sit outside that check entirely. This
+# mirrors its own matching logic (a file is covered if its relative path,
+# its bare filename, or its parent directory name for a nested drop-in dir
+# is mentioned in the script) against start_chroot_script instead, so a
+# payload file that stops being installed is still caught.
+_contract_problems = []
+for _path in sorted(GEN.rglob("*")):
+    if not _path.is_file():
+        continue
+    _rel = _path.relative_to(GEN)
+    _names = {_rel.as_posix(), _path.name}
+    _parent = _rel.parent.as_posix()
+    if _parent != ".":
+        _names.add(_parent)
+    if not any(n in sc for n in _names):
+        _contract_problems.append(_rel.as_posix())
+report(not _contract_problems,
+       "every rendered bgrpiimage-podman payload file is installed by "
+       "start_chroot_script",
+       f"not mentioned: {_contract_problems}")
+
+print()
 print("=== portainer quadlet units ===")
 gen.render_portainer(cfg)
 PGEN = Path("src/modules/bgrpiimage-portainer/filesystem/root/opt/bgrpiimage/bgrpiimage-portainer")
@@ -188,8 +217,24 @@ cont_section = container.split("[Container]", 1)[-1].split("[Service]", 1)[0]
 report("Restart=always" in svc, "Restart=always is in [Service]")
 report("Restart=" not in cont_section,
        "Restart= is NOT in [Container] (quadlet would ignore it)")
+report("[Install]" in container, "[Install] section present for the default auto_start=true")
 report("WantedBy=multi-user.target" in container, "[Install] makes it start on boot")
 report("After=podman.socket" in container, "ordered after podman.socket")
+
+# auto_start: false is written into portainer.env either way (Task 3/I3's
+# bug), but WantedBy=multi-user.target is what actually starts Portainer at
+# boot. Quadlet applies [Install] itself "in the same way systemctl enable
+# does" - so omitting the whole section, not the key inside it, is the only
+# way to honour auto_start=false: Quadlet still generates portainer.service,
+# it just never gets pulled into multi-user.target.
+_no_autostart_cfg = copy.deepcopy(cfg)
+_no_autostart_cfg["portainer"]["auto_start"] = False
+gen.render_portainer(_no_autostart_cfg)
+_container_off = pbody("portainer.container")
+report("[Install]" not in _container_off and "WantedBy" not in _container_off,
+       "auto_start=false removes [Install] entirely, so Quadlet never wires "
+       "portainer.service into multi-user.target")
+gen.render_portainer(cfg)  # restore the default-config render for anything after this
 
 print()
 print("=== auto-update ===")

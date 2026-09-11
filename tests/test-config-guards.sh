@@ -285,6 +285,23 @@ accepts(
                       c["portainer"].__setitem__("auto_update", False)),
 )
 refuses(
+    "portainer.image is a short name under podman (no registry host)",
+    lambda c: c["portainer"].__setitem__("image", "portainer/portainer-ce:lts"),
+    "registry host",
+    child=BASE,
+)
+accepts(
+    "portainer.image qualified with an explicit registry host",
+    child=BASE,
+    mutate=lambda c: c["portainer"].__setitem__(
+        "image", "docker.io/portainer/portainer-ce:lts"),
+)
+accepts(
+    "portainer.image at a bare localhost registry",
+    child=BASE,
+    mutate=lambda c: c["portainer"].__setitem__("image", "localhost/portainer-ce:lts"),
+)
+refuses(
     "portainer auto_update without the podman timer",
     lambda c: c["podman"]["auto_update"].__setitem__("enabled", False),
     "podman.auto_update.enabled",
