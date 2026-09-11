@@ -100,6 +100,36 @@ report("SystemMaxFileSize=20M" in jd,
        "journald file-size cap also flowed through from config")
 
 print()
+print("=== module wiring ===")
+report("bgrpiimage-podman" in gen.ACTIVE_MODULES, "in ACTIVE_MODULES")
+report(gen._module_enabled("bgrpiimage-podman", cfg), "enabled for base.json")
+report(not gen._module_enabled("bgrpiimage-docker", cfg),
+       "bgrpiimage-docker is off for base.json")
+report(gen.ACTIVE_MODULES.index("bgrpiimage-podman")
+       < gen.ACTIVE_MODULES.index("bgrpiimage-portainer"),
+       "podman is built before portainer")
+
+bundle_src = Path("scripts/bundle.py").read_text(encoding="utf-8")
+report("bgrpiimage-podman" not in bundle_src,
+       "stays out of BUNDLE_MODULES (runtime config is reflash-only)")
+
+mod = Path("src/modules/bgrpiimage-podman")
+report((mod / "config").is_file(), "module has a config file")
+report((mod / "start_chroot_script").is_file(), "module has a start_chroot_script")
+report(not (mod / "apply.sh").exists(),
+       "module has no apply.sh (matches docker/portainer)")
+
+
+sc = (mod / "start_chroot_script").read_text(encoding="utf-8") \
+    if (mod / "start_chroot_script").is_file() else ""
+for pkg in ("podman", "podman-docker", "netavark", "aardvark-dns", "nftables"):
+    report(pkg in sc, f"installs {pkg}")
+report("nftables" in sc,
+       "installs nftables explicitly (netavark only Recommends it)")
+report("podman-auto-update.service" not in sc.replace("podman-auto-update.timer", ""),
+       "never enables podman-auto-update.service")
+
+print()
 print(f"{passed} passed, {failed} failed")
 sys.exit(0 if failed == 0 else 1)
 PYEOF

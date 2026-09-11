@@ -2429,6 +2429,7 @@ ACTIVE_MODULES: list[str] = [
     "bgrpiimage-boot",
     "bgrpiimage-hardware",
     "bgrpiimage-can",
+    "bgrpiimage-podman",
     "bgrpiimage-docker",
     "bgrpiimage-portainer",
     "bgrpiimage-unattended-upgrades",
@@ -2465,6 +2466,8 @@ def _module_enabled(module: str, cfg: dict[str, Any]) -> bool:
         return bool((cfg.get("can") or {}).get("interfaces"))
     if module == "bgrpiimage-docker":
         return bool((cfg.get("docker") or {}).get("enabled"))
+    if module == "bgrpiimage-podman":
+        return bool((cfg.get("podman") or {}).get("enabled"))
     if module == "bgrpiimage-portainer":
         return bool((cfg.get("portainer") or {}).get("enabled"))
     if module == "bgrpiimage-unattended-upgrades":
@@ -2594,6 +2597,7 @@ def main() -> int:
         ("bgrpiimage-boot",                 render_boot),
         ("bgrpiimage-hardware",             render_hardware),
         ("bgrpiimage-can",                  render_can),
+        ("bgrpiimage-podman",               render_podman),
         ("bgrpiimage-docker",               render_docker),
         ("bgrpiimage-portainer",            render_portainer),
         ("bgrpiimage-unattended-upgrades",  render_unattended),
