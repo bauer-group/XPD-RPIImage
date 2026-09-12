@@ -4,6 +4,16 @@ All notable changes to this project are documented here. This file is maintained
 automatically by [semantic-release](https://github.com/semantic-release/semantic-release)
 on every release to `main`.
 
+## [0.14.2](https://github.com/bauer-group/XPD-RPIImage/compare/v0.14.1...v0.14.2) (2026-09-12)
+
+### 🐛 Bug Fixes
+
+* **test:** stopped the runtime-gate test failing in CI ([4e2c5d2](https://github.com/bauer-group/XPD-RPIImage/commit/4e2c5d2de5dfeaee4056407590ef513fa6ae6fd4))
+* **update:** closed the podman gap in both write denylists ([557f893](https://github.com/bauer-group/XPD-RPIImage/commit/557f893771d3b0b1a5ec1a6893fc1c049f407365))
+* **update:** completed the container-runtime identity gate ([483abc8](https://github.com/bauer-group/XPD-RPIImage/commit/483abc8b7f556af492e2991a1110b8c8fafc0dd2))
+* **update:** guarded docker's daemon.json alongside podman's config ([5938199](https://github.com/bauer-group/XPD-RPIImage/commit/5938199b0964a541a5dd2de4b68b6f1d9a11e547))
+* **update:** refused a bundle whose container runtime does not match the device ([781f2e2](https://github.com/bauer-group/XPD-RPIImage/commit/781f2e2c5b22fcb7349554237ea1ca1a7daf6aad))
+
 ## [0.14.1](https://github.com/bauer-group/XPD-RPIImage/compare/v0.14.0...v0.14.1) (2026-09-11)
 
 ### 🐛 Bug Fixes
