@@ -136,6 +136,21 @@ def build_manifest(cfg: dict[str, Any], staging: Path, files: list[Path]) -> dic
     variant = cfg["variant"]
     base_image = cfg.get("base_image") or {}
     root = staging / "root"
+
+    # Which container runtime this bundle was generated for. base_image_sha256
+    # already draws the line between a config update and an OS update, but it
+    # tracks the upstream Raspberry Pi OS and has no reason to move when only
+    # the runtime does - so a Docker-to-Podman migration is invisible to it.
+    # A bundle built before this field existed carries none of it, and the
+    # updater treats that silence as "assume Docker", because every release
+    # before v0.14.0 was.
+    if (cfg.get("podman") or {}).get("enabled"):
+        runtime = "podman"
+    elif (cfg.get("docker") or {}).get("enabled"):
+        runtime = "docker"
+    else:
+        runtime = "none"
+
     return {
         "bundle_format": BUNDLE_FORMAT,
         "dist": "bgrpiimage",
@@ -153,6 +168,10 @@ def build_manifest(cfg: dict[str, Any], staging: Path, files: list[Path]) -> dic
             # Devices flashed before the identity contract carry none of the
             # fields the refusals need, so they are told to reflash instead.
             "min_apply_contract": gen.APPLY_CONTRACT_VERSION,
+            # Purely additive and optional: bundle_format does not move for
+            # this. An updater from before this field existed simply never
+            # reads it, which is exactly the fallback the gate is built for.
+            "container_runtime": runtime,
         },
         "modules": [
             m for m in BUNDLE_MODULES

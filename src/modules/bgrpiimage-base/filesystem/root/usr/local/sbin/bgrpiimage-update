@@ -148,6 +148,20 @@ load_identity() {
     EFFECTIVE_VERSION="${CONFIG_VERSION:-$IMAGE_VERSION}"
 }
 
+# podman-docker ships /usr/bin/docker as a shim, so probing for `docker` is
+# true under BOTH runtimes - `podman` is the only honest discriminator. Same
+# rule the login banner uses, deliberately: two places that disagree about
+# which runtime a device runs is worse than either being wrong alone.
+detect_runtime() {
+    if command -v podman >/dev/null 2>&1; then
+        echo podman
+    elif command -v docker >/dev/null 2>&1; then
+        echo docker
+    else
+        echo ""
+    fi
+}
+
 applied_set() {
     local key="$1" val="$2"
     touch "$APPLIED"; chmod 644 "$APPLIED"
@@ -346,13 +360,15 @@ verify_signature() {
 preflight() {
     local mdir="$1"
     local m="$mdir/manifest.json"
-    local b_variant b_version b_format b_base b_contract
+    local b_variant b_version b_format b_base b_contract b_runtime dev_runtime
 
     b_variant=$(jq -r '.variant // empty' "$m")
     b_version=$(jq -r '.version // empty' "$m")
     b_format=$(jq -r '.bundle_format // 0' "$m")
     b_base=$(jq -r '.applies_to.base_image_sha256 // empty' "$m")
     b_contract=$(jq -r '.applies_to.min_apply_contract // 0' "$m")
+    b_runtime=$(jq -r '.applies_to.container_runtime // ""' "$m")
+    dev_runtime=$(detect_runtime)
 
     [[ "$b_format" -ge "$MIN_BUNDLE_FORMAT" ]] \
         || die "bundle format $b_format is older than this updater understands"
@@ -374,6 +390,21 @@ preflight() {
         die "this release rebased onto a different Raspberry Pi OS - reflash required"
     elif [[ -z "$BASE_SHA" || -z "$b_base" ]]; then
         warn "base image unknown on one side - cannot prove the OS matches"
+    fi
+
+    # base_image_sha256 tracks the upstream Raspberry Pi OS and has no reason
+    # to move when only the container runtime does, so it cannot catch a
+    # bundle built for the wrong one. An empty container_runtime means the
+    # bundle predates this field - every release before v0.14.0 - and on a
+    # Podman device that silence is exactly the rollback trap: `apply
+    # --version <older>` would reinstall the pre-migration assumption that
+    # `docker` is the only runtime there is. No override flag, same as the
+    # base-image check above: this is not a config change, it is a different
+    # image.
+    if [[ -n "$b_runtime" && "$b_runtime" != "none" && -n "$dev_runtime" && "$b_runtime" != "$dev_runtime" ]]; then
+        die "bundle is built for $b_runtime, this device runs $dev_runtime - the container runtime is set at flash time, reflash required"
+    elif [[ -z "$b_runtime" && "$dev_runtime" == "podman" ]]; then
+        die "bundle predates the container-runtime contract and assumes Docker, this device runs Podman - reflash required"
     fi
 
     if [[ "$b_version" == "$EFFECTIVE_VERSION" && "$OPT_REAPPLY" -eq 0 ]]; then

@@ -597,6 +597,67 @@ grep -q "BGRPIIMAGE_HELPER_VERSION='$VERSION'" /etc/bgrpiimage-applied \
          grep HELPER /etc/bgrpiimage-applied 2>/dev/null | sed 's/^/      | /' \
            || echo "      | (no BGRPIIMAGE_HELPER_VERSION line at all)"; }
 
+sect "19. container runtime identity"
+# base_image_sha256 tracks the upstream Raspberry Pi OS, not the container
+# runtime - so it does not change across the Docker-to-Podman migration, and
+# `apply --version <older>` (the documented way back) sails straight through
+# it onto a bundle that reinstalls the pre-migration motd-banner.sh, which
+# ran `systemctl is-active docker` unconditionally. On a Podman device that
+# unit does not exist. applies_to.container_runtime exists to catch exactly
+# this. podman-docker ships /usr/bin/docker as a shim, so the fixture stubs
+# `podman` itself - stubbing `docker` would prove nothing about which
+# runtime the gate actually saw.
+printf '#!/bin/sh\nexit 0\n' > /stub/podman; chmod +x /stub/podman
+KEY=/repo/.secrets/bgrpiimage-recovery.key
+work=/tmp/runtime
+
+# A bundle explicitly built for Docker, applied to a Podman device.
+rm -rf $work && mkdir -p $work
+tar xzf "$BUNDLE" -C $work
+jq '.applies_to.container_runtime = "docker"' $work/manifest.json > $work/m.new
+mv $work/m.new $work/manifest.json
+openssl pkeyutl -sign -rawin -inkey "$KEY" \
+    -in $work/manifest.json -out $work/manifest.json.sig 2>/dev/null
+( cd $work && tar czf "$DL/$(basename "$BUNDLE")" manifest.json manifest.json.sig root )
+( cd "$DL" && sha256sum "$(basename "$BUNDLE")" > "$(basename "$BUNDLE").sha256" )
+seed_device 0.0.1
+$U apply --yes >/tmp/rt1 2>&1
+grep -qi "bundle is built for docker" /tmp/rt1 \
+    && ok "runtime mismatch refused (bundle=docker, device=podman)" \
+    || { bad "runtime mismatch allowed"; tail -3 /tmp/rt1; }
+[ ! -f /etc/bgrpiimage-applied ] \
+    && ok "and nothing was applied" || bad "state was written despite the mismatch"
+
+# A legacy bundle with no container_runtime field at all - every release
+# before v0.14.0 looked like this - applied to a Podman device. This is the
+# actual rollback trap: the only other identity gate, base_image_sha256,
+# passes here, so this field is the one thing standing between a healthy
+# Podman device and a bundle shaped for a runtime it no longer runs.
+rm -rf $work && mkdir -p $work
+tar xzf "$BUNDLE" -C $work
+jq 'del(.applies_to.container_runtime)' $work/manifest.json > $work/m.new
+mv $work/m.new $work/manifest.json
+openssl pkeyutl -sign -rawin -inkey "$KEY" \
+    -in $work/manifest.json -out $work/manifest.json.sig 2>/dev/null
+( cd $work && tar czf "$DL/$(basename "$BUNDLE")" manifest.json manifest.json.sig root )
+( cd "$DL" && sha256sum "$(basename "$BUNDLE")" > "$(basename "$BUNDLE").sha256" )
+seed_device 0.0.1
+$U apply --yes >/tmp/rt2 2>&1
+grep -qi "predates the container-runtime contract" /tmp/rt2 \
+    && ok "legacy bundle with no container_runtime refused on a Podman device" \
+    || { bad "legacy bundle applied over Podman"; tail -3 /tmp/rt2; }
+[ ! -f /etc/bgrpiimage-applied ] \
+    && ok "and nothing was applied" || bad "state was written despite the legacy bundle"
+
+# Matching runtimes must not be blocked - the gate is about disagreement, not
+# about Podman being present at all.
+cp "$BUNDLE" "$DL/"
+( cd "$DL" && sha256sum "$(basename "$BUNDLE")" > "$(basename "$BUNDLE").sha256" )
+seed_device 0.0.1
+$U apply --yes >/tmp/rt3 2>&1; rc=$?
+[ $rc -eq 0 ] && ok "matching container runtime (podman/podman) is not blocked" \
+              || { bad "a matching runtime was refused"; tail -8 /tmp/rt3; }
+
 echo
 echo "================ $PASS passed, $FAIL failed ================"
 [ "$FAIL" -eq 0 ]
