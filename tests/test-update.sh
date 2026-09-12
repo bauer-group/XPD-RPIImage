@@ -608,7 +608,21 @@ sect "19. container runtime identity"
 # `podman` itself - stubbing `docker` would prove nothing about which
 # runtime the gate actually saw.
 printf '#!/bin/sh\nexit 0\n' > /stub/podman; chmod +x /stub/podman
-KEY=/repo/.secrets/bgrpiimage-recovery.key
+
+# The manifest is tampered below, so it has to be re-signed to reach the
+# runtime gate rather than being stopped earlier by signature verification -
+# same technique as section 10's foreign-key case, but the opposite trust
+# direction: that key proves an UNTRUSTED signer is refused, this one has to
+# be TRUSTED so what is actually exercised is the runtime gate. The real
+# release key is not an option here: it lives only in this developer's
+# gitignored .secrets/, or as a PEM in the CI env var BGRPIIMAGE_SIGNING_KEY
+# that is deliberately never written to disk (see .github/workflows/build.yml)
+# - and the test container mounts /repo read-only regardless. A throwaway
+# key, generated on the fly and trusted by THIS device only, is what works
+# unattended on every machine, CI included.
+openssl genpkey -algorithm ed25519 -out /tmp/runtime.key 2>/dev/null
+openssl pkey -in /tmp/runtime.key -pubout -out /tmp/runtime.pub 2>/dev/null
+KEY=/tmp/runtime.key
 work=/tmp/runtime
 
 # A bundle explicitly built for Docker, applied to a Podman device.
@@ -621,6 +635,10 @@ openssl pkeyutl -sign -rawin -inkey "$KEY" \
 ( cd $work && tar czf "$DL/$(basename "$BUNDLE")" manifest.json manifest.json.sig root )
 ( cd "$DL" && sha256sum "$(basename "$BUNDLE")" > "$(basename "$BUNDLE").sha256" )
 seed_device 0.0.1
+# seed_device reseeds the trust store from the image's own shipped keys, so
+# the throwaway key has to be re-added after every seed and before the apply
+# that relies on it being trusted.
+cp /tmp/runtime.pub /usr/share/bgrpiimage/trusted-keys.d/
 $U apply --yes >/tmp/rt1 2>&1
 grep -qi "bundle is built for docker" /tmp/rt1 \
     && ok "runtime mismatch refused (bundle=docker, device=podman)" \
@@ -642,6 +660,7 @@ openssl pkeyutl -sign -rawin -inkey "$KEY" \
 ( cd $work && tar czf "$DL/$(basename "$BUNDLE")" manifest.json manifest.json.sig root )
 ( cd "$DL" && sha256sum "$(basename "$BUNDLE")" > "$(basename "$BUNDLE").sha256" )
 seed_device 0.0.1
+cp /tmp/runtime.pub /usr/share/bgrpiimage/trusted-keys.d/
 $U apply --yes >/tmp/rt2 2>&1
 grep -qi "predates the container-runtime contract" /tmp/rt2 \
     && ok "legacy bundle with no container_runtime refused on a Podman device" \
@@ -657,6 +676,31 @@ seed_device 0.0.1
 $U apply --yes >/tmp/rt3 2>&1; rc=$?
 [ $rc -eq 0 ] && ok "matching container runtime (podman/podman) is not blocked" \
               || { bad "a matching runtime was refused"; tail -8 /tmp/rt3; }
+
+# Podman-first is the load-bearing property of detect_runtime(): this fixture
+# has no `docker` stub anywhere on PATH, so every case above would pass just
+# as well with the if/else branches swapped. Only stubbing BOTH binaries and
+# asserting podman still wins can catch an inverted discriminator. Extracted
+# and run standalone (rather than through a full apply) because that is the
+# only way to observe detect_runtime()'s own return value directly.
+rt_fn=$(sed -n '/^detect_runtime() {/,/^}/p' "$U")
+mkdir -p /tmp/bothstub
+printf '#!/bin/sh\nexit 0\n' > /tmp/bothstub/podman; chmod +x /tmp/bothstub/podman
+printf '#!/bin/sh\nexit 0\n' > /tmp/bothstub/docker; chmod +x /tmp/bothstub/docker
+# `PATH=... bash -c` would search the NEW PATH for `bash` itself and fail to
+# find it there - so bash is resolved by its absolute path first, and PATH is
+# only replaced once already running, for detect_runtime()'s own PATH lookups.
+BASH_BIN=$(command -v bash)
+result=$(PATH=/tmp/bothstub "$BASH_BIN" -c "$rt_fn"$'\n'"detect_runtime")
+[ "$result" = "podman" ] \
+    && ok "podman-first ordering: both podman and docker on PATH still yields podman" \
+    || bad "expected podman with both stubbed, got '${result:-<empty>}'"
+rm -rf /tmp/bothstub
+
+# Leave no stub behind: this is currently the last section, but a podman
+# stub surviving past it would silently turn every legacy-manifest fixture
+# added afterwards into a Podman device.
+rm -f /stub/podman
 
 echo
 echo "================ $PASS passed, $FAIL failed ================"

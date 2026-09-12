@@ -325,6 +325,16 @@ else:
            "with no podman but docker on PATH, falls back to docker",
            f"rc={rc} stdout={out!r} stderr={err!r}")
 
+    # Neither single-binary case above can catch an inverted if/else: with no
+    # `docker` on PATH at all, a docker-first probe still lands on the `else`
+    # branch and reports docker only when podman is also absent, so swapping
+    # the branches would still pass both cases above. Only stubbing BOTH
+    # proves which branch actually fires first.
+    rc, out, err = _run_with_stub("podman", "docker")
+    report(rc == 0 and out == "podman podman.socket",
+           "with both podman and docker on PATH, podman wins",
+           f"rc={rc} stdout={out!r} stderr={err!r}")
+
 print()
 print(f"{passed} passed, {failed} failed")
 sys.exit(0 if failed == 0 else 1)
