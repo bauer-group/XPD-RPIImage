@@ -151,7 +151,14 @@ BGRPI_DENY_GLOBS=(
     '/etc/wpa_supplicant/*'
     '/var/lib/systemd/rfkill/*'
     '/etc/systemd/network/05-bgrpiimage-*'
-    '/etc/docker/daemon.json'
+    # Container runtime config is set at flash time, whichever runtime the
+    # variant chose - Docker's single daemon.json, or Podman's whole
+    # /etc/containers/ tree (containers.conf, storage.conf, the registries
+    # list, the per-user Quadlet units under systemd/). One glob covers all
+    # of it: unlike pathname expansion, `*` in a [[ ]] pattern matches `/`
+    # too, so /etc/containers/* reaches everything nested under the
+    # directory, not just its immediate children.
+    '/etc/docker/daemon.json' '/etc/containers/*'
     '/boot/firmware/cmdline.txt'
     '/etc/fstab' '/etc/crypttab'
     '/etc/apt/sources.list' '/etc/apt/sources.list.d/*' '/etc/apt/keyrings/*'

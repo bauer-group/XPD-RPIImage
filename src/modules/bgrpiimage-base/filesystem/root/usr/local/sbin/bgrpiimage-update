@@ -657,6 +657,7 @@ denied_path() {
         /etc/pam.d/*|/etc/ssh/ssh_host_*|/home/*|/root/*|\
         /etc/hostname|/etc/hosts|/etc/resolv.conf|/etc/wpa_supplicant/*|\
         /etc/fstab|/boot/firmware/cmdline.txt|/etc/machine-id|\
+        /etc/containers/*|\
         /etc/bgrpiimage-release) return 0 ;;
     esac
     return 1

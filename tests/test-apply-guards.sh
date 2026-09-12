@@ -50,6 +50,8 @@ for p in /etc/shadow /etc/passwd /etc/sudoers.d/010-bgrpiimage-admin \
          /etc/systemd/network/05-bgrpiimage-can0.network \
          /etc/docker/daemon.json /boot/firmware/cmdline.txt /etc/fstab \
          /etc/apt/sources.list.d/docker.list /etc/machine-id \
+         /etc/containers/containers.conf /etc/containers/networks/podman.json \
+         /etc/containers/systemd/portainer.container \
          /etc/bgrpiimage-release; do
     if try_install device "$p"; then bad "device write to $p was ALLOWED"; else ok "device refuses $p"; fi
 done
