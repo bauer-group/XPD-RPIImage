@@ -502,6 +502,11 @@ device that reports success and is quietly wrong:
 - **A release built on a different Raspberry Pi OS.** That is a reflash, and
   the device knows because `/etc/bgrpiimage-release` records the base image it
   was built from.
+- **A release built for a different container runtime.** Podman vs. Docker is
+  chosen at flash time, not by this updater, and `base_image_sha256` does not
+  change across that migration — so an existing Docker device offered a
+  bundle built for Podman (every release from v0.14.0 onward) is refused
+  rather than applying a config it cannot use. That is a reflash too.
 - **An image that predates in-place updates.** It carries none of the identity
   the checks need, and guessing is not better than saying so.
 - **An operator override that would swallow a new setting.** `bgrpiimage-setup

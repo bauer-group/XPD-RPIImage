@@ -148,12 +148,30 @@ load_identity() {
     EFFECTIVE_VERSION="${CONFIG_VERSION:-$IMAGE_VERSION}"
 }
 
-# podman-docker ships /usr/bin/docker as a shim, so probing for `docker` is
-# true under BOTH runtimes - `podman` is the only honest discriminator. Same
-# rule the login banner uses, deliberately: two places that disagree about
-# which runtime a device runs is worse than either being wrong alone.
+# Prefer a FLASH-TIME marker over live PATH - every other identity check in
+# this file reads what the image was built as, not what happens to be
+# installed right now. /etc/default/podman is written by bgrpiimage-podman's
+# start_chroot_script whenever the podman module is enabled; /etc/docker/
+# daemon.json is written the same way by bgrpiimage-docker. Either one
+# answers correctly even while the package itself is removed or
+# deconfigured mid-apt-maintenance, which a live probe cannot: if podman is
+# uninstalled but the separately-packaged podman-docker shim still provides
+# /usr/bin/docker, a PATH-only probe answers "docker" for a device that only
+# needs `apt install podman` - the most expensive possible instruction for a
+# one-line package fix.
+#
+# Only fall back to the PATH probe when neither marker exists - hardware
+# from before these markers were written. podman-docker ships /usr/bin/docker
+# as a shim there too, so probing for `docker` first would be true under
+# BOTH runtimes - `podman` is the only honest discriminator. Same rule the
+# login banner uses, deliberately: two places that disagree about which
+# runtime a device runs is worse than either being wrong alone.
 detect_runtime() {
-    if command -v podman >/dev/null 2>&1; then
+    if [[ -f /etc/default/podman ]]; then
+        echo podman
+    elif [[ -f /etc/docker/daemon.json ]]; then
+        echo docker
+    elif command -v podman >/dev/null 2>&1; then
         echo podman
     elif command -v docker >/dev/null 2>&1; then
         echo docker
@@ -402,7 +420,12 @@ preflight() {
     # base-image check above: this is not a config change, it is a different
     # image.
     if [[ -n "$b_runtime" && "$b_runtime" != "none" && -n "$dev_runtime" && "$b_runtime" != "$dev_runtime" ]]; then
-        die "bundle is built for $b_runtime, this device runs $dev_runtime - the container runtime is set at flash time, reflash required"
+        die "bundle is built for $b_runtime, this device runs $dev_runtime.
+    If $b_runtime is only missing or deconfigured here - e.g. removed
+    mid-apt-maintenance while podman-docker's docker shim survives - the fix
+    is the package, not a reflash: sudo apt install $b_runtime. Only reflash
+    if this device genuinely does not run $b_runtime; the container runtime
+    is set at flash time and this updater will not change it."
     elif [[ -z "$b_runtime" && "$dev_runtime" == "podman" ]]; then
         die "bundle predates the container-runtime contract and assumes Docker, this device runs Podman - reflash required"
     fi
@@ -961,6 +984,27 @@ cmd_check() {
     remote=$(jq -r '.applies_to.base_image_sha256 // empty' "$mf" || true)
     if [[ -n "$remote" && -n "$BASE_SHA" && "$remote" != "$BASE_SHA" ]]; then
         warn "v$latest rebased onto a different Raspberry Pi OS - it needs a reflash, not an update"
+        return 3
+    fi
+
+    # preflight's other identity gate, mirrored here for the same reason the
+    # comment above this function explains: base_image_sha256 does not move
+    # when only the container runtime does, so it cannot catch a bundle built
+    # for the wrong one. Skipping this would hit the entire pre-v0.14.0
+    # fleet - every one of those devices detects docker, every bundle from
+    # this tree now stamps podman - with exactly the fate the comment
+    # describes: told to apply on every check, refused on every apply that
+    # followed, forever.
+    local b_runtime dev_runtime
+    b_runtime=$(jq -r '.applies_to.container_runtime // ""' "$mf" || true)
+    dev_runtime=$(detect_runtime)
+    if [[ -n "$b_runtime" && "$b_runtime" != "none" && -n "$dev_runtime" && "$b_runtime" != "$dev_runtime" ]]; then
+        warn "v$latest is built for $b_runtime, this device runs $dev_runtime - the container
+    runtime is set at flash time, this needs a reflash, not an update"
+        return 3
+    elif [[ -z "$b_runtime" && "$dev_runtime" == "podman" ]]; then
+        warn "v$latest predates the container-runtime contract and assumes Docker, this
+    device runs Podman - this needs a reflash, not an update"
         return 3
     fi
 
