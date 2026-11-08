@@ -7,7 +7,7 @@
 # This container is NOT privileged. The actual image build launches
 # guysoft/custompios as a sibling container via the host docker.sock.
 # =============================================================================
-FROM python:3.14-slim-trixie
+FROM python:3.15-slim-trixie
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
