@@ -654,6 +654,27 @@ jobs:
       - name: ⚙️ Install Python dependencies
         run: python -m pip install -r scripts/requirements.txt
 
+      - name: 🔑 Throwaway signing key (PR runs without secrets)
+        # Dependabot and fork PRs get no Actions secrets, so bundle.py refused
+        # to sign and every such PR went red here. Those runs sign with a
+        # per-run Ed25519 key in .secrets/ (bundle.py's local-key fallback,
+        # gitignored) whose public half replaces bgrpiimage-recovery.pub in
+        # this runner's checkout only: the verify step and tests/test-update.sh
+        # section 11 trust exactly that file. The committed key never matches,
+        # so a PR bundle cannot pass for a release. Push/tag runs never get
+        # here and still fail without the real secret.
+        if: github.event_name == 'pull_request'
+        env:
+          HAS_SIGNING_KEY: ${{ secrets.BGRPIIMAGE_SIGNING_KEY != '' }}
+        run: |
+          set -euo pipefail
+          if [ "$HAS_SIGNING_KEY" = true ]; then exit 0; fi
+          install -d -m 700 .secrets
+          openssl genpkey -algorithm ed25519 -out .secrets/bgrpiimage-recovery.key
+          openssl pkey -in .secrets/bgrpiimage-recovery.key -pubout -out \
+            src/modules/bgrpiimage-base/filesystem/root/usr/share/bgrpiimage/trusted-keys.d/bgrpiimage-recovery.pub
+          echo "::notice title=Throwaway signing key::No signing secret on this PR run - bundle signed with a per-run key; release signing is unaffected."
+
       - name: 📦 Render + pack
         env:
           # Same as the image build: an unset secret resolves to the empty
