@@ -1,0 +1,62 @@
+# =============================================================================
+# Dependabot Maintenance - XPD-RPIImage
+# =============================================================================
+# Merges Dependabot PRs once the PR CI that builds and tests them has passed,
+# using the reusable workflow from bauer-group/automation-templates
+# (docs/workflows/docker-maintenance.md).
+#
+# Trigger scope: scripts/requirements.txt only (`paths:` below). build.yml
+# runs on every pull request but never builds tools/Dockerfile, so its
+# pass would vouch for a base image update nothing built.
+# - pip (/scripts): build.yml installs scripts/requirements.txt, runs the
+#   validate job (py_compile, generator and shell test suites), builds the
+#   three image variants and their config bundles - that run must pass.
+# - GitHub Actions updates and any other PR that changes .github/ are never
+#   merged automatically (guard of the reusable workflow) - merge by hand.
+#
+# Update types: patch and minor are merged (default merge-update-types),
+# majors stay open for review. Below 1.0.0 a minor (0.y.z) or 0.0.z patch
+# update counts as major. The pip updates stay one PR each: in a grouped
+# PR a requirement update has no previous version, and the gate leaves a
+# PR whose update type it cannot read open.
+#
+# No release-workflow: dependency updates use chore(deps) and cut no
+# release, and the merge (GITHUB_TOKEN) starts no push workflow.
+#
+# Timeouts: the reusable workflow sets its own (75 min without
+# release-workflow); a job that calls a reusable workflow cannot declare
+# timeout-minutes.
+# =============================================================================
+
+name: 🤖 Dependabot Maintenance
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    # The pip manifest only - the file build.yml installs and tests.
+    # tools/Dockerfile (docker /tools) is built by no PR workflow, so its
+    # PRs never reach the gate and stay a manual merge.
+    paths:
+      - 'scripts/requirements.txt'
+
+# The reusable workflow declares no permissions of its own - the token has
+# exactly these. The three read scopes are needed in private repositories and
+# keep the workflow working should this repository ever be made private.
+permissions:
+  contents: write       # merge
+  pull-requests: write  # approve, read the PR
+  checks: read          # check runs and suites
+  statuses: read        # commit statuses
+  actions: read         # workflow runs
+
+jobs:
+  maintenance:
+    name: Auto-merge Dependabot PRs
+    uses: bauer-group/automation-templates/.github/workflows/docker-maintenance-dependabot.yml@main
+    with:
+      # The PR CI that builds and tests the update; a PR it did not run for
+      # stays open as "not tested".
+      required-workflows: .github/workflows/build.yml
+      merge-method: 'squash'
+      auto-approve: true
+    secrets: inherit
