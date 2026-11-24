@@ -278,9 +278,20 @@ jobs:
           # come from apt, not pip: v2's python entrypoints carry a hard
           # `#!/usr/bin/python3` shebang and run under `sudo -E`, so neither
           # actions/setup-python nor scripts/requirements.txt can reach them.
+          # Ubuntu 26.04 (now ubuntu-latest) folded qemu-user-static into
+          # qemu-user (now static-pie) + qemu-user-binfmt and dropped the
+          # qemu-*-static names that CustomPiOS v2 looks up with `which`.
           sudo apt-get install -y --no-install-recommends \
-            qemu-user-static binfmt-support kpartx xz-utils zip unzip \
+            qemu-user qemu-user-binfmt binfmt-support kpartx xz-utils zip unzip \
             python3-git python3-yaml
+          for arch in arm aarch64; do
+            [ -e "/usr/bin/qemu-$arch-static" ] || sudo ln -s "qemu-$arch" "/usr/bin/qemu-$arch-static"
+            # qemu-user-binfmt registers through a systemd-binfmt dpkg trigger
+            # that swallows its own errors. Fail here, not with "Exec format
+            # error" half an hour later inside the chroot.
+            [ -e "/proc/sys/fs/binfmt_misc/qemu-$arch" ] || {
+              echo "::error::binfmt handler qemu-$arch is not registered"; exit 1; }
+          done
 
       - name: 💾 Cache CustomPiOS checkout
         uses: actions/cache@v6
